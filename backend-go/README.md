@@ -108,7 +108,10 @@ V2RAYN_BACKEND_MODE=servicelib-proxy V2RAYN_SERVICELIB_BRIDGE_CMD='node ./script
 - `POST /api/system-proxy/apply`
 - `GET /api/config`
 - `PUT /api/config`
+- `POST /api/routing/geodata/update`（主动下载并更新 `geosite.dat` 与 `geoip.dat`）
 - `GET /api/events/stream`（SSE，实时事件）
+
+说明：当 `PUT /api/routing` 设置为 `bypass_cn`（或包含 `geosite` / `geoip` 规则）且本地缺失对应数据文件时，后端会自动尝试下载并写入 `geosite.dat` / `geoip.dat`。
 
 返回统一模型：
 

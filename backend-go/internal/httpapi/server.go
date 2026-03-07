@@ -65,6 +65,7 @@ func New(addr, token string, svc service.BackendService) *Server {
 
 	// Config & routing
 	mux.HandleFunc("/api/config", s.auth(s.handleConfig))
+	mux.HandleFunc("/api/routing/geodata/update", s.auth(s.handleRoutingGeoDataUpdate))
 	mux.HandleFunc("/api/routing", s.auth(s.handleRouting))
 
 	// Stats & logs
@@ -514,6 +515,22 @@ func (s *Server) handleRouting(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, 40501, "method not allowed", nil)
 	}
+}
+
+func (s *Server) handleRoutingGeoDataUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, 40501, "method not allowed", nil)
+		return
+	}
+
+	result, err := s.svc.UpdateRoutingGeoData()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, 50001, err.Error(), nil)
+		return
+	}
+
+	writeOK(w, result)
+	s.publishEvent("routing.geodata_updated", result)
 }
 
 // ─── Stats & log handlers ─────────────────────────────────────────────────────

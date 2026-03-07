@@ -104,7 +104,8 @@ func generateXrayConfig(
 		},
 	}
 
-	geoDataAvailable := hasGeoDataAssets()
+	hasGeoIP := hasGeoIPAsset()
+	hasGeoSite := hasGeoSiteAsset()
 
 	xrayCfg := map[string]interface{}{
 		"log": map[string]interface{}{
@@ -133,7 +134,7 @@ func generateXrayConfig(
 		"outbounds": outbounds,
 		"routing": map[string]interface{}{
 			"domainStrategy": routingDomainStrategy(routing),
-			"rules":          buildRoutingRules(routing, geoDataAvailable),
+			"rules":          buildRoutingRules(routing, hasGeoIP, hasGeoSite),
 		},
 	}
 	if dnsCfg := buildDNSConfig(cfg); dnsCfg != nil {
@@ -475,7 +476,7 @@ func buildStreamSettings(transport *domain.TransportConfig, skipCertVerify bool)
 	return ss
 }
 
-func buildRoutingRules(routing domain.RoutingConfig, geoDataAvailable bool) []interface{} {
+func buildRoutingRules(routing domain.RoutingConfig, hasGeoIP, hasGeoSite bool) []interface{} {
 	var rules []interface{}
 
 	// Internal API traffic always routes to the api inbound tag.
@@ -488,7 +489,7 @@ func buildRoutingRules(routing domain.RoutingConfig, geoDataAvailable bool) []in
 	switch routing.Mode {
 	case "bypass_cn":
 		privateIPs := []string{"geoip:private"}
-		if !geoDataAvailable {
+		if !hasGeoIP {
 			privateIPs = []string{
 				"10.0.0.0/8",
 				"172.16.0.0/12",
@@ -506,13 +507,16 @@ func buildRoutingRules(routing domain.RoutingConfig, geoDataAvailable bool) []in
 				"ip":          privateIPs,
 				"outboundTag": "direct",
 			})
-		if geoDataAvailable {
+		if hasGeoIP {
 			rules = append(rules,
 			map[string]interface{}{
 				"type":        "field",
 				"ip":          []string{"geoip:cn"},
 				"outboundTag": "direct",
-			},
+			})
+		}
+		if hasGeoSite {
+			rules = append(rules,
 			map[string]interface{}{
 				"type":        "field",
 				"domain":      []string{"geosite:cn"},
@@ -540,7 +544,7 @@ func buildRoutingRules(routing domain.RoutingConfig, geoDataAvailable bool) []in
 		case "ip":
 			r["ip"] = rule.Values
 		case "geoip":
-			if !geoDataAvailable {
+			if !hasGeoIP {
 				continue
 			}
 			geo := make([]string, 0, len(rule.Values))
@@ -549,7 +553,7 @@ func buildRoutingRules(routing domain.RoutingConfig, geoDataAvailable bool) []in
 			}
 			r["ip"] = geo
 		case "geosite":
-			if !geoDataAvailable {
+			if !hasGeoSite {
 				continue
 			}
 			geo := make([]string, 0, len(rule.Values))
@@ -569,19 +573,47 @@ func buildRoutingRules(routing domain.RoutingConfig, geoDataAvailable bool) []in
 }
 
 func hasGeoDataAssets() bool {
-	execPath, _ := os.Executable()
-	searchDirs := []string{".", filepath.Dir(execPath)}
-	for _, dir := range searchDirs {
+	return hasGeoIPAsset() && hasGeoSiteAsset()
+}
+
+func hasGeoIPAsset() bool {
+	return hasGeoAsset("geoip.dat")
+}
+
+func hasGeoSiteAsset() bool {
+	return hasGeoAsset("geosite.dat")
+}
+
+func hasGeoAsset(fileName string) bool {
+	for _, dir := range geoDataSearchDirs() {
 		if dir == "" {
 			continue
 		}
-		geoip := filepath.Join(dir, "geoip.dat")
-		geosite := filepath.Join(dir, "geosite.dat")
-		if fileExists(geoip) && fileExists(geosite) {
+		assetPath := filepath.Join(dir, fileName)
+		if fileExists(assetPath) {
 			return true
 		}
 	}
 	return false
+}
+
+func geoDataSearchDirs() []string {
+	execPath, _ := os.Executable()
+	searchDirs := []string{".", filepath.Dir(execPath)}
+	seen := make(map[string]struct{}, len(searchDirs))
+	result := make([]string, 0, len(searchDirs))
+	for _, dir := range searchDirs {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		if _, ok := seen[dir]; ok {
+			continue
+		}
+		seen[dir] = struct{}{}
+		result = append(result, dir)
+	}
+	return result
 }
 
 func fileExists(path string) bool {

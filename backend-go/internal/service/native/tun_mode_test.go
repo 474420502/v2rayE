@@ -121,7 +121,7 @@ func TestGenerateXrayConfigIncludesTunSettings(t *testing.T) {
 }
 
 func TestBuildRoutingRulesBypassCNFallbackWithoutGeoData(t *testing.T) {
-	rules := buildRoutingRules(domain.RoutingConfig{Mode: "bypass_cn"}, false)
+	rules := buildRoutingRules(domain.RoutingConfig{Mode: "bypass_cn"}, false, false)
 	if len(rules) < 2 {
 		t.Fatalf("expected at least api rule + private rule, got %d", len(rules))
 	}
@@ -144,7 +144,7 @@ func TestBuildRoutingRulesBypassCNFallbackWithoutGeoData(t *testing.T) {
 }
 
 func TestBuildRoutingRulesBypassCNWithGeoData(t *testing.T) {
-	rules := buildRoutingRules(domain.RoutingConfig{Mode: "bypass_cn"}, true)
+	rules := buildRoutingRules(domain.RoutingConfig{Mode: "bypass_cn"}, true, true)
 	if len(rules) < 4 {
 		t.Fatalf("expected api + private + cn ip + cn domain rules, got %d", len(rules))
 	}
@@ -159,6 +159,45 @@ func TestBuildRoutingRulesBypassCNWithGeoData(t *testing.T) {
 	}
 	if !containsString(ipList, "geoip:private") {
 		t.Fatalf("expected geoip:private when geodata is available, got %#v", ipList)
+	}
+}
+
+func TestBuildRoutingRulesBypassCNWithGeoSiteOnly(t *testing.T) {
+	rules := buildRoutingRules(domain.RoutingConfig{Mode: "bypass_cn"}, false, true)
+
+	if len(rules) < 3 {
+		t.Fatalf("expected api + private + cn domain rules, got %d", len(rules))
+	}
+
+	privateRule, ok := rules[1].(map[string]interface{})
+	if !ok {
+		t.Fatalf("private rule has unexpected type: %T", rules[1])
+	}
+	ipList, ok := privateRule["ip"].([]string)
+	if !ok {
+		t.Fatalf("private rule ip list has unexpected type: %T", privateRule["ip"])
+	}
+	if containsString(ipList, "geoip:private") {
+		t.Fatalf("expected CIDR fallback when geoip.dat is missing")
+	}
+
+	foundGeoSiteCN := false
+	for _, rule := range rules {
+		item, ok := rule.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		domains, ok := item["domain"].([]string)
+		if !ok {
+			continue
+		}
+		if containsString(domains, "geosite:cn") {
+			foundGeoSiteCN = true
+			break
+		}
+	}
+	if !foundGeoSiteCN {
+		t.Fatalf("expected geosite:cn rule when geosite.dat is available")
 	}
 }
 

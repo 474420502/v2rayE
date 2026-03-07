@@ -142,6 +142,26 @@ export type RoutingConfig = {
   rules?: RoutingRule[];
 };
 
+export type RoutingGeoDataUpdateResult = {
+  updated: boolean;
+  updatedAt: string;
+  sourceGeosite: string;
+  checksumSourceGeosite: string;
+  sourceGeoip: string;
+  checksumSourceGeoip: string;
+  geositeSha256: string;
+  geositeBytes: number;
+  geoipSha256: string;
+  geoipBytes: number;
+  geositeUpdated: boolean;
+  geoipUpdated: boolean;
+  geositePath: string;
+  geoipPath: string;
+  hasGeoSite: boolean;
+  hasGeoIP: boolean;
+  geoDataAvailable: boolean;
+};
+
 // ─── Stats & logs ───────────────────────────────────────────────────────────
 
 export type StatsResult = {

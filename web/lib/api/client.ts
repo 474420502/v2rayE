@@ -7,6 +7,7 @@ import type {
   LogLine,
   ProfileItem,
   RoutingConfig,
+  RoutingGeoDataUpdateResult,
   StatsResult,
   SubscriptionItem,
   SubscriptionUpsertInput
@@ -166,6 +167,8 @@ export const api = {
   getRouting: () => request<RoutingConfig>('/routing'),
   updateRouting: (rc: RoutingConfig) =>
     request<RoutingConfig>('/routing', { method: 'PUT', body: JSON.stringify(rc) }),
+  updateRoutingGeoData: () =>
+    request<RoutingGeoDataUpdateResult>('/routing/geodata/update', { method: 'POST', body: '{}' }),
 
   // ── Stats ──────────────────────────────────────────────────────────────────
   getStats: () => request<StatsResult>('/stats'),

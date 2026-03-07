@@ -862,6 +862,16 @@ func (s *Service) GetRoutingConfig() domain.RoutingConfig {
 }
 
 func (s *Service) UpdateRoutingConfig(rc domain.RoutingConfig) domain.RoutingConfig {
+	needGeoSite, needGeoIP := routingGeoDataRequirements(rc)
+	missingNeeded := (needGeoSite && !hasGeoSiteAsset()) || (needGeoIP && !hasGeoIPAsset())
+	if missingNeeded {
+		if result, err := s.ensureGeoSiteData(); err != nil {
+			log.Printf("[native] UpdateRoutingConfig: auto download geodata failed: %v", err)
+		} else {
+			log.Printf("[native] UpdateRoutingConfig: auto geodata update applied: geositeUpdated=%v geoipUpdated=%v", result["geositeUpdated"], result["geoipUpdated"])
+		}
+	}
+
 	if err := s.store.SaveRoutingConfig(rc); err != nil {
 		log.Printf("[native] UpdateRoutingConfig: %v", err)
 	}
@@ -875,6 +885,21 @@ func (s *Service) UpdateRoutingConfig(rc domain.RoutingConfig) domain.RoutingCon
 		}()
 	}
 	return rc
+}
+
+func routingGeoDataRequirements(rc domain.RoutingConfig) (needGeoSite bool, needGeoIP bool) {
+	if rc.Mode == "bypass_cn" {
+		return true, true
+	}
+	for _, rule := range rc.Rules {
+		switch rule.Type {
+		case "geosite":
+			needGeoSite = true
+		case "geoip":
+			needGeoIP = true
+		}
+	}
+	return needGeoSite, needGeoIP
 }
 
 // ─── Stats ────────────────────────────────────────────────────────────────────

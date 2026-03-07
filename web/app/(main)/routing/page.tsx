@@ -61,6 +61,8 @@ export default function RoutingPage() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [geoUpdating, setGeoUpdating] = useState(false);
+  const [geoMessage, setGeoMessage] = useState('');
 
   // Rule editing state
   const [editIdx, setEditIdx] = useState<number | null>(null);
@@ -120,6 +122,25 @@ export default function RoutingPage() {
       rules: [...template.config.rules],
     });
     setSaved(false);
+  };
+
+  const updateGeoData = async () => {
+    setGeoUpdating(true);
+    try {
+      const result = await api.updateRoutingGeoData();
+      const parts = [
+        `时间 ${result.updatedAt}`,
+        `geosite ${result.geositeUpdated ? 'updated' : 'kept'} (${result.geositeBytes} bytes)`,
+        `geoip ${result.geoipUpdated ? 'updated' : 'kept'} (${result.geoipBytes} bytes)`,
+        `状态 geosite=${result.hasGeoSite ? 'ok' : 'missing'}, geoip=${result.hasGeoIP ? 'ok' : 'missing'}`,
+      ];
+      setGeoMessage(`数据处理完成: ${parts.join(' | ')}`);
+      setError('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '更新 geodata 失败');
+    } finally {
+      setGeoUpdating(false);
+    }
   };
 
   // Rule CRUD
@@ -202,6 +223,13 @@ export default function RoutingPage() {
         <p className="muted" style={{ marginBottom: 12 }}>
           快速套用常用路由模板。模板会覆盖当前模式、域名策略和自定义规则，点击保存后才会真正生效。
         </p>
+        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <button onClick={() => void updateGeoData()} disabled={geoUpdating}>
+            {geoUpdating ? '更新数据中...' : '更新绕过大陆数据'}
+          </button>
+          <span className="muted">下载并校验最新 `dlc.dat`，写入后端 geosite 数据文件。</span>
+        </div>
+        {geoMessage ? <p className="muted">{geoMessage}</p> : null}
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
           {PRESET_TEMPLATES.map((template) => {
             const active = config.mode === template.config.mode && (config.rules?.length ?? 0) === 0;
