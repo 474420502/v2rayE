@@ -1,0 +1,116 @@
+# v2rayE backend-go
+
+Go 实现的 Web 后端（MVP），用于对接 `web/` 前端并提供统一 API 契约。
+
+## 运行
+
+```bash
+cd backend-go
+go run ./cmd/server
+```
+
+默认监听：`127.0.0.1:18000`
+
+## 环境变量
+
+- `V2RAYN_API_ADDR`：监听地址，默认 `127.0.0.1:18000`
+- `V2RAYN_API_TOKEN`：可选，设置后启用 `Authorization: Bearer <token>` 鉴权（`/api/health` 公开）
+- `V2RAYN_BACKEND_MODE`：`native`（默认，推荐）、`memory`（联调保底）或 `servicelib-proxy`（兼容过渡）
+- `V2RAYN_MEMORY_STATE_PATH`：`memory` 共享状态基准路径（默认 `/tmp/v2raye/memory-state.json`），会派生出 `*.runtime.json`、`*.subscriptions.json`、`*.config.json` 三类文件，并保留整体快照兼容读取
+- `V2RAYN_CORE_CMD`：`native` 模式下可选，用于指定真实核心启动命令（如 `xray run -c /path/to/config.json`）
+- `V2RAYN_CORE_CMD_TEMPLATE`：`native` 模式下可选命令模板（支持占位符 `{config}`、`{profileId}`、`{coreType}`）
+- `V2RAYN_NATIVE_STATE_PATH`：`native` 模式状态文件路径（默认 `/tmp/v2raye/native-state.json`），用于服务重启后的状态恢复
+- `V2RAYN_SERVICELIB_BRIDGE_CMD`：`servicelib-proxy` 模式下用于调用 `ServiceLib` 的桥接命令
+- `V2RAYN_SERVICELIB_BRIDGE_TIMEOUT_MS`：桥接调用超时（毫秒），默认 `3000`
+- `V2RAYN_SERVICELIB_BRIDGE_ALLOW_ACTIONS`：桥接动作白名单（逗号分隔，`*`/`all` 表示全量），默认最小维护集：`core.status,core.start,core.stop,core.restart,config.get,config.update`
+- `V2RAYN_SERVICELIB_BRIDGE_METRICS_LOG`：是否输出 bridge 成功调用耗时日志（`1/true/yes/on` 启用，默认关闭）
+
+## 目录分层
+
+- `cmd/server`：启动入口与生命周期管理
+- `internal/httpapi`：HTTP 路由与请求/响应映射
+- `internal/service`：业务接口定义与错误约定
+- `internal/service/native`：Go 原生服务编排（默认）
+- `internal/service/memory`：内存实现（联调/兜底）
+- `internal/service/servicelib`：兼容桥接层（保留过渡能力，不作为主路径）
+- `internal/domain`：DTO 与响应模型
+
+## 纯 Go 默认路径（当前）
+
+- 默认模式 `native`：由 Go 后端自身承接核心流程，作为当前主路径。
+- 默认 `coreEngine=xray-core`：后端以内嵌 `xray-core` 提供本地 HTTP/SOCKS5 代理入口（默认端口 `10809/10808`），不依赖外部 `xray` 进程。
+- 当前仅保留 `xray-core` 引擎路径，旧的 `embedded/auto/xray` 模式已统一折叠到 `xray-core`。
+- `native` / `servicelib-proxy` 共用 `memory` 状态底座，配置、订阅、当前节点与测速缓存会按“runtime/config/subscriptions”拆分落盘到 `V2RAYN_MEMORY_STATE_PATH` 派生文件。
+- 若设置 `V2RAYN_CORE_CMD`，`native` 会尝试拉起真实核心进程；未设置时使用内存状态承接 API 闭环。
+- 若设置 `V2RAYN_CORE_CMD_TEMPLATE`，`native` 会先生成临时配置文件，再以模板命令启动核心。
+- `native` 运行时配置会按节点协议生成 `outbound`（支持 `vmess/vless/trojan/shadowsocks/socks/http`）：优先读取配置中的 `profiles[].protocol/type/nodeType`，否则按节点名关键词推断，最终回退 `vmess`。
+- `V2RAYN_CORE_CMD` 安全约束：禁止包含 shell 管道/重定向/串联符（如 `|`、`;`、`&&`、`||`、`>`、`<`、`` ` ``、`$(`）。
+
+示例：
+
+```bash
+V2RAYN_CORE_CMD_TEMPLATE='xray run -c {config}' go run ./cmd/server
+```
+
+## 桥接兼容路径（可选）
+
+- 当前仍保留“核心 + 配置/订阅/节点/网络”桥接动作协议，用于兼容与压测
+- 当 `V2RAYN_BACKEND_MODE=servicelib-proxy` 时，后端会调用 `V2RAYN_SERVICELIB_BRIDGE_CMD`
+- 默认仅最小白名单动作走桥接，其他动作直接回退本地实现（可通过 `V2RAYN_SERVICELIB_BRIDGE_ALLOW_ACTIONS` 覆盖）
+- 任一桥接调用失败时自动回退内存实现兜底，并记录回退日志，保证联调链路稳定
+
+桥接日志增强（1.3.32）：
+
+- 失败日志会包含 `reason`（失败分类）、`elapsedMs`（耗时）与 `bucket`（耗时桶）
+- 成功日志在启用 `V2RAYN_SERVICELIB_BRIDGE_METRICS_LOG` 时输出 `elapsedMs` 与 `bucket`
+- `web/scripts/bridge-whitelist-drill.mjs` 已支持解析并在产物中输出：
+	- `fallbackReasons`
+	- `bridgeLatencyBuckets`
+	- `bridgeLatencyP95Ms` / `bridgeLatencyP99Ms`
+
+bridge 建议增强（1.3.34）：
+
+- `web/scripts/bridge-advice.mjs` 已支持“最新样本 vs 最近 N 次”退化判断。
+- 可选参数：
+	- `V2RAYN_BRIDGE_ADVICE_BASELINE_LIMIT`（默认 `10`）
+	- `V2RAYN_BRIDGE_ADVICE_DEGRADE_P95_RATIO_WARN`（默认 `1.3`）
+	- `V2RAYN_BRIDGE_ADVICE_DEGRADE_P95_RATIO_CRIT`（默认 `1.8`）
+
+示例（使用 mock 桥接命令）：
+
+```bash
+cd backend-go
+V2RAYN_BACKEND_MODE=servicelib-proxy V2RAYN_SERVICELIB_BRIDGE_CMD='node ./scripts/servicelib-bridge-mock.mjs' go run ./cmd/server
+```
+
+协议文档与兼容参考：
+
+- 协议：`docs/servicelib-bridge-protocol.md`
+- 运维：`docs/servicelib-bridge-ops-guide.md`
+- C# 模板：`examples/servicelib-bridge-csharp/Program.cs`（历史参考，不是当前推荐实现路径）
+
+## 已实现接口（MVP）
+
+- `GET /api/health`
+- `GET /api/core/status`
+- `POST /api/core/start`
+- `POST /api/core/stop`
+- `POST /api/core/restart`
+- `GET /api/profiles`
+- `POST /api/profiles/{id}/select`
+- `GET /api/subscriptions`
+- `POST /api/subscriptions`
+- `PUT /api/subscriptions/{id}`
+- `DELETE /api/subscriptions/{id}`
+- `POST /api/subscriptions/update`
+- `POST /api/subscriptions/{id}/update`
+- `GET /api/network/availability`
+- `POST /api/system-proxy/apply`
+- `GET /api/config`
+- `PUT /api/config`
+- `GET /api/events/stream`（SSE，实时事件）
+
+返回统一模型：
+
+- 成功：`{ code: 0, message: "ok", data: ... }`
+- 失败：`{ code: non-zero, message: "error", details: ... }`

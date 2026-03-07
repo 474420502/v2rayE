@@ -1,0 +1,24 @@
+./v2rayN/*
+.ecode/*
+.run/*
+v2rayN 
+web/.artifacts/*
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Web build/runtime
+web/.next/
+web/node_modules/
+web/.env.local
+web/.turbo/
+
+# Backend build/runtime
+backend-go/server
+backend-go/*.out
+backend-go/coverage.out
