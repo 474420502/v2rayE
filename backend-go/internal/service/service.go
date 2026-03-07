@@ -51,6 +51,7 @@ type BackendService interface {
 	// Routing
 	GetRoutingConfig() domain.RoutingConfig
 	UpdateRoutingConfig(rc domain.RoutingConfig) domain.RoutingConfig
+	GetRoutingDiagnostics() domain.RoutingDiagnostics
 	UpdateRoutingGeoData() (map[string]interface{}, error)
 
 	// Bandwidth statistics

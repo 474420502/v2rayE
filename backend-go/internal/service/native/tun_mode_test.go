@@ -201,6 +201,118 @@ func TestBuildRoutingRulesBypassCNWithGeoSiteOnly(t *testing.T) {
 	}
 }
 
+func TestGenerateXrayConfigTunBypassCNDoesNotForceAllTunToProxy(t *testing.T) {
+	profile := domain.ProfileItem{
+		ID:       "p1",
+		Name:     "test",
+		Protocol: domain.ProtocolVLESS,
+		Address:  "example.com",
+		Port:     443,
+		VLESS: &domain.VLESSConfig{
+			UUID: "11111111-1111-1111-1111-111111111111",
+		},
+		Transport: &domain.TransportConfig{
+			Network: "tcp",
+			TLS:     true,
+		},
+	}
+
+	cfg := map[string]interface{}{
+		"socksPort":      10808,
+		"httpPort":       10809,
+		"statsPort":      10085,
+		"listenAddr":     "127.0.0.1",
+		"logLevel":       "warning",
+		"tunMode":        "system",
+		"tunName":        "xray0",
+		"tunMtu":         1400,
+		"tunAutoRoute":   true,
+		"tunStrictRoute": false,
+	}
+
+	routing := domain.RoutingConfig{
+		Mode:           "bypass_cn",
+		DomainStrategy: "IPIfNonMatch",
+		Rules: []domain.RoutingRule{
+			{
+				ID:       "r1",
+				Type:     "domain",
+				Values:   []string{"example.internal"},
+				Outbound: "direct",
+			},
+		},
+	}
+
+	raw, err := generateXrayConfig(profile, cfg, routing)
+	if err != nil {
+		t.Fatalf("generateXrayConfig() error = %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatalf("unmarshal generated config: %v", err)
+	}
+
+	routingCfg, ok := parsed["routing"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("generated config missing routing config")
+	}
+	rules, ok := routingCfg["rules"].([]interface{})
+	if !ok {
+		t.Fatalf("generated config missing routing rules")
+	}
+
+	hasBypassDirect := false
+	hasCustomDomainRule := false
+	hasTunForceProxy := false
+
+	for _, rawRule := range rules {
+		rule, ok := rawRule.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		if inboundTags, ok := rule["inboundTag"].([]interface{}); ok {
+			hasTunTag := false
+			for _, tag := range inboundTags {
+				if s, ok := tag.(string); ok && s == "tun" {
+					hasTunTag = true
+					break
+				}
+			}
+			if hasTunTag {
+				if outbound, ok := rule["outboundTag"].(string); ok && outbound == "proxy" {
+					hasTunForceProxy = true
+				}
+			}
+		}
+
+		if outbound, ok := rule["outboundTag"].(string); ok && outbound == "direct" {
+			if _, hasIP := rule["ip"]; hasIP {
+				hasBypassDirect = true
+			}
+			if domains, ok := rule["domain"].([]interface{}); ok {
+				for _, d := range domains {
+					if s, ok := d.(string); ok && s == "example.internal" {
+						hasCustomDomainRule = true
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if hasTunForceProxy {
+		t.Fatalf("unexpected forced tun->proxy rule present; tun should follow routing mode rules")
+	}
+	if !hasBypassDirect {
+		t.Fatalf("expected bypass_cn direct rule to exist under tun mode")
+	}
+	if !hasCustomDomainRule {
+		t.Fatalf("expected custom routing rule to be preserved under tun mode")
+	}
+}
+
 func containsString(items []string, target string) bool {
 	for _, item := range items {
 		if item == target {

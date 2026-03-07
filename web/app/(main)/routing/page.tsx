@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api/client';
-import type { RoutingConfig, RoutingRule } from '@/lib/types';
+import type { RoutingConfig, RoutingDiagnostics, RoutingRule } from '@/lib/types';
 
 const MODES = [
   { value: 'global', label: '全局', desc: '所有流量走代理' },
@@ -58,6 +58,7 @@ function blankRule(): Omit<RoutingRule, 'id'> {
 
 export default function RoutingPage() {
   const [config, setConfig] = useState<RoutingConfig | null>(null);
+  const [diagnostics, setDiagnostics] = useState<RoutingDiagnostics | null>(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -71,8 +72,12 @@ export default function RoutingPage() {
 
   const load = useCallback(async () => {
     try {
-      const rc = await api.getRouting();
+      const [rc, diag] = await Promise.all([
+        api.getRouting(),
+        api.getRoutingDiagnostics(),
+      ]);
       setConfig(rc);
+      setDiagnostics(diag);
       setError('');
     } catch (e) {
       setError(e instanceof Error ? e.message : '加载路由配置失败');
@@ -253,6 +258,82 @@ export default function RoutingPage() {
             );
           })}
         </div>
+      </section>
+
+      <section className="panel" style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <h3 style={{ margin: 0 }}>运行时路由诊断</h3>
+          <button onClick={() => void load()}>刷新诊断</button>
+        </div>
+        {!diagnostics ? (
+          <p className="muted" style={{ marginTop: 12 }}>暂无诊断数据</p>
+        ) : (
+          <>
+            <div className="stats-grid" style={{ marginTop: 12 }}>
+              <article className="stat-card accent-blue">
+                <span className="stat-label">模式</span>
+                <strong>{diagnostics.mode}</strong>
+                <span>{diagnostics.domainStrategy}</span>
+              </article>
+              <article className="stat-card accent-green">
+                <span className="stat-label">TUN</span>
+                <strong>{diagnostics.tunEnabled ? 'on' : 'off'}</strong>
+                <span>mode={diagnostics.tunMode}</span>
+              </article>
+              <article className="stat-card accent-amber">
+                <span className="stat-label">GeoData</span>
+                <strong>{diagnostics.geoDataAvailable ? 'ready' : 'partial'}</strong>
+                <span>geosite={diagnostics.hasGeoSite ? 'ok' : 'missing'}, geoip={diagnostics.hasGeoIP ? 'ok' : 'missing'}</span>
+              </article>
+              <article className="stat-card accent-slate">
+                <span className="stat-label">规则数</span>
+                <strong>{diagnostics.ruleCount}</strong>
+                <span>{diagnostics.currentProfileName || diagnostics.currentProfileId || '无当前节点'}</span>
+              </article>
+            </div>
+            {diagnostics.warning ? (
+              <p className="status-error" style={{ marginTop: 10 }}>{diagnostics.warning}</p>
+            ) : null}
+            <p className="muted" style={{ marginTop: 8 }}>
+              生成时间: {diagnostics.generatedAt}
+            </p>
+            <div className="table-wrap" style={{ marginTop: 10 }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>条件</th>
+                    <th>出站</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {diagnostics.rules.map((rule, idx) => {
+                    const inbound = Array.isArray(rule.inboundTag) ? rule.inboundTag.join(', ') : '';
+                    const domain = Array.isArray(rule.domain) ? rule.domain.join(', ') : '';
+                    const ip = Array.isArray(rule.ip) ? rule.ip.join(', ') : '';
+                    const protocol = Array.isArray(rule.protocol) ? rule.protocol.join(', ') : '';
+                    const port = typeof rule.port === 'string' ? rule.port : '';
+                    const cond = [
+                      inbound ? `inbound=${inbound}` : '',
+                      domain ? `domain=${domain}` : '',
+                      ip ? `ip=${ip}` : '',
+                      protocol ? `protocol=${protocol}` : '',
+                      port ? `port=${port}` : '',
+                    ].filter(Boolean).join(' | ');
+
+                    return (
+                      <tr key={idx}>
+                        <td>{idx + 1}</td>
+                        <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{cond || '-'}</td>
+                        <td>{String(rule.outboundTag ?? '-')}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </section>
 
       {/* Mode selector */}

@@ -10,6 +10,7 @@ export default function SettingsPage() {
     const [error, setError] = useState('');
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
+    const [cleaning, setCleaning] = useState(false);
     const fallbackTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const load = useCallback(async () => {
@@ -117,6 +118,43 @@ export default function SettingsPage() {
                 </div>
                 <div className="toolbar compact">
                     <button onClick={() => void load()}>重置</button>
+                    <button
+                        disabled={cleaning}
+                        onClick={async () => {
+                            setCleaning(true);
+                            try {
+                                const result = await api.exitCleanup(false);
+                                setStatus(result.status);
+                                setError(result.proxyCleared ? '' : (result.proxyClearError || '系统代理清理失败'));
+                            } catch (e) {
+                                setError(e instanceof Error ? e.message : '清理失败');
+                            } finally {
+                                setCleaning(false);
+                            }
+                        }}
+                    >
+                        {cleaning ? '清理中...' : '主动清理残留'}
+                    </button>
+                    <button
+                        disabled={cleaning}
+                        onClick={async () => {
+                            if (!confirm('将执行清理并关闭后端，确定继续？')) {
+                                return;
+                            }
+                            setCleaning(true);
+                            try {
+                                await api.exitCleanup(true);
+                                setStatus((prev) => prev ? { ...prev, running: false, state: 'stopped' } : prev);
+                                setError('后端已触发退出清理，页面稍后会断开连接。');
+                            } catch (e) {
+                                setError(e instanceof Error ? e.message : '退出清理失败');
+                            } finally {
+                                setCleaning(false);
+                            }
+                        }}
+                    >
+                        清理并退出后端
+                    </button>
                     <button
                         disabled={saving || !status?.error?.trim()}
                         onClick={async () => {

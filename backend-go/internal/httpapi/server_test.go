@@ -139,6 +139,36 @@ func TestConfigUpdateNormalizesLegacyEngineAndTunFields(t *testing.T) {
 	}
 }
 
+func TestRoutingDiagnosticsEndpoint(t *testing.T) {
+	t.Parallel()
+
+	ts := newNativeTestServer(t)
+	defer ts.Close()
+
+	resp := doRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/routing/diagnostics", "")
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/routing/diagnostics expected 200, got %d", resp.StatusCode)
+	}
+
+	var env envelope
+	decodeJSON(t, resp.Body, &env)
+	if env.Code != 0 {
+		t.Fatalf("GET /api/routing/diagnostics expected code=0, got %d", env.Code)
+	}
+
+	if _, ok := env.Data["mode"]; !ok {
+		t.Fatalf("missing mode in diagnostics response")
+	}
+	if _, ok := env.Data["tunMode"]; !ok {
+		t.Fatalf("missing tunMode in diagnostics response")
+	}
+	if _, ok := env.Data["rules"]; !ok {
+		t.Fatalf("missing rules in diagnostics response")
+	}
+}
+
 func newNativeTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 

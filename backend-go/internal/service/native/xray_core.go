@@ -9,22 +9,32 @@ import (
 )
 
 type managedXrayCore struct {
-	instance *xraycore.Instance
+	instance       *xraycore.Instance
+	restoreLogFunc func() // restores the previous xray-core log handler on close
 }
 
-func startManagedXrayCore(configJSON []byte) (*managedXrayCore, error) {
+func startManagedXrayCore(configJSON []byte, broker *logBroker) (*managedXrayCore, error) {
+	// Register our log handler BEFORE starting the instance so we capture
+	// all startup output in embedded mode.
+	restore := RegisterXrayLogHandler(broker)
+
 	instance, err := xraycore.StartInstance("json", configJSON)
 	if err != nil {
+		restore() // revert handler if start failed
 		return nil, err
 	}
-	return &managedXrayCore{instance: instance}, nil
+	return &managedXrayCore{instance: instance, restoreLogFunc: restore}, nil
 }
 
 func (c *managedXrayCore) Close() error {
 	if c == nil || c.instance == nil {
 		return nil
 	}
-	return c.instance.Close()
+	err := c.instance.Close()
+	if c.restoreLogFunc != nil {
+		c.restoreLogFunc()
+	}
+	return err
 }
 
 func (c *managedXrayCore) IsRunning() bool {

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -62,10 +64,12 @@ func New(addr, token string, svc service.BackendService) *Server {
 	// Network & proxy
 	mux.HandleFunc("/api/network/availability", s.auth(s.handleNetworkAvailability))
 	mux.HandleFunc("/api/system-proxy/apply", s.auth(s.handleSystemProxyApply))
+	mux.HandleFunc("/api/app/exit-cleanup", s.auth(s.handleExitCleanup))
 
 	// Config & routing
 	mux.HandleFunc("/api/config", s.auth(s.handleConfig))
 	mux.HandleFunc("/api/routing/geodata/update", s.auth(s.handleRoutingGeoDataUpdate))
+	mux.HandleFunc("/api/routing/diagnostics", s.auth(s.handleRoutingDiagnostics))
 	mux.HandleFunc("/api/routing", s.auth(s.handleRouting))
 
 	// Stats & logs
@@ -476,6 +480,95 @@ func (s *Server) handleSystemProxyApply(w http.ResponseWriter, r *http.Request) 
 	s.publishEvent("proxy.changed", data)
 }
 
+func (s *Server) handleExitCleanup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, 40501, "method not allowed", nil)
+		return
+	}
+
+	var body struct {
+		ShutdownBackend bool `json:"shutdownBackend"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+
+	status := s.svc.StopCore()
+	_, proxyErr := s.svc.ApplySystemProxy("forced_clear", "")
+	tunCleaned := cleanupTunResidue(s.svc.GetConfig())
+
+	result := map[string]interface{}{
+		"status":          status,
+		"proxyCleared":    proxyErr == nil,
+		"proxyClearError": errString(proxyErr),
+		"tunCleaned":      tunCleaned,
+		"shutdownBackend": body.ShutdownBackend,
+	}
+
+	writeOK(w, result)
+	s.publishEvent("app.exit_cleanup", result)
+
+	if body.ShutdownBackend {
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_ = s.httpServer.Shutdown(ctx)
+		}()
+	}
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func cleanupTunResidue(cfg map[string]interface{}) bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	tunNames := []string{"xraye0", "xray0"}
+	if raw, ok := cfg["tunName"].(string); ok {
+		name := strings.TrimSpace(raw)
+		if name != "" {
+			tunNames = append([]string{name}, tunNames...)
+		}
+	}
+
+	cleaned := false
+	seen := map[string]struct{}{}
+	for _, tun := range tunNames {
+		tun = strings.TrimSpace(tun)
+		if tun == "" {
+			continue
+		}
+		if _, ok := seen[tun]; ok {
+			continue
+		}
+		seen[tun] = struct{}{}
+		if runIPCmd("route", "del", "default", "dev", tun) {
+			cleaned = true
+		}
+		if runIPCmd("link", "set", "dev", tun, "down") {
+			cleaned = true
+		}
+		if runIPCmd("link", "del", "dev", tun) {
+			cleaned = true
+		}
+	}
+	return cleaned
+}
+
+func runIPCmd(args ...string) bool {
+	cmd := exec.Command("ip", args...) //nolint:gosec
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+	return true
+}
+
 // ─── Config & routing handlers ────────────────────────────────────────────────
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
@@ -531,6 +624,14 @@ func (s *Server) handleRoutingGeoDataUpdate(w http.ResponseWriter, r *http.Reque
 
 	writeOK(w, result)
 	s.publishEvent("routing.geodata_updated", result)
+}
+
+func (s *Server) handleRoutingDiagnostics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, 40501, "method not allowed", nil)
+		return
+	}
+	writeOK(w, s.svc.GetRoutingDiagnostics())
 }
 
 // ─── Stats & log handlers ─────────────────────────────────────────────────────

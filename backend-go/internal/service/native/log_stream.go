@@ -7,10 +7,12 @@ import (
 	"sync"
 	"time"
 
+	xraylog "github.com/xtls/xray-core/common/log"
+
 	"v2raye/backend-go/internal/domain"
 )
 
-const logBufSize = 500
+const logBufSize = 2000
 
 // logBroker captures lines from an io.Reader and fans them out to subscribers.
 type logBroker struct {
@@ -95,6 +97,15 @@ func (b *logBroker) clear() {
 	b.mu.Unlock()
 }
 
+// AppLog injects a synthetic application-level log line (e.g. core start/stop events).
+func (b *logBroker) AppLog(level, msg string) {
+	b.dispatch(domain.LogLine{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Level:     level,
+		Message:   "[app] " + msg,
+	})
+}
+
 // parseLine converts a raw xray log line into a structured LogLine.
 // Xray log format: "2006/01/02 15:04:05 [warning] ..."
 func parseLine(raw string) domain.LogLine {
@@ -120,4 +131,61 @@ func parseLine(raw string) domain.LogLine {
 	}
 
 	return domain.LogLine{Timestamp: ts, Level: level, Message: msg}
+}
+
+// ─── xray-core embedded log handler ─────────────────────────────────────────
+
+// xrayLogHandler implements xraylog.Handler and routes xray-core log messages
+// into the logBroker so they appear in the /api/logs/stream endpoint even when
+// running in embedded (in-process) mode rather than as a subprocess.
+type xrayLogHandler struct {
+	broker *logBroker
+}
+
+func (h *xrayLogHandler) Handle(msg xraylog.Message) {
+	if h.broker == nil {
+		return
+	}
+	raw := msg.String()
+	ts := time.Now().UTC().Format(time.RFC3339)
+	level := "info"
+	text := raw
+
+	// GeneralMessage format: "[severity] content"
+	if strings.HasPrefix(raw, "[") {
+		end := strings.Index(raw, "]")
+		if end != -1 {
+			level = normLevel(strings.ToLower(raw[1:end]))
+			text = strings.TrimSpace(raw[end+1:])
+		}
+	}
+
+	h.broker.dispatch(domain.LogLine{Timestamp: ts, Level: level, Message: text})
+}
+
+// RegisterXrayLogHandler sets the xray-core global log handler to route
+// messages into broker. It returns a restore function that reinstalls the
+// previous (stdout) handler so cleanup on core stop doesn't leave a dangling
+// pointer into a cleared broker.
+func RegisterXrayLogHandler(broker *logBroker) func() {
+	h := &xrayLogHandler{broker: broker}
+	xraylog.RegisterHandler(h)
+	return func() {
+		// Restore default stdout handler so xray-core startup messages on the
+		// next run still appear somewhere even if no broker is active.
+		xraylog.RegisterHandler(xraylog.NewLogger(xraylog.CreateStdoutLogWriter()))
+	}
+}
+
+func normLevel(s string) string {
+	switch s {
+	case "warning", "warn":
+		return "warning"
+	case "error":
+		return "error"
+	case "debug":
+		return "debug"
+	default:
+		return "info"
+	}
 }

@@ -106,6 +106,7 @@ V2RAYN_BACKEND_MODE=servicelib-proxy V2RAYN_SERVICELIB_BRIDGE_CMD='node ./script
 - `POST /api/subscriptions/{id}/update`
 - `GET /api/network/availability`
 - `POST /api/system-proxy/apply`
+- `POST /api/app/exit-cleanup`
 - `GET /api/config`
 - `PUT /api/config`
 - `POST /api/routing/geodata/update`（主动下载并更新 `geosite.dat` 与 `geoip.dat`）

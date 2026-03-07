@@ -7,6 +7,7 @@ import type {
   LogLine,
   ProfileItem,
   RoutingConfig,
+  RoutingDiagnostics,
   RoutingGeoDataUpdateResult,
   StatsResult,
   SubscriptionItem,
@@ -157,6 +158,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ mode, exceptions })
     }),
+  exitCleanup: (shutdownBackend = false) =>
+    request<{
+      status: CoreStatus;
+      proxyCleared: boolean;
+      proxyClearError?: string;
+      tunCleaned: boolean;
+      shutdownBackend: boolean;
+    }>('/app/exit-cleanup', {
+      method: 'POST',
+      body: JSON.stringify({ shutdownBackend })
+    }),
 
   // ── Config ─────────────────────────────────────────────────────────────────
   getConfig: () => request<ConfigDto>('/config'),
@@ -165,6 +177,7 @@ export const api = {
 
   // ── Routing ────────────────────────────────────────────────────────────────
   getRouting: () => request<RoutingConfig>('/routing'),
+  getRoutingDiagnostics: () => request<RoutingDiagnostics>('/routing/diagnostics'),
   updateRouting: (rc: RoutingConfig) =>
     request<RoutingConfig>('/routing', { method: 'PUT', body: JSON.stringify(rc) }),
   updateRoutingGeoData: () =>

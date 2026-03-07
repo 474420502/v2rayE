@@ -3,20 +3,44 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LogLine } from '@/lib/types';
 
-const MAX_LINES = 500;
+const MAX_LINES = 2000;
 
 const LEVEL_COLORS: Record<string, string> = {
   error: 'var(--red, #f87171)',
-  warning: 'var(--amber)',
-  warn: 'var(--amber)',
-  info: 'var(--green)',
-  debug: 'var(--blue)',
+  warning: '#fbbf24',
+  warn: '#fbbf24',
+  info: 'var(--green, #4ade80)',
+  debug: 'var(--blue, #60a5fa)',
 };
+
+function formatTimestamp(ts: string): string {
+  // Normalize both ISO (2006-01-02T15:04:05Z) and xray (2006/01/02 15:04:05) formats
+  if (ts.length >= 19) {
+    return ts.slice(0, 19).replace('T', ' ');
+  }
+  return ts;
+}
+
+function downloadLogs(lines: LogLine[]) {
+  const text = lines
+    .map((l) => `${l.timestamp} [${l.level}] ${l.message}`)
+    .join('\n');
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `v2raye-logs-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 export default function LogsPage() {
   const [lines, setLines] = useState<LogLine[]>([]);
   const [filter, setFilter] = useState('');
   const [levelFilter, setLevelFilter] = useState('all');
+  const [sourceFilter, setSourceFilter] = useState('all'); // all | app | core
   const [autoScroll, setAutoScroll] = useState(true);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
@@ -73,10 +97,18 @@ export default function LogsPage() {
   }, [lines, autoScroll]);
 
   const filtered = lines.filter((l) => {
-    const matchLevel = levelFilter === 'all' || l.level === levelFilter;
+    const matchLevel = levelFilter === 'all' || l.level === levelFilter || (levelFilter === 'warning' && l.level === 'warn');
+    const isAppLog = l.message.startsWith('[app]');
+    const matchSource =
+      sourceFilter === 'all' ||
+      (sourceFilter === 'app' && isAppLog) ||
+      (sourceFilter === 'core' && !isAppLog);
     const matchText = !filter.trim() || l.message.toLowerCase().includes(filter.trim().toLowerCase());
-    return matchLevel && matchText;
+    return matchLevel && matchSource && matchText;
   });
+
+  const errorCount = lines.filter((l) => l.level === 'error').length;
+  const warnCount = lines.filter((l) => l.level === 'warning' || l.level === 'warn').length;
 
   const clearLines = () => setLines([]);
 
@@ -85,13 +117,17 @@ export default function LogsPage() {
       <div className="page-header">
         <div>
           <h2>日志</h2>
-          <p className="muted">实时显示 Xray 核心进程输出，最多保留 {MAX_LINES} 条记录。</p>
+          <p className="muted">
+            实时日志流（嵌入式 xray-core + 应用事件），最多保留 {MAX_LINES} 条。
+            {errorCount > 0 ? <span style={{ color: '#f87171', marginLeft: 8 }}>⚠ {errorCount} 个错误</span> : null}
+            {warnCount > 0 ? <span style={{ color: '#fbbf24', marginLeft: 8 }}>{warnCount} 个警告</span> : null}
+          </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span className={connected ? 'status-pill ok' : 'status-pill warn'}>
-            {connected ? '已连接' : '断开'}
+            {connected ? '实时' : '断开'}
           </span>
-          <span className="muted" style={{ fontSize: 13 }}>{filtered.length} 条</span>
+          <span className="muted" style={{ fontSize: 13 }}>{filtered.length} / {lines.length} 条</span>
         </div>
       </div>
 
@@ -100,11 +136,23 @@ export default function LogsPage() {
           placeholder="搜索日志内容..."
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
+          style={{ minWidth: 180 }}
         />
         <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)}>
-          {['all', 'debug', 'info', 'warning', 'error'].map((l) => (
-            <option key={l} value={l}>{l === 'all' ? '所有级别' : l}</option>
+          {[
+            { value: 'all', label: '所有级别' },
+            { value: 'error', label: '错误' },
+            { value: 'warning', label: '警告' },
+            { value: 'info', label: '信息' },
+            { value: 'debug', label: '调试' },
+          ].map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
+        </select>
+        <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+          <option value="all">全部来源</option>
+          <option value="core">xray-core</option>
+          <option value="app">应用事件</option>
         </select>
         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
           <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
@@ -112,6 +160,12 @@ export default function LogsPage() {
         </label>
         <button onClick={clearLines}>清空</button>
         <button onClick={() => { clearLines(); connect(); }}>重连</button>
+        <button
+          disabled={lines.length === 0}
+          onClick={() => downloadLogs(lines)}
+        >
+          下载日志
+        </button>
       </div>
 
       {error ? <p className="status-error">{error}</p> : null}
@@ -125,34 +179,41 @@ export default function LogsPage() {
           background: 'color-mix(in srgb, var(--panel) 60%, black)',
           borderRadius: 8,
           overflowY: 'auto',
-          maxHeight: 'calc(100vh - 280px)',
+          maxHeight: 'calc(100vh - 300px)',
           minHeight: 200,
         }}
       >
         {filtered.length === 0 && (
           <span style={{ color: 'var(--muted, #888)' }}>
-            {connected ? '等待日志输出...' : '连接中...'}
+            {connected ? (lines.length > 0 ? '无符合条件的日志' : '等待日志输出...') : '连接中...'}
           </span>
         )}
-        {filtered.map((line, idx) => (
-          <div key={idx} style={{ display: 'flex', gap: 12, marginBottom: 2 }}>
-            <span style={{ color: 'var(--muted, #888)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-              {line.timestamp}
-            </span>
-            <span
-              style={{
-                color: LEVEL_COLORS[line.level] ?? 'inherit',
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-                minWidth: 50,
-                fontWeight: 600,
-              }}
-            >
-              [{line.level}]
-            </span>
-            <span style={{ wordBreak: 'break-all' }}>{line.message}</span>
-          </div>
-        ))}
+        {filtered.map((line, idx) => {
+          const isApp = line.message.startsWith('[app]');
+          return (
+            <div key={idx} style={{ display: 'flex', gap: 12, marginBottom: 2 }}>
+              <span style={{ color: 'var(--muted, #888)', whiteSpace: 'nowrap', flexShrink: 0, fontSize: 12 }}>
+                {formatTimestamp(line.timestamp)}
+              </span>
+              <span
+                style={{
+                  color: LEVEL_COLORS[line.level] ?? 'inherit',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  minWidth: 60,
+                  fontWeight: 600,
+                  fontSize: 12,
+                }}
+              >
+                [{line.level}]
+              </span>
+              {isApp ? (
+                <span style={{ color: '#c084fc', flexShrink: 0, fontSize: 11, alignSelf: 'center' }}>app</span>
+              ) : null}
+              <span style={{ wordBreak: 'break-all' }}>{isApp ? line.message.slice(6) : line.message}</span>
+            </div>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
     </section>

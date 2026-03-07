@@ -12,6 +12,7 @@ BACKEND_DATA_DIR="${V2RAYN_DATA_DIR:-$RUN_DIR/data}"
 FRONTEND_PORT_BASE="${PORT:-3000}"
 FRONTEND_PORT_SCAN_RANGE=20
 BACKEND_PORT="${BACKEND_ADDR##*:}"
+DEFAULT_FRONTEND_PORT_BASE=3000
 
 can_use_passwordless_sudo() {
     [[ "$EUID" -eq 0 ]] && return 0
@@ -80,6 +81,14 @@ cleanup_tun_fallback() {
     run_ip_cmd route del default dev "$tun_name"
     run_ip_cmd link set dev "$tun_name" down
     run_ip_cmd link del dev "$tun_name"
+
+    # Extra safety for old/default interface names used in previous runs.
+    for candidate in xraye0 xray0; do
+        [[ "$candidate" == "$tun_name" ]] && continue
+        run_ip_cmd route del default dev "$candidate"
+        run_ip_cmd link set dev "$candidate" down
+        run_ip_cmd link del dev "$candidate"
+    done
 }
 
 post_backend_api() {
@@ -171,14 +180,29 @@ collect_pids_by_pattern() {
     local role="$1"
     if [[ "$role" == "backend" ]]; then
         ps -eo pid=,cmd= | awk -v root="$ROOT_DIR/backend-go" '
-            index($0, root) > 0 && ($0 ~ /(go run \.\/cmd\/server|\/cmd\/server|backend-go\/cmd\/server|\bserver\b)/) { print $1 }
+            (index($0, root) > 0 || $0 ~ /go run \.\/cmd\/server/ || $0 ~ /\/tmp\/go-build[^ ]*\/exe\/server/) &&
+            ($0 ~ /go run \.\/cmd\/server/ || $0 ~ /\/cmd\/server/ || $0 ~ /backend-go\/cmd\/server/ || $0 ~ /\/tmp\/go-build[^ ]*\/exe\/server/ || $0 ~ /(^|[[:space:]])server([[:space:]]|$)/) { print $1 }
         '
         return 0
     fi
 
     ps -eo pid=,cmd= | awk -v root="$ROOT_DIR/web" '
-        index($0, root) > 0 && ($0 ~ /(next dev|node .*next|v2rayn-web@0\.1\.0 dev|next\/dist\/telemetry\/detached-flush\.js)/) { print $1 }
+        index($0, root) > 0 && ($0 ~ /(next dev|node .*next|next-server|v2rayn-web@0\.1\.0 dev|next\/dist\/telemetry\/detached-flush\.js)/) { print $1 }
     '
+}
+
+collect_pids_with_fuser() {
+    local port="$1"
+    local raw
+    if [[ "$2" == "sudo" ]]; then
+        raw="$(sudo -n fuser -n tcp "$port" 2>/dev/null || true)"
+    else
+        raw="$(fuser -n tcp "$port" 2>/dev/null || true)"
+    fi
+
+    if [[ -n "$raw" ]]; then
+        printf '%s\n' "$raw" | tr ' ' '\n' | rg '^[0-9]+$' || true
+    fi
 }
 
 collect_pids_by_port() {
@@ -188,13 +212,11 @@ collect_pids_by_port() {
     fi
 
     if command -v fuser >/dev/null 2>&1; then
-        if fuser -n tcp "$port" 2>/dev/null; then
-            return 0
-        fi
+        collect_pids_with_fuser "$port" "" || true
         if can_use_passwordless_sudo; then
-            sudo -n fuser -n tcp "$port" 2>/dev/null || true
-            return 0
+            collect_pids_with_fuser "$port" "sudo" || true
         fi
+        return 0
     fi
 
     if command -v ss >/dev/null 2>&1; then
@@ -204,6 +226,24 @@ collect_pids_by_port() {
         fi
         ss -ltnp 2>/dev/null | rg ":${port}" | rg -o 'pid=[0-9]+' | sed 's/pid=//' || true
     fi
+}
+
+extra_port_cleanup() {
+    local -a ports=("$BACKEND_PORT")
+    local p
+    for p in $(seq "$DEFAULT_FRONTEND_PORT_BASE" $((DEFAULT_FRONTEND_PORT_BASE + FRONTEND_PORT_SCAN_RANGE))); do
+        ports+=("$p")
+    done
+
+    local port
+    for port in "${ports[@]}"; do
+        local -a pids=()
+        mapfile -t pids < <(collect_pids_by_port "$port" | rg '^[0-9]+$' | sort -u)
+        if [[ "${#pids[@]}" -eq 0 ]]; then
+            continue
+        fi
+        kill_pids_force "port:$port" "${pids[@]}" || true
+    done
 }
 
 kill_pids_force() {
@@ -301,6 +341,8 @@ fi
 if force_cleanup_role "backend"; then
     stop_ok=1
 fi
+
+extra_port_cleanup
 
 rm -f "$FRONTEND_PID_FILE" "$BACKEND_PID_FILE"
 cleanup_tun_fallback

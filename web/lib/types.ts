@@ -142,6 +142,22 @@ export type RoutingConfig = {
   rules?: RoutingRule[];
 };
 
+export type RoutingDiagnostics = {
+  mode: string;
+  domainStrategy: string;
+  tunMode: string;
+  tunEnabled: boolean;
+  hasGeoIP: boolean;
+  hasGeoSite: boolean;
+  geoDataAvailable: boolean;
+  currentProfileId?: string;
+  currentProfileName?: string;
+  ruleCount: number;
+  rules: Array<Record<string, unknown>>;
+  generatedAt: string;
+  warning?: string;
+};
+
 export type RoutingGeoDataUpdateResult = {
   updated: boolean;
   updatedAt: string;

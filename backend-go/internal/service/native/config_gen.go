@@ -140,16 +140,6 @@ func generateXrayConfig(
 	if dnsCfg := buildDNSConfig(cfg); dnsCfg != nil {
 		xrayCfg["dns"] = dnsCfg
 	}
-	if enableTun {
-		routingCfg := xrayCfg["routing"].(map[string]interface{})
-		rules, _ := routingCfg["rules"].([]interface{})
-		rules = append([]interface{}{map[string]interface{}{
-			"type":        "field",
-			"inboundTag":  []string{"tun"},
-			"outboundTag": "proxy",
-		}}, rules...)
-		routingCfg["rules"] = rules
-	}
 
 	return json.MarshalIndent(xrayCfg, "", "  ")
 }

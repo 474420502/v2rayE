@@ -190,6 +190,23 @@ type RoutingRule struct {
 	Outbound string   `json:"outbound"` // proxy|direct|block
 }
 
+// RoutingDiagnostics summarizes the runtime routing state and generated rules.
+type RoutingDiagnostics struct {
+	Mode               string                   `json:"mode"`
+	DomainStrategy     string                   `json:"domainStrategy"`
+	TunMode            string                   `json:"tunMode"`
+	TunEnabled         bool                     `json:"tunEnabled"`
+	HasGeoIP           bool                     `json:"hasGeoIP"`
+	HasGeoSite         bool                     `json:"hasGeoSite"`
+	GeoDataAvailable   bool                     `json:"geoDataAvailable"`
+	CurrentProfileID   string                   `json:"currentProfileId,omitempty"`
+	CurrentProfileName string                   `json:"currentProfileName,omitempty"`
+	RuleCount          int                      `json:"ruleCount"`
+	Rules              []map[string]interface{} `json:"rules"`
+	GeneratedAt        string                   `json:"generatedAt"`
+	Warning            string                   `json:"warning,omitempty"`
+}
+
 // StatsResult holds bandwidth statistics.
 type StatsResult struct {
 	UpBytes   int64 `json:"upBytes"`

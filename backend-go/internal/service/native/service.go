@@ -1,6 +1,7 @@
 package native
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -121,7 +122,7 @@ func (s *Service) StartCore() domain.CoreStatus {
 		return s.buildStatus()
 	}
 
-	xrayCore, err := startManagedXrayCore(data)
+	xrayCore, err := startManagedXrayCore(data, s.logs)
 	if err != nil {
 		s.setCoreError(err.Error())
 		log.Printf("[native] StartCore: xray-core start failed: %v", err)
@@ -166,6 +167,7 @@ func (s *Service) StartCore() domain.CoreStatus {
 	}
 
 	log.Printf("[native] core started in managed xray-core mode with config=%s", configPath)
+	s.logs.AppLog("info", fmt.Sprintf("core started (engine=%s, profile=%s)", resolved, profile.Name))
 	_ = s.saveState()
 	return s.buildStatus()
 }
@@ -193,7 +195,7 @@ func (s *Service) StopCore() domain.CoreStatus {
 	}
 	s.clearTunRouting()
 	s.clearSystemProxyOnCoreStop()
-	s.logs.clear()
+	s.logs.AppLog("info", "core stopped")
 	_ = s.saveState()
 	return s.CoreStatus()
 }
@@ -887,6 +889,60 @@ func (s *Service) UpdateRoutingConfig(rc domain.RoutingConfig) domain.RoutingCon
 	return rc
 }
 
+func (s *Service) GetRoutingDiagnostics() domain.RoutingDiagnostics {
+	cfg, _ := s.store.LoadConfig()
+	rc, _ := s.store.LoadRoutingConfig()
+	state, _ := s.store.LoadState()
+	profile := s.pickSelectedProfile(state.CurrentProfileID)
+
+	hasGeoIP := hasGeoIPAsset()
+	hasGeoSite := hasGeoSiteAsset()
+
+	diag := domain.RoutingDiagnostics{
+		Mode:             rc.Mode,
+		DomainStrategy:   routingDomainStrategy(rc),
+		TunMode:          tunModeFromConfig(cfg),
+		TunEnabled:       tunModeFromConfig(cfg) != "off",
+		HasGeoIP:         hasGeoIP,
+		HasGeoSite:       hasGeoSite,
+		GeoDataAvailable: hasGeoIP && hasGeoSite,
+		GeneratedAt:      time.Now().UTC().Format(time.RFC3339),
+		Rules:            make([]map[string]interface{}, 0),
+	}
+
+	if profile != nil {
+		diag.CurrentProfileID = profile.ID
+		diag.CurrentProfileName = profile.Name
+
+		raw, err := generateXrayConfig(*profile, cfg, rc)
+		if err == nil {
+			var parsed map[string]interface{}
+			if err = json.Unmarshal(raw, &parsed); err == nil {
+				if routingCfg, ok := parsed["routing"].(map[string]interface{}); ok {
+					diag.Rules = normalizeRoutingRuleMaps(routingCfg["rules"])
+				}
+			}
+		}
+		if err != nil {
+			diag.Warning = "failed to build runtime config for diagnostics: " + err.Error()
+		}
+	}
+
+	if len(diag.Rules) == 0 {
+		for _, r := range buildRoutingRules(rc, hasGeoIP, hasGeoSite) {
+			if m, ok := r.(map[string]interface{}); ok {
+				diag.Rules = append(diag.Rules, m)
+			}
+		}
+		if profile == nil {
+			diag.Warning = "no profile selected; diagnostics use routing template rules"
+		}
+	}
+
+	diag.RuleCount = len(diag.Rules)
+	return diag
+}
+
 func routingGeoDataRequirements(rc domain.RoutingConfig) (needGeoSite bool, needGeoIP bool) {
 	if rc.Mode == "bypass_cn" {
 		return true, true
@@ -900,6 +956,20 @@ func routingGeoDataRequirements(rc domain.RoutingConfig) (needGeoSite bool, need
 		}
 	}
 	return needGeoSite, needGeoIP
+}
+
+func normalizeRoutingRuleMaps(raw interface{}) []map[string]interface{} {
+	entries, ok := raw.([]interface{})
+	if !ok {
+		return nil
+	}
+	rules := make([]map[string]interface{}, 0, len(entries))
+	for _, entry := range entries {
+		if m, ok := entry.(map[string]interface{}); ok {
+			rules = append(rules, m)
+		}
+	}
+	return rules
 }
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
