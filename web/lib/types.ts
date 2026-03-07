@@ -147,6 +147,8 @@ export type RoutingDiagnostics = {
   domainStrategy: string;
   tunMode: string;
   tunEnabled: boolean;
+  tunTakeoverActive: boolean;
+  defaultRouteDevice?: string;
   hasGeoIP: boolean;
   hasGeoSite: boolean;
   geoDataAvailable: boolean;

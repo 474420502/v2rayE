@@ -150,19 +150,15 @@ func (s *Service) StartCore() domain.CoreStatus {
 
 	if tunModeFromConfig(cfg) != "off" && boolCfg(cfg, "tunAutoRoute", true) {
 		if err := s.setupTunRouting(cfg); err != nil {
-			log.Printf("[native] StartCore: TUN route setup failed: %v", err)
-			s.mu.Unlock()
-			xrayCore.Close()
-			s.mu.Lock()
-			s.proc = nil
-			s.xrayCore = nil
-			s.running = false
-			s.trackedPID = 0
-			if s.stats != nil {
-				s.stats.shutdown()
-				s.stats = nil
+			log.Printf("[native] StartCore: TUN route setup failed (first attempt): %v", err)
+			_ = s.cleanupStaleTunInterface(cfg)
+			if retryErr := s.setupTunRouting(cfg); retryErr != nil {
+				log.Printf("[native] StartCore: TUN route setup failed (retry): %v", retryErr)
+				s.setCoreError(fmt.Sprintf("TUN 接管失败，核心已降级为仅本地代理可用: %s", retryErr.Error()))
+				s.logs.AppLog("warning", fmt.Sprintf("tun route takeover failed; core kept running: %v", retryErr))
+			} else {
+				s.logs.AppLog("info", "tun route takeover recovered after stale cleanup retry")
 			}
-			return s.buildStatus()
 		}
 	}
 
@@ -919,6 +915,11 @@ func (s *Service) GetRoutingDiagnostics() domain.RoutingDiagnostics {
 		GeneratedAt:      time.Now().UTC().Format(time.RFC3339),
 		Rules:            make([]map[string]interface{}, 0),
 	}
+	if dev, err := getDefaultRouteDevice(); err == nil {
+		diag.DefaultRouteDevice = dev
+		tunName := strCfg(cfg, "tunName", "xraye0")
+		diag.TunTakeoverActive = diag.TunEnabled && dev == tunName
+	}
 
 	if profile != nil {
 		diag.CurrentProfileID = profile.ID
@@ -1269,6 +1270,22 @@ func getDefaultRouteLines() ([]string, error) {
 	return res, nil
 }
 
+func getDefaultRouteDevice() (string, error) {
+	lines, err := getDefaultRouteLines()
+	if err != nil {
+		return "", err
+	}
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		for i := 0; i < len(fields)-1; i++ {
+			if fields[i] == "dev" {
+				return fields[i+1], nil
+			}
+		}
+	}
+	return "", fmt.Errorf("default route device not found")
+}
+
 func (s *Service) setupTunRouting(cfg map[string]interface{}) error {
 	if runtime.GOOS != "linux" {
 		return fmt.Errorf("TUN auto route is only implemented on Linux")
@@ -1311,20 +1328,25 @@ func (s *Service) clearTunRouting() {
 		routes = s.buildTunRestoreFallbackRoutes(cfg, tunName)
 	}
 	if len(routes) == 0 {
-		return
-	}
-	for _, route := range routes {
-		fields := strings.Fields(route)
-		if len(fields) == 0 {
-			continue
-		}
-		args := append([]string{"route", "replace"}, fields...)
-		if out, err := exec.Command("ip", args...).CombinedOutput(); err != nil { //nolint:gosec
-			log.Printf("[native] restore default route failed: %v (%s)", err, strings.TrimSpace(string(out)))
+		log.Printf("[native] clearTunRouting: no restore routes found; proceeding with best-effort stale route/device cleanup")
+	} else {
+		for _, route := range routes {
+			fields := strings.Fields(route)
+			if len(fields) == 0 {
+				continue
+			}
+			args := append([]string{"route", "replace"}, fields...)
+			if out, err := exec.Command("ip", args...).CombinedOutput(); err != nil { //nolint:gosec
+				log.Printf("[native] restore default route failed: %v (%s)", err, strings.TrimSpace(string(out)))
+			}
 		}
 	}
 	// Remove stale tun default route if it still exists after restore attempts.
 	if out, err := exec.Command("ip", "route", "del", "default", "dev", tunName).CombinedOutput(); err == nil {
+		_ = out
+	}
+	// Best-effort remove stale tun interface to avoid next-start busy error.
+	if out, err := exec.Command("ip", "link", "del", "dev", tunName).CombinedOutput(); err == nil {
 		_ = out
 	}
 	s.tunRestoreRoutes = nil

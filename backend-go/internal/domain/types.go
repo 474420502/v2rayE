@@ -196,6 +196,8 @@ type RoutingDiagnostics struct {
 	DomainStrategy     string                   `json:"domainStrategy"`
 	TunMode            string                   `json:"tunMode"`
 	TunEnabled         bool                     `json:"tunEnabled"`
+	TunTakeoverActive  bool                     `json:"tunTakeoverActive"`
+	DefaultRouteDevice string                   `json:"defaultRouteDevice,omitempty"`
 	HasGeoIP           bool                     `json:"hasGeoIP"`
 	HasGeoSite         bool                     `json:"hasGeoSite"`
 	GeoDataAvailable   bool                     `json:"geoDataAvailable"`

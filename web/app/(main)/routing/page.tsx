@@ -281,7 +281,9 @@ export default function RoutingPage() {
               <article className="stat-card accent-green">
                 <span className="stat-label">TUN</span>
                 <strong>{diagnostics.tunEnabled ? 'on' : 'off'}</strong>
-                <span>mode={diagnostics.tunMode}</span>
+                <span>
+                  mode={diagnostics.tunMode}, takeover={diagnostics.tunTakeoverActive ? 'active' : 'inactive'}
+                </span>
               </article>
               <article className="stat-card accent-amber">
                 <span className="stat-label">GeoData</span>
@@ -299,6 +301,7 @@ export default function RoutingPage() {
             ) : null}
             <p className="muted" style={{ marginTop: 8 }}>
               生成时间: {diagnostics.generatedAt}
+              {diagnostics.defaultRouteDevice ? `，default route dev=${diagnostics.defaultRouteDevice}` : ''}
             </p>
             <div className="table-wrap" style={{ marginTop: 10 }}>
               <table>
