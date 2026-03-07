@@ -103,6 +103,11 @@ func (s *Service) StartCore() domain.CoreStatus {
 	}
 
 	if tunModeFromConfig(cfg) != "off" {
+		if err := s.cleanupStaleTunInterface(cfg); err != nil {
+			s.setCoreError(err.Error())
+			log.Printf("[native] StartCore: stale TUN cleanup failed: %v", err)
+			return s.buildStatus()
+		}
 		iface, err := detectDefaultRouteInterface()
 		if err != nil {
 			log.Printf("[native] StartCore: detect default interface failed: %v", err)
@@ -124,7 +129,7 @@ func (s *Service) StartCore() domain.CoreStatus {
 
 	xrayCore, err := startManagedXrayCore(data, s.logs)
 	if err != nil {
-		s.setCoreError(err.Error())
+		s.setCoreError(annotateTunStartError(err, cfg))
 		log.Printf("[native] StartCore: xray-core start failed: %v", err)
 		return s.buildStatus()
 	}
@@ -194,6 +199,11 @@ func (s *Service) StopCore() domain.CoreStatus {
 		_ = xrayCore.Close()
 	}
 	s.clearTunRouting()
+	if cfg, _ := s.store.LoadConfig(); tunModeFromConfig(cfg) != "off" {
+		if err := s.cleanupStaleTunInterface(cfg); err != nil {
+			log.Printf("[native] StopCore: stale TUN cleanup failed: %v", err)
+		}
+	}
 	s.clearSystemProxyOnCoreStop()
 	s.logs.AppLog("info", "core stopped")
 	_ = s.saveState()
@@ -984,6 +994,20 @@ func (s *Service) GetStats() domain.StatsResult {
 	return st.get()
 }
 
+func (s *Service) GetRoutingHitStats() domain.RoutingHitStats {
+	s.mu.Lock()
+	st := s.stats
+	s.mu.Unlock()
+	if st == nil {
+		return domain.RoutingHitStats{
+			UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+			Items:     []domain.RoutingOutboundHit{},
+			Note:      "核心未运行或统计未初始化。",
+		}
+	}
+	return st.getRoutingHitStats()
+}
+
 // ─── Logs ─────────────────────────────────────────────────────────────────────
 
 func (s *Service) SubscribeCoreLogs() (<-chan domain.LogLine, func()) {
@@ -1442,4 +1466,46 @@ func processExists(pid int) bool {
 		return false
 	}
 	return proc.Signal(syscall.Signal(0)) == nil
+}
+
+func annotateTunStartError(err error, cfg map[string]interface{}) string {
+	if err == nil {
+		return ""
+	}
+	msg := strings.TrimSpace(err.Error())
+	if tunModeFromConfig(cfg) == "off" {
+		return msg
+	}
+	lower := strings.ToLower(msg)
+	if strings.Contains(lower, "device or resource busy") {
+		tunName := strCfg(cfg, "tunName", "xraye0")
+		return fmt.Sprintf("TUN 启动失败: 设备 %s 被占用（device or resource busy）。已尝试自动清理残留设备；如仍失败请执行: sudo ip link del %s", tunName, tunName)
+	}
+	return msg
+}
+
+func (s *Service) cleanupStaleTunInterface(cfg map[string]interface{}) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	if !hasCommand("ip") {
+		return nil
+	}
+	tunName := strCfg(cfg, "tunName", "xraye0")
+	tunName = strings.TrimSpace(tunName)
+	if tunName == "" {
+		return nil
+	}
+
+	if out, err := exec.Command("ip", "link", "show", "dev", tunName).CombinedOutput(); err != nil { //nolint:gosec
+		_ = out
+		// Device not found is expected and means no stale interface.
+		return nil
+	}
+
+	if out, err := exec.Command("ip", "link", "del", "dev", tunName).CombinedOutput(); err != nil { //nolint:gosec
+		return fmt.Errorf("remove stale tun interface %s failed: %w (%s)", tunName, err, strings.TrimSpace(string(out)))
+	}
+	log.Printf("[native] removed stale tun interface: %s", tunName)
+	return nil
 }

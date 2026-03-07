@@ -207,6 +207,22 @@ type RoutingDiagnostics struct {
 	Warning            string                   `json:"warning,omitempty"`
 }
 
+// RoutingOutboundHit is traffic hit statistics for a specific outbound tag.
+type RoutingOutboundHit struct {
+	Outbound string `json:"outbound"`
+	UpBytes  int64  `json:"upBytes"`
+	DownBytes int64 `json:"downBytes"`
+	UpSpeed  int64  `json:"upSpeed"`
+	DownSpeed int64 `json:"downSpeed"`
+}
+
+// RoutingHitStats summarizes runtime hit statistics by outbound tag.
+type RoutingHitStats struct {
+	UpdatedAt string               `json:"updatedAt"`
+	Items     []RoutingOutboundHit `json:"items"`
+	Note      string               `json:"note,omitempty"`
+}
+
 // StatsResult holds bandwidth statistics.
 type StatsResult struct {
 	UpBytes   int64 `json:"upBytes"`

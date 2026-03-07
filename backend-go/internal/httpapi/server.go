@@ -70,6 +70,7 @@ func New(addr, token string, svc service.BackendService) *Server {
 	mux.HandleFunc("/api/config", s.auth(s.handleConfig))
 	mux.HandleFunc("/api/routing/geodata/update", s.auth(s.handleRoutingGeoDataUpdate))
 	mux.HandleFunc("/api/routing/diagnostics", s.auth(s.handleRoutingDiagnostics))
+	mux.HandleFunc("/api/routing/hits", s.auth(s.handleRoutingHitStats))
 	mux.HandleFunc("/api/routing", s.auth(s.handleRouting))
 
 	// Stats & logs
@@ -632,6 +633,14 @@ func (s *Server) handleRoutingDiagnostics(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeOK(w, s.svc.GetRoutingDiagnostics())
+}
+
+func (s *Server) handleRoutingHitStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, 40501, "method not allowed", nil)
+		return
+	}
+	writeOK(w, s.svc.GetRoutingHitStats())
 }
 
 // ─── Stats & log handlers ─────────────────────────────────────────────────────

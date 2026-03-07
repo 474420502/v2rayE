@@ -8,6 +8,7 @@ import type {
   ProfileItem,
   RoutingConfig,
   RoutingDiagnostics,
+  RoutingHitStats,
   RoutingGeoDataUpdateResult,
   StatsResult,
   SubscriptionItem,
@@ -178,6 +179,7 @@ export const api = {
   // ── Routing ────────────────────────────────────────────────────────────────
   getRouting: () => request<RoutingConfig>('/routing'),
   getRoutingDiagnostics: () => request<RoutingDiagnostics>('/routing/diagnostics'),
+  getRoutingHitStats: () => request<RoutingHitStats>('/routing/hits'),
   updateRouting: (rc: RoutingConfig) =>
     request<RoutingConfig>('/routing', { method: 'PUT', body: JSON.stringify(rc) }),
   updateRoutingGeoData: () =>

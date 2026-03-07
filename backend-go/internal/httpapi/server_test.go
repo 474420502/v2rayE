@@ -169,6 +169,30 @@ func TestRoutingDiagnosticsEndpoint(t *testing.T) {
 	}
 }
 
+func TestRoutingHitsEndpoint(t *testing.T) {
+	t.Parallel()
+
+	ts := newNativeTestServer(t)
+	defer ts.Close()
+
+	resp := doRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/routing/hits", "")
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/routing/hits expected 200, got %d", resp.StatusCode)
+	}
+
+	var env envelope
+	decodeJSON(t, resp.Body, &env)
+	if env.Code != 0 {
+		t.Fatalf("GET /api/routing/hits expected code=0, got %d", env.Code)
+	}
+
+	if _, ok := env.Data["items"]; !ok {
+		t.Fatalf("missing items in routing hits response")
+	}
+}
+
 func newNativeTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api/client';
-import type { RoutingConfig, RoutingDiagnostics, RoutingRule } from '@/lib/types';
+import type { RoutingConfig, RoutingDiagnostics, RoutingHitStats, RoutingRule } from '@/lib/types';
 
 const MODES = [
   { value: 'global', label: '全局', desc: '所有流量走代理' },
@@ -59,6 +59,7 @@ function blankRule(): Omit<RoutingRule, 'id'> {
 export default function RoutingPage() {
   const [config, setConfig] = useState<RoutingConfig | null>(null);
   const [diagnostics, setDiagnostics] = useState<RoutingDiagnostics | null>(null);
+  const [hitStats, setHitStats] = useState<RoutingHitStats | null>(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -72,12 +73,14 @@ export default function RoutingPage() {
 
   const load = useCallback(async () => {
     try {
-      const [rc, diag] = await Promise.all([
+      const [rc, diag, hits] = await Promise.all([
         api.getRouting(),
         api.getRoutingDiagnostics(),
+        api.getRoutingHitStats(),
       ]);
       setConfig(rc);
       setDiagnostics(diag);
+      setHitStats(hits);
       setError('');
     } catch (e) {
       setError(e instanceof Error ? e.message : '加载路由配置失败');
@@ -329,6 +332,50 @@ export default function RoutingPage() {
                       </tr>
                     );
                   })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </section>
+
+      <section className="panel" style={{ marginBottom: 16 }}>
+        <h3>命中统计（按出站）</h3>
+        {!hitStats ? (
+          <p className="muted" style={{ marginTop: 12 }}>暂无统计数据</p>
+        ) : (
+          <>
+            <p className="muted" style={{ marginTop: 8 }}>
+              更新时间: {hitStats.updatedAt || '-'}
+            </p>
+            {hitStats.note ? (
+              <p className="muted" style={{ marginTop: 4 }}>{hitStats.note}</p>
+            ) : null}
+            <div className="table-wrap" style={{ marginTop: 10 }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>出站</th>
+                    <th>上传速度</th>
+                    <th>下载速度</th>
+                    <th>累计上传</th>
+                    <th>累计下载</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hitStats.items.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="muted">暂无命中</td>
+                    </tr>
+                  ) : hitStats.items.map((item) => (
+                    <tr key={item.outbound}>
+                      <td>{item.outbound}</td>
+                      <td>{item.upSpeed} B/s</td>
+                      <td>{item.downSpeed} B/s</td>
+                      <td>{item.upBytes} B</td>
+                      <td>{item.downBytes} B</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

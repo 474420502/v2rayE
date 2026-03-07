@@ -158,6 +158,20 @@ export type RoutingDiagnostics = {
   warning?: string;
 };
 
+export type RoutingOutboundHit = {
+  outbound: string;
+  upBytes: number;
+  downBytes: number;
+  upSpeed: number;
+  downSpeed: number;
+};
+
+export type RoutingHitStats = {
+  updatedAt: string;
+  items: RoutingOutboundHit[];
+  note?: string;
+};
+
 export type RoutingGeoDataUpdateResult = {
   updated: boolean;
   updatedAt: string;

@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -18,9 +19,9 @@ import (
 type statsTracker struct {
 	mu        sync.RWMutex
 	current   domain.StatsResult
-	prevUp    int64
-	prevDown  int64
+	outbound  map[string]domain.RoutingOutboundHit
 	prevTime  time.Time
+	updatedAt time.Time
 	statsPort int
 	stop      chan struct{}
 }
@@ -29,6 +30,7 @@ func newStatsTracker(statsPort int) *statsTracker {
 	return &statsTracker{
 		statsPort: statsPort,
 		prevTime:  time.Now(),
+		outbound:  make(map[string]domain.RoutingOutboundHit),
 	}
 }
 
@@ -59,7 +61,7 @@ func (t *statsTracker) loop() {
 }
 
 func (t *statsTracker) poll() {
-	up, down := t.queryXrayStats()
+	deltas := t.queryXrayOutboundDeltas()
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -69,24 +71,38 @@ func (t *statsTracker) poll() {
 	if dt < 0.1 {
 		dt = 1
 	}
-	upSpeed := int64(float64(up-t.prevUp) / dt)
-	downSpeed := int64(float64(down-t.prevDown) / dt)
-	if upSpeed < 0 {
-		upSpeed = 0
-	}
-	if downSpeed < 0 {
-		downSpeed = 0
+	for key, item := range t.outbound {
+		item.UpSpeed = 0
+		item.DownSpeed = 0
+		t.outbound[key] = item
 	}
 
-	t.current = domain.StatsResult{
-		UpBytes:   up,
-		DownBytes: down,
-		UpSpeed:   upSpeed,
-		DownSpeed: downSpeed,
+	for outbound, delta := range deltas {
+		item := t.outbound[outbound]
+		item.Outbound = outbound
+		item.UpBytes += delta.up
+		item.DownBytes += delta.down
+		item.UpSpeed = int64(float64(delta.up) / dt)
+		item.DownSpeed = int64(float64(delta.down) / dt)
+		if item.UpSpeed < 0 {
+			item.UpSpeed = 0
+		}
+		if item.DownSpeed < 0 {
+			item.DownSpeed = 0
+		}
+		t.outbound[outbound] = item
 	}
-	t.prevUp = up
-	t.prevDown = down
+
+	proxy := t.outbound["proxy"]
+
+	t.current = domain.StatsResult{
+		UpBytes:   proxy.UpBytes,
+		DownBytes: proxy.DownBytes,
+		UpSpeed:   proxy.UpSpeed,
+		DownSpeed: proxy.DownSpeed,
+	}
 	t.prevTime = now
+	t.updatedAt = now
 }
 
 // get returns the latest stats snapshot.
@@ -96,51 +112,86 @@ func (t *statsTracker) get() domain.StatsResult {
 	return t.current
 }
 
+func (t *statsTracker) getRoutingHitStats() domain.RoutingHitStats {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	items := make([]domain.RoutingOutboundHit, 0, len(t.outbound))
+	for _, item := range t.outbound {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Outbound < items[j].Outbound
+	})
+	updatedAt := ""
+	if !t.updatedAt.IsZero() {
+		updatedAt = t.updatedAt.UTC().Format(time.RFC3339)
+	}
+	return domain.RoutingHitStats{
+		UpdatedAt: updatedAt,
+		Items:     items,
+		Note:      "统计维度为 outbound 命中（proxy/direct/block 等），不是单条规则逐条命中计数。",
+	}
+}
+
 // reset zeroes accumulated counters (called when core restarts).
 func (t *statsTracker) reset() {
 	t.mu.Lock()
 	t.current = domain.StatsResult{}
-	t.prevUp = 0
-	t.prevDown = 0
+	t.outbound = make(map[string]domain.RoutingOutboundHit)
 	t.prevTime = time.Now()
+	t.updatedAt = time.Time{}
 	t.mu.Unlock()
 }
 
-// queryXrayStats calls the in-process xray-core gRPC API and returns cumulative
-// up/down bytes for outbound[proxy]. Returns 0,0 on any error.
-func (t *statsTracker) queryXrayStats() (up, down int64) {
+type trafficDelta struct {
+	up   int64
+	down int64
+}
+
+// queryXrayOutboundDeltas calls xray-core stats API and returns per-outbound
+// byte deltas since last poll.
+func (t *statsTracker) queryXrayOutboundDeltas() map[string]trafficDelta {
 	server := fmt.Sprintf("127.0.0.1:%d", t.statsPort)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	conn, err := grpc.DialContext(ctx, server, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
-		return 0, 0
+		return map[string]trafficDelta{}
 	}
 	defer conn.Close()
 
 	client := statsService.NewStatsServiceClient(conn)
 	resp, err := client.QueryStats(ctx, &statsService.QueryStatsRequest{
-		Pattern: "outbound>>>proxy>>>traffic",
+		Pattern: "outbound>>>",
 		Reset_:  true,
 	})
 	if err != nil {
-		return 0, 0
+		return map[string]trafficDelta{}
 	}
-	return parseStatsResponse(resp)
+	return parseOutboundDeltas(resp)
 }
 
-func parseStatsResponse(resp *statsService.QueryStatsResponse) (up, down int64) {
+func parseOutboundDeltas(resp *statsService.QueryStatsResponse) map[string]trafficDelta {
+	out := make(map[string]trafficDelta)
 	if resp == nil {
-		return 0, 0
+		return out
 	}
 	for _, s := range resp.Stat {
-		n := s.GetValue()
-		if strings.HasSuffix(s.Name, "uplink") {
-			up += n
-		} else if strings.HasSuffix(s.Name, "downlink") {
-			down += n
+		parts := strings.Split(s.Name, ">>>")
+		if len(parts) < 4 || parts[0] != "outbound" {
+			continue
 		}
+		outbound := parts[1]
+		dir := parts[len(parts)-1]
+		delta := out[outbound]
+		if dir == "uplink" {
+			delta.up += s.GetValue()
+		} else if dir == "downlink" {
+			delta.down += s.GetValue()
+		}
+		out[outbound] = delta
 	}
-	return
+	return out
 }
