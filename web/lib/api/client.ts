@@ -12,7 +12,8 @@ import type {
   RoutingGeoDataUpdateResult,
   StatsResult,
   SubscriptionItem,
-  SubscriptionUpsertInput
+  SubscriptionUpsertInput,
+  TunRepairResult
 } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '/api';
@@ -180,6 +181,7 @@ export const api = {
   getRouting: () => request<RoutingConfig>('/routing'),
   getRoutingDiagnostics: () => request<RoutingDiagnostics>('/routing/diagnostics'),
   getRoutingHitStats: () => request<RoutingHitStats>('/routing/hits'),
+  repairTunAndRestart: () => request<TunRepairResult>('/routing/tun/repair', { method: 'POST', body: '{}' }),
   updateRouting: (rc: RoutingConfig) =>
     request<RoutingConfig>('/routing', { method: 'PUT', body: JSON.stringify(rc) }),
   updateRoutingGeoData: () =>

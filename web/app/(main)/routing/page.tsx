@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api/client';
-import type { RoutingConfig, RoutingDiagnostics, RoutingHitStats, RoutingRule } from '@/lib/types';
+import type { RoutingConfig, RoutingDiagnostics, RoutingHitStats, RoutingRule, TunRepairResult } from '@/lib/types';
 
 const MODES = [
   { value: 'global', label: '全局', desc: '所有流量走代理' },
@@ -60,6 +60,8 @@ export default function RoutingPage() {
   const [config, setConfig] = useState<RoutingConfig | null>(null);
   const [diagnostics, setDiagnostics] = useState<RoutingDiagnostics | null>(null);
   const [hitStats, setHitStats] = useState<RoutingHitStats | null>(null);
+  const [repairingTun, setRepairingTun] = useState(false);
+  const [repairResult, setRepairResult] = useState<TunRepairResult | null>(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -148,6 +150,20 @@ export default function RoutingPage() {
       setError(e instanceof Error ? e.message : '更新 geodata 失败');
     } finally {
       setGeoUpdating(false);
+    }
+  };
+
+  const runTunRepair = async () => {
+    setRepairingTun(true);
+    try {
+      const result = await api.repairTunAndRestart();
+      setRepairResult(result);
+      await load();
+      setError('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '执行自动修复失败');
+    } finally {
+      setRepairingTun(false);
     }
   };
 
@@ -266,7 +282,16 @@ export default function RoutingPage() {
       <section className="panel" style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <h3 style={{ margin: 0 }}>运行时路由诊断</h3>
-          <button onClick={() => void load()}>刷新诊断</button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button onClick={() => void load()}>刷新诊断</button>
+            <button
+              className="primary"
+              onClick={() => void runTunRepair()}
+              disabled={repairingTun}
+            >
+              {repairingTun ? '自动修复中...' : '一键自动修复 TUN'}
+            </button>
+          </div>
         </div>
         {!diagnostics ? (
           <p className="muted" style={{ marginTop: 12 }}>暂无诊断数据</p>
@@ -303,6 +328,18 @@ export default function RoutingPage() {
               生成时间: {diagnostics.generatedAt}
               {diagnostics.defaultRouteDevice ? `，default route dev=${diagnostics.defaultRouteDevice}` : ''}
             </p>
+            {repairResult ? (
+              <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, border: '1px solid color-mix(in srgb, var(--text) 18%, transparent)' }}>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>最近自动修复结果</div>
+                <div className="muted" style={{ fontSize: 13 }}>
+                  时间: {repairResult.triggeredAt}；核心运行: {repairResult.running ? 'yes' : 'no'}；
+                  TUN接管: {repairResult.tunTakeoverActive ? 'active' : 'inactive'}
+                  {repairResult.defaultRouteDevice ? `；default dev=${repairResult.defaultRouteDevice}` : ''}
+                </div>
+                {repairResult.message ? <div style={{ marginTop: 6 }}>{repairResult.message}</div> : null}
+                {repairResult.error ? <div className="status-error" style={{ marginTop: 6 }}>{repairResult.error}</div> : null}
+              </div>
+            ) : null}
             <div className="table-wrap" style={{ marginTop: 10 }}>
               <table>
                 <thead>

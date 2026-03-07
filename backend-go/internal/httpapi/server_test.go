@@ -193,6 +193,30 @@ func TestRoutingHitsEndpoint(t *testing.T) {
 	}
 }
 
+func TestRoutingTunRepairEndpoint(t *testing.T) {
+	t.Parallel()
+
+	ts := newNativeTestServer(t)
+	defer ts.Close()
+
+	resp := doRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/routing/tun/repair", "{}")
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /api/routing/tun/repair expected 200, got %d", resp.StatusCode)
+	}
+
+	var env envelope
+	decodeJSON(t, resp.Body, &env)
+	if env.Code != 0 {
+		t.Fatalf("POST /api/routing/tun/repair expected code=0, got %d", env.Code)
+	}
+
+	if _, ok := env.Data["triggeredAt"]; !ok {
+		t.Fatalf("missing triggeredAt in tun repair response")
+	}
+}
+
 func newNativeTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 

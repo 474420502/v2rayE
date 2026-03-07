@@ -225,6 +225,19 @@ type RoutingHitStats struct {
 	Note      string               `json:"note,omitempty"`
 }
 
+// TunRepairResult is the result of one-click TUN repair workflow.
+type TunRepairResult struct {
+	TriggeredAt        string `json:"triggeredAt"`
+	WasRunning         bool   `json:"wasRunning"`
+	Started            bool   `json:"started"`
+	Running            bool   `json:"running"`
+	TunEnabled         bool   `json:"tunEnabled"`
+	TunTakeoverActive  bool   `json:"tunTakeoverActive"`
+	DefaultRouteDevice string `json:"defaultRouteDevice,omitempty"`
+	Message            string `json:"message,omitempty"`
+	Error              string `json:"error,omitempty"`
+}
+
 // StatsResult holds bandwidth statistics.
 type StatsResult struct {
 	UpBytes   int64 `json:"upBytes"`

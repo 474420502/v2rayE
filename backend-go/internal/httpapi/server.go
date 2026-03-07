@@ -71,6 +71,7 @@ func New(addr, token string, svc service.BackendService) *Server {
 	mux.HandleFunc("/api/routing/geodata/update", s.auth(s.handleRoutingGeoDataUpdate))
 	mux.HandleFunc("/api/routing/diagnostics", s.auth(s.handleRoutingDiagnostics))
 	mux.HandleFunc("/api/routing/hits", s.auth(s.handleRoutingHitStats))
+	mux.HandleFunc("/api/routing/tun/repair", s.auth(s.handleRoutingTunRepair))
 	mux.HandleFunc("/api/routing", s.auth(s.handleRouting))
 
 	// Stats & logs
@@ -641,6 +642,16 @@ func (s *Server) handleRoutingHitStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeOK(w, s.svc.GetRoutingHitStats())
+}
+
+func (s *Server) handleRoutingTunRepair(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, 40501, "method not allowed", nil)
+		return
+	}
+	result := s.svc.RepairTunAndRestart()
+	writeOK(w, result)
+	s.publishEvent("routing.tun_repaired", result)
 }
 
 // ─── Stats & log handlers ─────────────────────────────────────────────────────

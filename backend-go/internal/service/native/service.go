@@ -1009,6 +1009,65 @@ func (s *Service) GetRoutingHitStats() domain.RoutingHitStats {
 	return st.getRoutingHitStats()
 }
 
+func (s *Service) RepairTunAndRestart() domain.TunRepairResult {
+	result := domain.TunRepairResult{
+		TriggeredAt: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	cfg, _ := s.store.LoadConfig()
+	tunMode := tunModeFromConfig(cfg)
+	result.TunEnabled = tunMode != "off"
+	if !result.TunEnabled {
+		result.Message = "TUN 未启用，已跳过自动修复"
+		st := s.CoreStatus()
+		result.Running = st.Running
+		return result
+	}
+
+	result.WasRunning = s.CoreStatus().Running
+
+	// Ensure stale routes/devices are cleaned before relaunch.
+	s.clearTunRouting()
+	if err := s.cleanupStaleTunInterface(cfg); err != nil {
+		result.Error = err.Error()
+		result.Message = "TUN 残留清理失败"
+		return result
+	}
+
+	if result.WasRunning {
+		st := s.RestartCore()
+		result.Running = st.Running
+		result.Started = st.Running
+		if !st.Running {
+			result.Error = st.Error
+		}
+	} else {
+		st := s.StartCore()
+		result.Running = st.Running
+		result.Started = st.Running
+		if !st.Running {
+			result.Error = st.Error
+		}
+	}
+
+	if dev, err := getDefaultRouteDevice(); err == nil {
+		result.DefaultRouteDevice = dev
+		tunName := strCfg(cfg, "tunName", "xraye0")
+		result.TunTakeoverActive = result.TunEnabled && dev == tunName
+	}
+
+	if result.Error != "" {
+		result.Message = "自动修复执行完成，但核心或 TUN 仍异常"
+		return result
+	}
+	if result.TunTakeoverActive {
+		result.Message = "自动修复完成，TUN 已接管默认路由"
+	} else {
+		result.Message = "自动修复完成，核心已运行，但 TUN 尚未接管默认路由"
+	}
+	return result
+}
+
 // ─── Logs ─────────────────────────────────────────────────────────────────────
 
 func (s *Service) SubscribeCoreLogs() (<-chan domain.LogLine, func()) {

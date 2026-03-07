@@ -174,6 +174,18 @@ export type RoutingHitStats = {
   note?: string;
 };
 
+export type TunRepairResult = {
+  triggeredAt: string;
+  wasRunning: boolean;
+  started: boolean;
+  running: boolean;
+  tunEnabled: boolean;
+  tunTakeoverActive: boolean;
+  defaultRouteDevice?: string;
+  message?: string;
+  error?: string;
+};
+
 export type RoutingGeoDataUpdateResult = {
   updated: boolean;
   updatedAt: string;
