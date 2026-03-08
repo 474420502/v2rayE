@@ -1,4 +1,4 @@
-package main
+package tui
 
 func (a *tuiApp) storeNetwork(routing RoutingConfig, diagnostics RoutingDiagnostics, hits RoutingHitStats) {
 	a.mu.Lock()

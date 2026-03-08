@@ -1,26 +1,15 @@
-package main
+package tui
 
 import (
 	"context"
-	"flag"
 	"fmt"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
 
 	"github.com/gcla/gowid"
 )
 
-func main() {
-	baseURL := flag.String("base-url", envOrDefault("V2RAYN_TUI_BASE_URL", "http://127.0.0.1:18000"), "backend API base URL")
-	token := flag.String("token", envOrDefault("V2RAYN_TUI_TOKEN", ""), "bearer token for API access")
-	flag.Parse()
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
-	client := newAPIClient(*baseURL, *token)
+// Run starts the terminal UI and blocks until the UI exits or ctx is cancelled.
+func Run(ctx context.Context, baseURL, token string) error {
+	client := newAPIClient(baseURL, token)
 	tui := newTUI(ctx, client)
 
 	palette := gowid.Palette{
@@ -39,20 +28,12 @@ func main() {
 		Palette: &palette,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to start tui: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to start tui: %w", err)
 	}
 
 	tui.attachApp(app)
 	tui.startBackgroundWork()
 	app.MainLoop(gowid.UnhandledInputFunc(tui.handler))
 	tui.cancel()
-}
-
-func envOrDefault(key, fallback string) string {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	return value
+	return nil
 }

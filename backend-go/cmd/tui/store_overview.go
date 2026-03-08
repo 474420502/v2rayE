@@ -1,4 +1,4 @@
-package main
+package tui
 
 func (a *tuiApp) storeOverview(status CoreStatus, config map[string]any, stats StatsResult, availability AvailabilityResult) {
 	a.mu.Lock()

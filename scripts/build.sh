@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 构建脚本 - 默认构建 backend 与 TUI
+# 构建脚本 - 构建统一可执行文件
 
 set -e
 
@@ -8,16 +8,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "=== 开始构建 v2rayE ==="
 
-echo ">>> 构建 backend-go..."
+echo ">>> 构建统一入口..."
 cd "$ROOT_DIR/backend-go"
-go build -o backend-api ./cmd/backend-api
-echo ">>> backend-go 构建完成"
-
-echo ">>> 构建 TUI..."
-cd "$ROOT_DIR/backend-go/cmd/tui"
-go build -o "$ROOT_DIR/v2raye-tui" .
-echo ">>> TUI 构建完成"
+go build -o "$ROOT_DIR/v2raye" ./cmd/v2raye
+echo ">>> 统一入口构建完成"
 
 echo "=== 构建完成 ==="
-echo "  - backend api: ./backend-go/backend-api"
-echo "  - tui: ./v2raye-tui"
+echo "  - executable: ./v2raye"
+echo "  - server mode: ./v2raye --server"
+echo "  - tui mode: ./v2raye"

@@ -1,0 +1,17 @@
+[Unit]
+Description=v2rayE Backend API Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/v2rayE
+ExecStart=/opt/v2rayE/v2raye --server --api-addr 127.0.0.1:18000 --data-dir /opt/v2rayE
+Restart=always
+RestartSec=3
+Environment=V2RAYN_API_TOKEN=
+Environment=V2RAYN_XRAY_CMD=xray
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,4 @@
-package main
+package tui
 
 import apitypes "v2raye/backend-go/pkg/apitypes"
 

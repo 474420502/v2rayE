@@ -1,4 +1,4 @@
-package main
+package tui
 
 func (a *tuiApp) storeProfiles(profiles []ProfileItem) {
 	a.mu.Lock()

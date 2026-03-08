@@ -4,13 +4,14 @@
 
 ## 启动
 
-从仓库根目录：
+从仓库根目录（推荐）：
 
 ```bash
-./scripts/start-tui.sh
+./scripts/build.sh
+./v2raye
 ```
 
-默认会自动尝试拉起 core（可通过 `V2RAYN_TUI_AUTO_UP=0` 关闭）。
+默认模式会连接本地 API（`http://127.0.0.1:18000`）并进入 TUI。
 
 如果你希望一键完成“后端 + core + 系统代理 + 健康检查”：
 
@@ -18,17 +19,17 @@
 ./scripts/vpn-up.sh
 ```
 
-如果后端已运行，也可以直接启动：
+如果你在开发中直接运行 Go 入口：
 
 ```bash
-cd backend-go/cmd/tui
-go run . --base-url http://127.0.0.1:18000
+cd backend-go
+go run ./cmd/v2raye --base-url http://127.0.0.1:18000
 ```
 
 启用 Bearer token 时：
 
 ```bash
-V2RAYN_TUI_TOKEN=your-token ./scripts/start-tui.sh
+V2RAYN_TUI_TOKEN=your-token ./v2raye
 ```
 
 常用环境变量：
