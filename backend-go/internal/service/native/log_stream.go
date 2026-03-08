@@ -16,10 +16,10 @@ const logBufSize = 2000
 
 // logBroker captures lines from an io.Reader and fans them out to subscribers.
 type logBroker struct {
-	mu      sync.RWMutex
-	buf     []domain.LogLine // ring buffer of recent lines
-	subs    map[int]chan domain.LogLine
-	nextID  int
+	mu     sync.RWMutex
+	buf    []domain.LogLine // ring buffer of recent lines
+	subs   map[int]chan domain.LogLine
+	nextID int
 }
 
 func newLogBroker() *logBroker {
@@ -102,7 +102,8 @@ func (b *logBroker) AppLog(level, msg string) {
 	b.dispatch(domain.LogLine{
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Level:     level,
-		Message:   "[app] " + msg,
+		Source:    "app",
+		Message:   msg,
 	})
 }
 
@@ -130,7 +131,7 @@ func parseLine(raw string) domain.LogLine {
 		}
 	}
 
-	return domain.LogLine{Timestamp: ts, Level: level, Message: msg}
+	return domain.LogLine{Timestamp: ts, Level: level, Source: "xray-core", Message: msg}
 }
 
 // ─── xray-core embedded log handler ─────────────────────────────────────────
@@ -160,7 +161,7 @@ func (h *xrayLogHandler) Handle(msg xraylog.Message) {
 		}
 	}
 
-	h.broker.dispatch(domain.LogLine{Timestamp: ts, Level: level, Message: text})
+	h.broker.dispatch(domain.LogLine{Timestamp: ts, Level: level, Source: "xray-core", Message: text})
 }
 
 // RegisterXrayLogHandler sets the xray-core global log handler to route

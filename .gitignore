@@ -24,3 +24,5 @@ backend-go/*.out
 backend-go/coverage.out
 
 *.dat
+
+v2raye-tui

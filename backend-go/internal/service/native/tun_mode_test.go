@@ -124,17 +124,9 @@ func TestGenerateXrayConfigIncludesTunSettings(t *testing.T) {
 
 func TestBuildRoutingRulesBypassCNFallbackWithoutGeoData(t *testing.T) {
 	rules := buildRoutingRules(domain.RoutingConfig{Mode: "bypass_cn"}, false, false)
-	if len(rules) < 2 {
-		t.Fatalf("expected at least api rule + private rule, got %d", len(rules))
-	}
-
-	privateRule, ok := rules[1].(map[string]interface{})
-	if !ok {
-		t.Fatalf("private rule has unexpected type: %T", rules[1])
-	}
-	ipList, ok := privateRule["ip"].([]string)
-	if !ok {
-		t.Fatalf("private rule ip list has unexpected type: %T", privateRule["ip"])
+	privateRule, ipList := findRuleWithIPCIDR(rules, "10.0.0.0/8")
+	if privateRule == nil {
+		t.Fatalf("expected fallback private CIDR rule in bypass_cn mode")
 	}
 
 	if containsString(ipList, "geoip:private") {
@@ -147,17 +139,9 @@ func TestBuildRoutingRulesBypassCNFallbackWithoutGeoData(t *testing.T) {
 
 func TestBuildRoutingRulesBypassCNWithGeoData(t *testing.T) {
 	rules := buildRoutingRules(domain.RoutingConfig{Mode: "bypass_cn"}, true, true)
-	if len(rules) < 4 {
-		t.Fatalf("expected api + private + cn ip + cn domain rules, got %d", len(rules))
-	}
-
-	privateRule, ok := rules[1].(map[string]interface{})
-	if !ok {
-		t.Fatalf("private rule has unexpected type: %T", rules[1])
-	}
-	ipList, ok := privateRule["ip"].([]string)
-	if !ok {
-		t.Fatalf("private rule ip list has unexpected type: %T", privateRule["ip"])
+	privateRule, ipList := findRuleWithIPCIDR(rules, "geoip:private")
+	if privateRule == nil {
+		t.Fatalf("expected geoip:private rule when geodata is available")
 	}
 	if !containsString(ipList, "geoip:private") {
 		t.Fatalf("expected geoip:private when geodata is available, got %#v", ipList)
@@ -167,17 +151,9 @@ func TestBuildRoutingRulesBypassCNWithGeoData(t *testing.T) {
 func TestBuildRoutingRulesBypassCNWithGeoSiteOnly(t *testing.T) {
 	rules := buildRoutingRules(domain.RoutingConfig{Mode: "bypass_cn"}, false, true)
 
-	if len(rules) < 3 {
-		t.Fatalf("expected api + private + cn domain rules, got %d", len(rules))
-	}
-
-	privateRule, ok := rules[1].(map[string]interface{})
-	if !ok {
-		t.Fatalf("private rule has unexpected type: %T", rules[1])
-	}
-	ipList, ok := privateRule["ip"].([]string)
-	if !ok {
-		t.Fatalf("private rule ip list has unexpected type: %T", privateRule["ip"])
+	privateRule, ipList := findRuleWithIPCIDR(rules, "10.0.0.0/8")
+	if privateRule == nil {
+		t.Fatalf("expected fallback private CIDR rule when geoip.dat is missing")
 	}
 	if containsString(ipList, "geoip:private") {
 		t.Fatalf("expected CIDR fallback when geoip.dat is missing")
@@ -200,6 +176,215 @@ func TestBuildRoutingRulesBypassCNWithGeoSiteOnly(t *testing.T) {
 	}
 	if !foundGeoSiteCN {
 		t.Fatalf("expected geosite:cn rule when geosite.dat is available")
+	}
+}
+
+func TestBuildRoutingRulesAlwaysBypassesLocalControlPlane(t *testing.T) {
+	rules := buildRoutingRules(domain.RoutingConfig{Mode: "global"}, false, false)
+
+	if len(rules) < 3 {
+		t.Fatalf("expected api + localhost bypass rules, got %d", len(rules))
+	}
+
+	ruleDomain, ok := rules[1].(map[string]interface{})
+	if !ok {
+		t.Fatalf("rules[1] should be localhost domain bypass, got %T", rules[1])
+	}
+	if got := ruleDomain["outboundTag"]; got != "direct" {
+		t.Fatalf("localhost domain bypass outbound = %#v, want %q", got, "direct")
+	}
+	domains, ok := ruleDomain["domain"].([]string)
+	if !ok || !containsString(domains, "full:localhost") {
+		t.Fatalf("expected full:localhost bypass rule, got %#v", ruleDomain["domain"])
+	}
+
+	ruleIP, ok := rules[2].(map[string]interface{})
+	if !ok {
+		t.Fatalf("rules[2] should be loopback IP bypass, got %T", rules[2])
+	}
+	if got := ruleIP["outboundTag"]; got != "direct" {
+		t.Fatalf("loopback bypass outbound = %#v, want %q", got, "direct")
+	}
+	ipList, ok := ruleIP["ip"].([]string)
+	if !ok {
+		t.Fatalf("loopback bypass ip list has unexpected type: %T", ruleIP["ip"])
+	}
+	if !containsString(ipList, "127.0.0.0/8") || !containsString(ipList, "::1/128") {
+		t.Fatalf("expected loopback bypass CIDRs, got %#v", ipList)
+	}
+}
+
+func TestBuildRoutingRulesCanDisableLocalControlBypass(t *testing.T) {
+	disabled := false
+	rules := buildRoutingRules(domain.RoutingConfig{Mode: "global", LocalBypassEnabled: &disabled}, false, false)
+
+	for _, rawRule := range rules {
+		rule, ok := rawRule.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if domains, ok := rule["domain"].([]string); ok && containsString(domains, "full:localhost") {
+			t.Fatalf("localhost bypass should be disabled, got rule %#v", rule)
+		}
+		if ips, ok := rule["ip"].([]string); ok && (containsString(ips, "127.0.0.0/8") || containsString(ips, "::1/128")) {
+			t.Fatalf("loopback bypass should be disabled, got rule %#v", rule)
+		}
+	}
+}
+
+func TestBuildRoutingRulesDirectModeAppliesDefaultAfterCustomRules(t *testing.T) {
+	rules := buildRoutingRules(domain.RoutingConfig{
+		Mode: "direct",
+		Rules: []domain.RoutingRule{
+			{ID: "custom", Type: "domain", Values: []string{"full:example.com"}, Outbound: "proxy"},
+		},
+	}, false, false)
+
+	customIdx := -1
+	defaultIdx := -1
+	for idx, rawRule := range rules {
+		rule, ok := rawRule.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		if domains, ok := rule["domain"].([]string); ok && containsString(domains, "full:example.com") {
+			customIdx = idx
+		}
+		if outbound, ok := rule["outboundTag"].(string); ok && outbound == "direct" {
+			if network, ok := rule["network"].(string); ok && network == "tcp,udp" {
+				defaultIdx = idx
+			}
+		}
+	}
+
+	if customIdx == -1 {
+		t.Fatalf("expected custom rule in direct mode")
+	}
+	if defaultIdx == -1 {
+		t.Fatalf("expected default direct catch-all rule in direct mode")
+	}
+	if defaultIdx < customIdx {
+		t.Fatalf("default direct rule must be after custom rules, got default=%d custom=%d", defaultIdx, customIdx)
+	}
+}
+
+func TestBuildRoutingRulesBypassCNKeepsLayerOrder(t *testing.T) {
+	rules := buildRoutingRules(domain.RoutingConfig{
+		Mode: "bypass_cn",
+		Rules: []domain.RoutingRule{
+			{ID: "custom", Type: "domain", Values: []string{"full:override.example"}, Outbound: "proxy"},
+		},
+	}, false, false)
+
+	indexOf := func(match func(map[string]interface{}) bool) int {
+		for idx, rawRule := range rules {
+			rule, ok := rawRule.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if match(rule) {
+				return idx
+			}
+		}
+		return -1
+	}
+
+	apiIdx := indexOf(func(rule map[string]interface{}) bool {
+		tags, ok := rule["inboundTag"].([]string)
+		return ok && containsString(tags, "api")
+	})
+	localhostIdx := indexOf(func(rule map[string]interface{}) bool {
+		domains, ok := rule["domain"].([]string)
+		return ok && containsString(domains, "full:localhost")
+	})
+	loopbackIdx := indexOf(func(rule map[string]interface{}) bool {
+		ips, ok := rule["ip"].([]string)
+		return ok && containsString(ips, "127.0.0.0/8")
+	})
+	privateIdx := indexOf(func(rule map[string]interface{}) bool {
+		ips, ok := rule["ip"].([]string)
+		return ok && containsString(ips, "10.0.0.0/8")
+	})
+	cnIdx := indexOf(func(rule map[string]interface{}) bool {
+		ips, ok := rule["ip"].([]string)
+		return ok && containsString(ips, "1.0.1.0/24")
+	})
+	customIdx := indexOf(func(rule map[string]interface{}) bool {
+		domains, ok := rule["domain"].([]string)
+		if !ok || !containsString(domains, "full:override.example") {
+			return false
+		}
+		outbound, _ := rule["outboundTag"].(string)
+		return outbound == "proxy"
+	})
+
+	if apiIdx == -1 || localhostIdx == -1 || loopbackIdx == -1 || privateIdx == -1 || cnIdx == -1 || customIdx == -1 {
+		t.Fatalf("expected all routing layers to exist, got api=%d localhost=%d loopback=%d private=%d cn=%d custom=%d", apiIdx, localhostIdx, loopbackIdx, privateIdx, cnIdx, customIdx)
+	}
+
+	if !(apiIdx < localhostIdx && localhostIdx < loopbackIdx && loopbackIdx < privateIdx && privateIdx < cnIdx && cnIdx < customIdx) {
+		t.Fatalf("unexpected bypass_cn layer order: api=%d localhost=%d loopback=%d private=%d cn=%d custom=%d", apiIdx, localhostIdx, loopbackIdx, privateIdx, cnIdx, customIdx)
+	}
+
+	for idx, rawRule := range rules {
+		rule, ok := rawRule.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		outbound, _ := rule["outboundTag"].(string)
+		network, _ := rule["network"].(string)
+		if outbound == "direct" && network == "tcp,udp" {
+			t.Fatalf("unexpected direct catch-all rule in bypass_cn mode at index %d", idx)
+		}
+	}
+}
+
+func TestBuildRoutingRulesDirectKeepsControlBypassBeforeCatchAll(t *testing.T) {
+	rules := buildRoutingRules(domain.RoutingConfig{
+		Mode: "direct",
+		Rules: []domain.RoutingRule{
+			{ID: "custom", Type: "domain", Values: []string{"full:example.com"}, Outbound: "proxy"},
+		},
+	}, false, false)
+
+	indexOf := func(match func(map[string]interface{}) bool) int {
+		for idx, rawRule := range rules {
+			rule, ok := rawRule.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if match(rule) {
+				return idx
+			}
+		}
+		return -1
+	}
+
+	localhostIdx := indexOf(func(rule map[string]interface{}) bool {
+		domains, ok := rule["domain"].([]string)
+		return ok && containsString(domains, "full:localhost")
+	})
+	loopbackIdx := indexOf(func(rule map[string]interface{}) bool {
+		ips, ok := rule["ip"].([]string)
+		return ok && containsString(ips, "127.0.0.0/8")
+	})
+	customIdx := indexOf(func(rule map[string]interface{}) bool {
+		domains, ok := rule["domain"].([]string)
+		return ok && containsString(domains, "full:example.com")
+	})
+	defaultIdx := indexOf(func(rule map[string]interface{}) bool {
+		outbound, _ := rule["outboundTag"].(string)
+		network, _ := rule["network"].(string)
+		return outbound == "direct" && network == "tcp,udp"
+	})
+
+	if localhostIdx == -1 || loopbackIdx == -1 || customIdx == -1 || defaultIdx == -1 {
+		t.Fatalf("expected localhost/loopback/custom/default rules in direct mode, got localhost=%d loopback=%d custom=%d default=%d", localhostIdx, loopbackIdx, customIdx, defaultIdx)
+	}
+
+	if !(localhostIdx < loopbackIdx && loopbackIdx < customIdx && customIdx < defaultIdx) {
+		t.Fatalf("unexpected direct mode order: localhost=%d loopback=%d custom=%d default=%d", localhostIdx, loopbackIdx, customIdx, defaultIdx)
 	}
 }
 
@@ -368,6 +553,23 @@ func containsString(items []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func findRuleWithIPCIDR(rules []interface{}, cidr string) (map[string]interface{}, []string) {
+	for _, rawRule := range rules {
+		rule, ok := rawRule.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		ipList, ok := rule["ip"].([]string)
+		if !ok {
+			continue
+		}
+		if containsString(ipList, cidr) {
+			return rule, ipList
+		}
+	}
+	return nil, nil
 }
 
 func TestHasGeoAssetChecksEnvAssetDirs(t *testing.T) {

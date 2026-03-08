@@ -211,10 +211,15 @@ func (s *Store) routingPath() string {
 // DefaultRoutingConfig returns sensible default routing (bypass China).
 func DefaultRoutingConfig() domain.RoutingConfig {
 	return domain.RoutingConfig{
-		Mode:           "bypass_cn",
-		DomainStrategy: "IPIfNonMatch",
-		Rules:          []domain.RoutingRule{},
+		Mode:               "bypass_cn",
+		DomainStrategy:     "IPIfNonMatch",
+		LocalBypassEnabled: boolPtr(true),
+		Rules:              []domain.RoutingRule{},
 	}
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
 
 // LoadRoutingConfig reads routing config from disk.

@@ -516,6 +516,7 @@ func buildStreamSettings(transport *domain.TransportConfig, skipCertVerify bool)
 
 func buildRoutingRules(routing domain.RoutingConfig, hasGeoIP, hasGeoSite bool) []interface{} {
 	var rules []interface{}
+	var defaultRules []interface{}
 
 	// Internal API traffic always routes to the api inbound tag.
 	rules = append(rules, map[string]interface{}{
@@ -523,6 +524,22 @@ func buildRoutingRules(routing domain.RoutingConfig, hasGeoIP, hasGeoSite bool) 
 		"inboundTag":  []string{"api"},
 		"outboundTag": "api",
 	})
+
+	if routingLocalBypassEnabled(routing) {
+		// Keep local control-plane traffic out of the proxy chain.
+		rules = append(rules,
+			map[string]interface{}{
+				"type":        "field",
+				"domain":      []string{"full:localhost"},
+				"outboundTag": "direct",
+			},
+			map[string]interface{}{
+				"type":        "field",
+				"ip":          []string{"127.0.0.0/8", "::1/128"},
+				"outboundTag": "direct",
+			},
+		)
+	}
 
 	switch routing.Mode {
 	case "bypass_cn":
@@ -569,7 +586,7 @@ func buildRoutingRules(routing domain.RoutingConfig, hasGeoIP, hasGeoSite bool) 
 				})
 		}
 	case "direct":
-		rules = append(rules, map[string]interface{}{
+		defaultRules = append(defaultRules, map[string]interface{}{
 			"type":        "field",
 			"network":     "tcp,udp",
 			"outboundTag": "direct",
@@ -614,7 +631,16 @@ func buildRoutingRules(routing domain.RoutingConfig, hasGeoIP, hasGeoSite bool) 
 		rules = append(rules, r)
 	}
 
+	rules = append(rules, defaultRules...)
+
 	return rules
+}
+
+func routingLocalBypassEnabled(routing domain.RoutingConfig) bool {
+	if routing.LocalBypassEnabled == nil {
+		return true
+	}
+	return *routing.LocalBypassEnabled
 }
 
 func hasGeoDataAssets() bool {

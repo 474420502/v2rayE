@@ -5,14 +5,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_DIR="$ROOT_DIR/.run"
 
 BACKEND_PID_FILE="$RUN_DIR/backend.pid"
-FRONTEND_PID_FILE="$RUN_DIR/frontend.pid"
 BACKEND_ADDR="${V2RAYN_API_ADDR:-127.0.0.1:18000}"
 BACKEND_URL="http://$BACKEND_ADDR"
 BACKEND_DATA_DIR="${V2RAYN_DATA_DIR:-$RUN_DIR/data}"
-FRONTEND_PORT_BASE="${PORT:-3000}"
-FRONTEND_PORT_SCAN_RANGE=20
 BACKEND_PORT="${BACKEND_ADDR##*:}"
-DEFAULT_FRONTEND_PORT_BASE=3000
 
 can_use_passwordless_sudo() {
     [[ "$EUID" -eq 0 ]] && return 0
@@ -177,17 +173,9 @@ stop_by_pid_file() {
 }
 
 collect_pids_by_pattern() {
-    local role="$1"
-    if [[ "$role" == "backend" ]]; then
-        ps -eo pid=,cmd= | awk -v root="$ROOT_DIR/backend-go" '
-            (index($0, root) > 0 || $0 ~ /go run \.\/cmd\/server/ || $0 ~ /\/tmp\/go-build[^ ]*\/exe\/server/) &&
-            ($0 ~ /go run \.\/cmd\/server/ || $0 ~ /\/cmd\/server/ || $0 ~ /backend-go\/cmd\/server/ || $0 ~ /\/tmp\/go-build[^ ]*\/exe\/server/ || $0 ~ /(^|[[:space:]])server([[:space:]]|$)/) { print $1 }
-        '
-        return 0
-    fi
-
-    ps -eo pid=,cmd= | awk -v root="$ROOT_DIR/web" '
-        index($0, root) > 0 && ($0 ~ /(next dev|node .*next|next-server|v2rayn-web@0\.1\.0 dev|next\/dist\/telemetry\/detached-flush\.js)/) { print $1 }
+    ps -eo pid=,cmd= | awk -v root="$ROOT_DIR/backend-go" '
+        (index($0, root) > 0 || $0 ~ /go run \.\/cmd\/server/ || $0 ~ /\/tmp\/go-build[^ ]*\/exe\/server/) &&
+        ($0 ~ /go run \.\/cmd\/server/ || $0 ~ /\/cmd\/server/ || $0 ~ /backend-go\/cmd\/server/ || $0 ~ /\/tmp\/go-build[^ ]*\/exe\/server/ || $0 ~ /(^|[[:space:]])server([[:space:]]|$)/) { print $1 }
     '
 }
 
@@ -229,21 +217,12 @@ collect_pids_by_port() {
 }
 
 extra_port_cleanup() {
-    local -a ports=("$BACKEND_PORT")
-    local p
-    for p in $(seq "$DEFAULT_FRONTEND_PORT_BASE" $((DEFAULT_FRONTEND_PORT_BASE + FRONTEND_PORT_SCAN_RANGE))); do
-        ports+=("$p")
-    done
-
-    local port
-    for port in "${ports[@]}"; do
-        local -a pids=()
-        mapfile -t pids < <(collect_pids_by_port "$port" | rg '^[0-9]+$' | sort -u)
-        if [[ "${#pids[@]}" -eq 0 ]]; then
-            continue
-        fi
-        kill_pids_force "port:$port" "${pids[@]}" || true
-    done
+    local -a pids=()
+    mapfile -t pids < <(collect_pids_by_port "$BACKEND_PORT" | rg '^[0-9]+$' | sort -u)
+    if [[ "${#pids[@]}" -eq 0 ]]; then
+        return 0
+    fi
+    kill_pids_force "port:$BACKEND_PORT" "${pids[@]}" || true
 }
 
 kill_pids_force() {
@@ -296,55 +275,39 @@ kill_pids_force() {
 }
 
 force_cleanup_role() {
-    local role="$1"
     local -a collected=()
 
     while IFS= read -r pid; do
         [[ -n "$pid" ]] && collected+=("$pid")
-    done < <(collect_pids_by_pattern "$role")
+    done < <(collect_pids_by_pattern)
 
-    if [[ "$role" == "backend" ]]; then
-        while IFS= read -r pid; do
-            [[ -n "$pid" ]] && collected+=("$pid")
-        done < <(collect_pids_by_port "$BACKEND_PORT")
-    else
-        local port
-        for port in $(seq "$FRONTEND_PORT_BASE" $((FRONTEND_PORT_BASE + FRONTEND_PORT_SCAN_RANGE))); do
-            while IFS= read -r pid; do
-                [[ -n "$pid" ]] && collected+=("$pid")
-            done < <(collect_pids_by_port "$port")
-        done
-    fi
+    while IFS= read -r pid; do
+        [[ -n "$pid" ]] && collected+=("$pid")
+    done < <(collect_pids_by_port "$BACKEND_PORT")
 
     if [[ "${#collected[@]}" -eq 0 ]]; then
-        echo "$role not running"
+        echo "backend not running"
         return 0
     fi
 
     mapfile -t collected < <(printf '%s\n' "${collected[@]}" | rg '^[0-9]+$' | sort -u)
-    kill_pids_force "$role" "${collected[@]}"
+    kill_pids_force "backend" "${collected[@]}"
 }
 
 stop_ok=0
 
-if stop_by_pid_file "frontend" "$FRONTEND_PID_FILE"; then
-    stop_ok=1
-fi
 graceful_backend_shutdown
 if stop_by_pid_file "backend" "$BACKEND_PID_FILE"; then
     stop_ok=1
 fi
 
-if force_cleanup_role "frontend"; then
-    stop_ok=1
-fi
-if force_cleanup_role "backend"; then
+if force_cleanup_role; then
     stop_ok=1
 fi
 
 extra_port_cleanup
 
-rm -f "$FRONTEND_PID_FILE" "$BACKEND_PID_FILE"
+rm -f "$BACKEND_PID_FILE"
 cleanup_tun_fallback
 
 if [[ "$EUID" -ne 0 ]] && ! can_use_passwordless_sudo; then

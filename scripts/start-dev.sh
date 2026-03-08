@@ -5,17 +5,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_DIR="$ROOT_DIR/.run"
 
 BACKEND_PID_FILE="$RUN_DIR/backend.pid"
-FRONTEND_PID_FILE="$RUN_DIR/frontend.pid"
 BACKEND_LOG_FILE="$RUN_DIR/backend.log"
-FRONTEND_LOG_FILE="$RUN_DIR/frontend.log"
 
 BACKEND_ADDR="${V2RAYN_API_ADDR:-127.0.0.1:18000}"
 BACKEND_URL="http://$BACKEND_ADDR"
 BACKEND_DATA_DIR="${V2RAYN_DATA_DIR:-$RUN_DIR/data}"
 BACKEND_ASSET_DIR="${V2RAYN_ASSET_DIR:-$ROOT_DIR/backend-go}"
-FRONTEND_PORT="${PORT:-3000}"
-EFFECTIVE_FRONTEND_PORT="$FRONTEND_PORT"
-COUPLED_LIFECYCLE="${V2RAYE_COUPLED_LIFECYCLE:-1}"
+START_TUI="${V2RAYE_LAUNCH_TUI:-0}"
 
 mkdir -p "$RUN_DIR"
 mkdir -p "$BACKEND_DATA_DIR"
@@ -125,88 +121,19 @@ start_backend() {
     return 1
 }
 
-is_port_busy() {
-    local port="$1"
-    ss -ltn 2>/dev/null | awk '{print $4}' | rg -q ":${port}$"
-}
-
-pick_frontend_port() {
-    local preferred="$1"
-    if ! is_port_busy "$preferred"; then
-        echo "$preferred"
-        return 0
-    fi
-
-    local candidate
-    for candidate in $(seq $((preferred + 1)) $((preferred + 20))); do
-        if ! is_port_busy "$candidate"; then
-            echo "$candidate"
-            return 0
-        fi
-    done
-
-    echo "$preferred"
-    return 1
-}
-
-start_frontend() {
-    cleanup_stale_pid "$FRONTEND_PID_FILE"
-    local pid
-    pid="$(read_pid "$FRONTEND_PID_FILE")"
-    if [[ -n "$pid" ]] && is_running "$pid"; then
-        echo "frontend already running (pid=$pid)"
-        return 0
-    fi
-
-    local selected_port
-    if ! selected_port="$(pick_frontend_port "$FRONTEND_PORT")"; then
-        echo "frontend port range ${FRONTEND_PORT}-$((FRONTEND_PORT + 20)) appears busy" >&2
-        return 1
-    fi
-    EFFECTIVE_FRONTEND_PORT="$selected_port"
-    if [[ "$EFFECTIVE_FRONTEND_PORT" != "$FRONTEND_PORT" ]]; then
-        echo "warning: port $FRONTEND_PORT is in use, frontend will use $EFFECTIVE_FRONTEND_PORT"
-    fi
-
-    : > "$FRONTEND_LOG_FILE"
-    if [[ "$EUID" -eq 0 ]] && [[ -n "${SUDO_USER:-}" ]]; then
-        # Keep frontend dev artifacts owned by the login user, even when backend needs sudo.
-        chown -R "${SUDO_USER}:${SUDO_USER}" "$ROOT_DIR/web/.next" >/dev/null 2>&1 || true
-        setsid sudo -u "$SUDO_USER" env PORT="$EFFECTIVE_FRONTEND_PORT" V2RAYN_BACKEND_URL="http://$BACKEND_ADDR" bash -lc "cd '$ROOT_DIR/web' && exec npm run dev" >> "$FRONTEND_LOG_FILE" 2>&1 &
-    else
-        setsid env PORT="$EFFECTIVE_FRONTEND_PORT" V2RAYN_BACKEND_URL="http://$BACKEND_ADDR" bash -lc "cd '$ROOT_DIR/web' && exec npm run dev" >> "$FRONTEND_LOG_FILE" 2>&1 &
-    fi
-    pid=$!
-    echo "$pid" > "$FRONTEND_PID_FILE"
-    sleep 2
-    if ! is_running "$pid"; then
-        echo "frontend failed to start, check $FRONTEND_LOG_FILE" >&2
-        rm -f "$FRONTEND_PID_FILE"
-        return 1
-    fi
-    echo "frontend started on http://127.0.0.1:$EFFECTIVE_FRONTEND_PORT (pid=$pid, backend=http://$BACKEND_ADDR)"
-}
-
 warn_tun_requires_sudo
-
 start_backend
-if ! start_frontend; then
-    if [[ "$COUPLED_LIFECYCLE" == "0" ]]; then
-        echo "warning: frontend did not start, but backend is still running at http://$BACKEND_ADDR"
-        echo "hint: resolve frontend conflict (see $FRONTEND_LOG_FILE) and rerun ./scripts/start-dev.sh"
-        echo "note: set V2RAYE_COUPLED_LIFECYCLE=1 to enforce all-or-nothing startup"
-        exit 1
-    fi
-
-    echo "error: frontend start failed, rolling back backend for coupled lifecycle"
-    "$ROOT_DIR/scripts/stop-dev.sh" >/dev/null 2>&1 || true
-    echo "hint: fix frontend conflict (see $FRONTEND_LOG_FILE), then rerun ./scripts/start-dev.sh"
-    exit 1
-fi
 
 echo "logs:"
-echo "  backend:  $BACKEND_LOG_FILE"
-echo "  frontend: $FRONTEND_LOG_FILE"
+echo "  backend: $BACKEND_LOG_FILE"
+echo ""
+echo "TUI-first workflow:"
+echo "  start interactive TUI: ./scripts/start-tui.sh"
+echo "  stop backend/TUN cleanup: ./scripts/stop-dev.sh"
+
+if [[ "$START_TUI" == "1" ]]; then
+    exec "$ROOT_DIR/scripts/start-tui.sh"
+fi
 
 if [[ "$EUID" -eq 0 ]]; then
     echo "note: started as root; stop with sudo ./scripts/stop-dev.sh to ensure full TUN cleanup"

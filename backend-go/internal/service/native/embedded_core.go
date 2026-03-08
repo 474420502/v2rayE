@@ -334,6 +334,7 @@ func (c *embeddedCore) logf(format string, args ...interface{}) {
 	c.onLog(domain.LogLine{
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Level:     "info",
+		Source:    "xray-core",
 		Message:   fmt.Sprintf(format, args...),
 	})
 }

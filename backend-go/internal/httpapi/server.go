@@ -52,6 +52,7 @@ func New(addr, token string, svc service.BackendService) *Server {
 
 	// Profiles (CRUD + import)
 	mux.HandleFunc("/api/profiles/delete", s.auth(s.handleProfilesDelete))
+	mux.HandleFunc("/api/profiles/delay/batch", s.auth(s.handleBatchDelayTest))
 	mux.HandleFunc("/api/profiles/import", s.auth(s.handleProfileImport))
 	mux.HandleFunc("/api/profiles", s.auth(s.handleProfiles))
 	mux.HandleFunc("/api/profiles/", s.auth(s.handleProfileOps))
@@ -71,6 +72,7 @@ func New(addr, token string, svc service.BackendService) *Server {
 	mux.HandleFunc("/api/routing/geodata/update", s.auth(s.handleRoutingGeoDataUpdate))
 	mux.HandleFunc("/api/routing/diagnostics", s.auth(s.handleRoutingDiagnostics))
 	mux.HandleFunc("/api/routing/hits", s.auth(s.handleRoutingHitStats))
+	mux.HandleFunc("/api/routing/test", s.auth(s.handleRoutingTest))
 	mux.HandleFunc("/api/routing/tun/repair", s.auth(s.handleRoutingTunRepair))
 	mux.HandleFunc("/api/routing", s.auth(s.handleRouting))
 
@@ -283,6 +285,31 @@ func (s *Server) handleProfilesDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	writeOK(w, map[string]int{"deleted": len(body.IDs)})
 	s.publishEvent("profile.updated", map[string]interface{}{"ids": body.IDs, "deleted": len(body.IDs)})
+}
+
+func (s *Server) handleBatchDelayTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, 40501, "method not allowed", nil)
+		return
+	}
+
+	var req domain.BatchDelayTestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, 42201, "invalid json", nil)
+		return
+	}
+	if len(req.ProfileIDs) == 0 {
+		writeError(w, http.StatusUnprocessableEntity, 42201, "missing profileIds field", nil)
+		return
+	}
+
+	result := s.svc.BatchTestProfileDelay(req.ProfileIDs, req.TimeoutMs, req.Limit)
+	writeOK(w, result)
+	s.publishEvent("profiles.delay_batch.completed", map[string]interface{}{
+		"total":   result.Total,
+		"success": result.Success,
+		"failed":  result.Failed,
+	})
 }
 
 // handleProfileOps routes /api/profiles/{id}[/action].
@@ -645,6 +672,25 @@ func (s *Server) handleRoutingHitStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeOK(w, s.svc.GetRoutingHitStats())
+}
+
+func (s *Server) handleRoutingTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, 40501, "method not allowed", nil)
+		return
+	}
+	var req domain.RoutingTestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, 42201, "invalid json", nil)
+		return
+	}
+	if strings.TrimSpace(req.Target) == "" {
+		writeError(w, http.StatusUnprocessableEntity, 42201, "missing target field", nil)
+		return
+	}
+	result := s.svc.TestRouting(req)
+	writeOK(w, result)
+	s.publishEvent("routing.tested", result)
 }
 
 func (s *Server) handleRoutingTunRepair(w http.ResponseWriter, r *http.Request) {

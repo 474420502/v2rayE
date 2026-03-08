@@ -16,6 +16,8 @@ type CoreStatus struct {
 	EngineResolved   string `json:"engineResolved,omitempty"`
 	CurrentProfileID string `json:"currentProfileId,omitempty"`
 	State            string `json:"state,omitempty"` // stopped|starting|running|stopping
+	StartedAt        string `json:"startedAt,omitempty"`
+	UptimeSec        int64  `json:"uptimeSec,omitempty"`
 	Error            string `json:"error,omitempty"`
 	ErrorAt          string `json:"errorAt,omitempty"`
 }
@@ -137,6 +139,31 @@ type DelayTestResult struct {
 	Message   string `json:"message,omitempty"`
 }
 
+// BatchDelayTestRequest is used to test multiple profiles with bounded concurrency.
+type BatchDelayTestRequest struct {
+	ProfileIDs []string `json:"profileIds"`
+	TimeoutMs  int      `json:"timeoutMs,omitempty"`
+	Limit      int      `json:"limit,omitempty"`
+}
+
+// ProfileDelayResult is the per-profile result returned by batch delay testing.
+type ProfileDelayResult struct {
+	ProfileID string `json:"profileId"`
+	Name      string `json:"name,omitempty"`
+	DelayMs   int    `json:"delayMs,omitempty"`
+	Available bool   `json:"available"`
+	Error     string `json:"error,omitempty"`
+	Message   string `json:"message,omitempty"`
+}
+
+// BatchDelayTestResult summarizes a batch delay test run.
+type BatchDelayTestResult struct {
+	Results []ProfileDelayResult `json:"results"`
+	Total   int                  `json:"total"`
+	Success int                  `json:"success"`
+	Failed  int                  `json:"failed"`
+}
+
 // SubscriptionItem represents a subscription source.
 type SubscriptionItem struct {
 	ID                string `json:"id"`
@@ -177,9 +204,10 @@ type SystemProxyApplyRequest struct {
 
 // RoutingConfig represents the routing configuration.
 type RoutingConfig struct {
-	Mode           string        `json:"mode"`           // global|bypass_cn|direct|custom
-	DomainStrategy string        `json:"domainStrategy"` // IPIfNonMatch|IPOnDemand|AsIs
-	Rules          []RoutingRule `json:"rules,omitempty"`
+	Mode               string        `json:"mode"`                         // global|bypass_cn|direct|custom
+	DomainStrategy     string        `json:"domainStrategy"`               // IPIfNonMatch|IPOnDemand|AsIs
+	LocalBypassEnabled *bool         `json:"localBypassEnabled,omitempty"` // nil/default=true keeps localhost/loopback out of proxy chain
+	Rules              []RoutingRule `json:"rules,omitempty"`
 }
 
 // RoutingRule is a single routing rule.
@@ -192,33 +220,33 @@ type RoutingRule struct {
 
 // RoutingDiagnostics summarizes the runtime routing state and generated rules.
 type RoutingDiagnostics struct {
-	Mode               string                   `json:"mode"`
-	DomainStrategy     string                   `json:"domainStrategy"`
-	TunMode            string                   `json:"tunMode"`
-	TunEnabled         bool                     `json:"tunEnabled"`
-	TunTakeoverActive  bool                     `json:"tunTakeoverActive"`
-	TunTakeoverMode    string                   `json:"tunTakeoverMode,omitempty"`
-	TunPolicyRouteTable int                     `json:"tunPolicyRouteTable,omitempty"`
-	TunPolicyRules     []string                 `json:"tunPolicyRules,omitempty"`
-	DefaultRouteDevice string                   `json:"defaultRouteDevice,omitempty"`
-	HasGeoIP           bool                     `json:"hasGeoIP"`
-	HasGeoSite         bool                     `json:"hasGeoSite"`
-	GeoDataAvailable   bool                     `json:"geoDataAvailable"`
-	CurrentProfileID   string                   `json:"currentProfileId,omitempty"`
-	CurrentProfileName string                   `json:"currentProfileName,omitempty"`
-	RuleCount          int                      `json:"ruleCount"`
-	Rules              []map[string]interface{} `json:"rules"`
-	GeneratedAt        string                   `json:"generatedAt"`
-	Warning            string                   `json:"warning,omitempty"`
+	Mode                string                   `json:"mode"`
+	DomainStrategy      string                   `json:"domainStrategy"`
+	TunMode             string                   `json:"tunMode"`
+	TunEnabled          bool                     `json:"tunEnabled"`
+	TunTakeoverActive   bool                     `json:"tunTakeoverActive"`
+	TunTakeoverMode     string                   `json:"tunTakeoverMode,omitempty"`
+	TunPolicyRouteTable int                      `json:"tunPolicyRouteTable,omitempty"`
+	TunPolicyRules      []string                 `json:"tunPolicyRules,omitempty"`
+	DefaultRouteDevice  string                   `json:"defaultRouteDevice,omitempty"`
+	HasGeoIP            bool                     `json:"hasGeoIP"`
+	HasGeoSite          bool                     `json:"hasGeoSite"`
+	GeoDataAvailable    bool                     `json:"geoDataAvailable"`
+	CurrentProfileID    string                   `json:"currentProfileId,omitempty"`
+	CurrentProfileName  string                   `json:"currentProfileName,omitempty"`
+	RuleCount           int                      `json:"ruleCount"`
+	Rules               []map[string]interface{} `json:"rules"`
+	GeneratedAt         string                   `json:"generatedAt"`
+	Warning             string                   `json:"warning,omitempty"`
 }
 
 // RoutingOutboundHit is traffic hit statistics for a specific outbound tag.
 type RoutingOutboundHit struct {
-	Outbound string `json:"outbound"`
-	UpBytes  int64  `json:"upBytes"`
-	DownBytes int64 `json:"downBytes"`
-	UpSpeed  int64  `json:"upSpeed"`
-	DownSpeed int64 `json:"downSpeed"`
+	Outbound  string `json:"outbound"`
+	UpBytes   int64  `json:"upBytes"`
+	DownBytes int64  `json:"downBytes"`
+	UpSpeed   int64  `json:"upSpeed"`
+	DownSpeed int64  `json:"downSpeed"`
 }
 
 // RoutingHitStats summarizes runtime hit statistics by outbound tag.
@@ -228,20 +256,41 @@ type RoutingHitStats struct {
 	Note      string               `json:"note,omitempty"`
 }
 
+// RoutingTestRequest is used to simulate how a target would match current routing rules.
+type RoutingTestRequest struct {
+	Target   string `json:"target"`
+	Protocol string `json:"protocol,omitempty"`
+	Port     int    `json:"port,omitempty"`
+}
+
+// RoutingTestResult is the result of a routing simulation for a target.
+type RoutingTestResult struct {
+	Target       string `json:"target"`
+	Type         string `json:"type"`
+	MatchedRule  string `json:"matchedRule,omitempty"`
+	MatchedValue string `json:"matchedValue,omitempty"`
+	Outbound     string `json:"outbound"`
+	Action       string `json:"action"`
+	RuleIndex    int    `json:"ruleIndex,omitempty"`
+	Protocol     string `json:"protocol,omitempty"`
+	Port         int    `json:"port,omitempty"`
+	Note         string `json:"note,omitempty"`
+}
+
 // TunRepairResult is the result of one-click TUN repair workflow.
 type TunRepairResult struct {
-	TriggeredAt        string `json:"triggeredAt"`
-	WasRunning         bool   `json:"wasRunning"`
-	Started            bool   `json:"started"`
-	Running            bool   `json:"running"`
-	TunEnabled         bool   `json:"tunEnabled"`
-	TunTakeoverActive  bool   `json:"tunTakeoverActive"`
-	TunTakeoverMode    string `json:"tunTakeoverMode,omitempty"`
-	TunPolicyRouteTable int   `json:"tunPolicyRouteTable,omitempty"`
-	TunPolicyRules     []string `json:"tunPolicyRules,omitempty"`
-	DefaultRouteDevice string `json:"defaultRouteDevice,omitempty"`
-	Message            string `json:"message,omitempty"`
-	Error              string `json:"error,omitempty"`
+	TriggeredAt         string   `json:"triggeredAt"`
+	WasRunning          bool     `json:"wasRunning"`
+	Started             bool     `json:"started"`
+	Running             bool     `json:"running"`
+	TunEnabled          bool     `json:"tunEnabled"`
+	TunTakeoverActive   bool     `json:"tunTakeoverActive"`
+	TunTakeoverMode     string   `json:"tunTakeoverMode,omitempty"`
+	TunPolicyRouteTable int      `json:"tunPolicyRouteTable,omitempty"`
+	TunPolicyRules      []string `json:"tunPolicyRules,omitempty"`
+	DefaultRouteDevice  string   `json:"defaultRouteDevice,omitempty"`
+	Message             string   `json:"message,omitempty"`
+	Error               string   `json:"error,omitempty"`
 }
 
 // StatsResult holds bandwidth statistics.
@@ -256,13 +305,14 @@ type StatsResult struct {
 type LogLine struct {
 	Timestamp string `json:"timestamp"`
 	Level     string `json:"level"`
+	Source    string `json:"source,omitempty"`
 	Message   string `json:"message"`
 }
 
 // PersistentState holds stateful runtime info across restarts.
 type PersistentState struct {
-	CurrentProfileID string `json:"currentProfileId,omitempty"`
-	CoreType         string `json:"coreType,omitempty"`
+	CurrentProfileID  string `json:"currentProfileId,omitempty"`
+	CoreType          string `json:"coreType,omitempty"`
 	CoreShouldRestore bool   `json:"coreShouldRestore,omitempty"`
-	UpdatedAt        string `json:"updatedAt,omitempty"`
+	UpdatedAt         string `json:"updatedAt,omitempty"`
 }

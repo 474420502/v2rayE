@@ -30,6 +30,7 @@ type BackendService interface {
 	DeleteProfiles(ids []string) error
 	SelectProfile(id string) error
 	TestProfileDelay(id string) domain.DelayTestResult
+	BatchTestProfileDelay(ids []string, timeoutMs, limit int) domain.BatchDelayTestResult
 	ImportProfileFromURI(uri string) (domain.ProfileItem, error)
 
 	// Subscription management
@@ -53,6 +54,7 @@ type BackendService interface {
 	UpdateRoutingConfig(rc domain.RoutingConfig) domain.RoutingConfig
 	GetRoutingDiagnostics() domain.RoutingDiagnostics
 	GetRoutingHitStats() domain.RoutingHitStats
+	TestRouting(req domain.RoutingTestRequest) domain.RoutingTestResult
 	RepairTunAndRestart() domain.TunRepairResult
 	UpdateRoutingGeoData() (map[string]interface{}, error)
 

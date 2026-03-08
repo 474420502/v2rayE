@@ -1,8 +1,22 @@
 # v2rayE backend-go
 
-Go 实现的 Web 后端（MVP），用于对接 `web/` 前端并提供统一 API 契约。
+Go 实现的本地 VPN 控制平面。当前默认服务于 `cmd/tui` 终端界面，`web/` 保留为迁移中的历史界面，不再作为主路径设计中心。
 
 ## 运行
+
+默认启动后端：
+
+```bash
+./scripts/start-dev.sh
+```
+
+启动交互式 TUI：
+
+```bash
+./scripts/start-tui.sh
+```
+
+如果只想单独启动后端：
 
 ```bash
 cd backend-go
@@ -17,6 +31,8 @@ sudo ./scripts/tun-health-check.sh
 ```
 
 默认监听：`127.0.0.1:18000`
+
+默认终端界面：`backend-go/cmd/tui`
 
 ## 环境变量
 
@@ -55,6 +71,7 @@ sudo ./scripts/tun-health-check.sh
 - 默认模式 `native`：由 Go 后端自身承接核心流程，作为当前主路径。
 - 默认 `coreEngine=xray-core`：后端以内嵌 `xray-core` 提供本地 HTTP/SOCKS5 代理入口（默认端口 `10809/10808`），不依赖外部 `xray` 进程。
 - 当前仅保留 `xray-core` 引擎路径，旧的 `embedded/auto/xray` 模式已统一折叠到 `xray-core`。
+- 默认 UI 路径已切换为终端 TUI，后端 API 仅作为本机控制面，不再以浏览器访问作为默认交互假设。
 - `native` / `servicelib-proxy` 共用 `memory` 状态底座，配置、订阅、当前节点与测速缓存会按“runtime/config/subscriptions”拆分落盘到 `V2RAYN_MEMORY_STATE_PATH` 派生文件。
 - 若设置 `V2RAYN_CORE_CMD`，`native` 会尝试拉起真实核心进程；未设置时使用内存状态承接 API 闭环。
 - 若设置 `V2RAYN_CORE_CMD_TEMPLATE`，`native` 会先生成临时配置文件，再以模板命令启动核心。

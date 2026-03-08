@@ -12,6 +12,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -35,13 +36,14 @@ type Service struct {
 	xrayCmd  string
 	xrayCore *managedXrayCore
 
-	mu          sync.Mutex
-	proc        *exec.Cmd
-	running     bool
-	trackedPID  int
-	lastError   string
-	lastErrorAt string
-	lastEngine  string
+	mu            sync.Mutex
+	proc          *exec.Cmd
+	running       bool
+	trackedPID    int
+	lastError     string
+	lastErrorAt   string
+	lastEngine    string
+	coreStartedAt time.Time
 
 	logs  *logBroker
 	stats *statsTracker
@@ -169,6 +171,7 @@ func (s *Service) StartCore() domain.CoreStatus {
 	s.watchdogRestarting = false
 	s.clearCoreErrorLocked()
 	s.lastEngine = resolved
+	s.coreStartedAt = time.Now().UTC()
 
 	s.logs.clear()
 
@@ -213,6 +216,7 @@ func (s *Service) StopCore() domain.CoreStatus {
 	s.watchdogRestartAttempts = 0
 	s.watchdogRestartScheduled = false
 	s.watchdogRestarting = false
+	s.coreStartedAt = time.Time{}
 	s.clearCoreErrorLocked()
 	if s.stats != nil {
 		s.stats.shutdown()
@@ -403,6 +407,94 @@ func (s *Service) SelectProfile(id string) error {
 }
 
 func (s *Service) TestProfileDelay(id string) domain.DelayTestResult {
+	return s.testProfileDelayWithTimeout(id, 10000)
+}
+
+func (s *Service) BatchTestProfileDelay(ids []string, timeoutMs, limit int) domain.BatchDelayTestResult {
+	if timeoutMs <= 0 {
+		timeoutMs = 5000
+	}
+	if limit <= 0 {
+		limit = 5
+	}
+
+	trimmedIDs := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		trimmedIDs = append(trimmedIDs, id)
+	}
+
+	results := make([]domain.ProfileDelayResult, len(trimmedIDs))
+	sem := make(chan struct{}, limit)
+	var wg sync.WaitGroup
+
+	for idx, id := range trimmedIDs {
+		wg.Add(1)
+		go func(index int, profileID string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			result := s.batchDelayResult(profileID, timeoutMs)
+			results[index] = result
+		}(idx, id)
+	}
+
+	wg.Wait()
+
+	delayByID := make(map[string]int, len(results))
+	for _, result := range results {
+		if result.Available {
+			delayByID[result.ProfileID] = result.DelayMs
+		}
+	}
+	if len(delayByID) > 0 {
+		profiles := s.loadProfiles()
+		for i := range profiles {
+			if delay, ok := delayByID[profiles[i].ID]; ok {
+				profiles[i].DelayMs = delay
+			}
+		}
+		_ = s.store.SaveProfiles(profiles)
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Available != results[j].Available {
+			return results[i].Available
+		}
+		if !results[i].Available {
+			return results[i].Name < results[j].Name
+		}
+		if results[i].DelayMs != results[j].DelayMs {
+			return results[i].DelayMs < results[j].DelayMs
+		}
+		return results[i].Name < results[j].Name
+	})
+
+	success := 0
+	for _, result := range results {
+		if result.Available {
+			success++
+		}
+	}
+
+	return domain.BatchDelayTestResult{
+		Results: results,
+		Total:   len(results),
+		Success: success,
+		Failed:  len(results) - success,
+	}
+}
+
+func (s *Service) testProfileDelayWithTimeout(id string, timeoutMs int) domain.DelayTestResult {
 	p, err := s.GetProfile(id)
 	if err != nil {
 		return domain.DelayTestResult{Message: "profile not found"}
@@ -412,7 +504,7 @@ func (s *Service) TestProfileDelay(id string) domain.DelayTestResult {
 	}
 	addr := net.JoinHostPort(p.Address, fmt.Sprintf("%d", p.Port))
 	start := time.Now()
-	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	conn, err := net.DialTimeout("tcp", addr, time.Duration(timeoutMs)*time.Millisecond)
 	elapsed := int(time.Since(start).Milliseconds())
 	if err != nil {
 		return domain.DelayTestResult{Available: false, Message: err.Error()}
@@ -428,6 +520,26 @@ func (s *Service) TestProfileDelay(id string) domain.DelayTestResult {
 	_ = s.store.SaveProfiles(profiles)
 
 	return domain.DelayTestResult{Available: true, DelayMs: elapsed}
+}
+
+func (s *Service) batchDelayResult(id string, timeoutMs int) domain.ProfileDelayResult {
+	p, err := s.GetProfile(id)
+	if err != nil {
+		return domain.ProfileDelayResult{ProfileID: id, Available: false, Error: "profile not found", Message: "profile not found"}
+	}
+
+	result := s.testProfileDelayWithTimeout(id, timeoutMs)
+	out := domain.ProfileDelayResult{
+		ProfileID: id,
+		Name:      p.Name,
+		DelayMs:   result.DelayMs,
+		Available: result.Available,
+		Message:   result.Message,
+	}
+	if !result.Available {
+		out.Error = result.Message
+	}
+	return out
 }
 
 func (s *Service) ImportProfileFromURI(uri string) (domain.ProfileItem, error) {
@@ -1139,6 +1251,7 @@ func (s *Service) checkProcExited() {
 		s.xrayCore = nil
 		s.running = false
 		s.trackedPID = 0
+		s.coreStartedAt = time.Time{}
 		s.setCoreError("xray-core instance exited")
 		s.clearTunRouting()
 		s.clearSystemProxyOnCoreStop()
@@ -1151,6 +1264,7 @@ func (s *Service) checkProcExited() {
 		s.proc = nil
 		s.running = false
 		s.trackedPID = 0
+		s.coreStartedAt = time.Time{}
 		s.setCoreError("core process exited")
 		s.clearTunRouting()
 		s.clearSystemProxyOnCoreStop()
@@ -1284,6 +1398,17 @@ func (s *Service) buildStatus() domain.CoreStatus {
 	if coreType == "" {
 		coreType = "xray"
 	}
+	startedAt := ""
+	uptimeSec := int64(0)
+	if !s.coreStartedAt.IsZero() {
+		startedAt = s.coreStartedAt.Format(time.RFC3339)
+		if s.running {
+			uptimeSec = int64(time.Since(s.coreStartedAt).Seconds())
+			if uptimeSec < 0 {
+				uptimeSec = 0
+			}
+		}
+	}
 	return domain.CoreStatus{
 		Running:          s.running,
 		CoreType:         coreType,
@@ -1291,6 +1416,8 @@ func (s *Service) buildStatus() domain.CoreStatus {
 		EngineResolved:   resolved,
 		CurrentProfileID: state.CurrentProfileID,
 		State:            st,
+		StartedAt:        startedAt,
+		UptimeSec:        uptimeSec,
 		Error:            s.lastError,
 		ErrorAt:          s.lastErrorAt,
 	}
@@ -1369,6 +1496,7 @@ func (s *Service) waitProc(cmd *exec.Cmd) {
 		s.proc = nil
 		s.running = false
 		s.trackedPID = 0
+		s.coreStartedAt = time.Time{}
 		s.setCoreError("core process exited")
 		s.clearTunRouting()
 		s.clearSystemProxyOnCoreStop()
