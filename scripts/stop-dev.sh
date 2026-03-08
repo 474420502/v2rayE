@@ -174,8 +174,8 @@ stop_by_pid_file() {
 
 collect_pids_by_pattern() {
     ps -eo pid=,cmd= | awk -v root="$ROOT_DIR/backend-go" '
-        (index($0, root) > 0 || $0 ~ /go run \.\/cmd\/server/ || $0 ~ /\/tmp\/go-build[^ ]*\/exe\/server/) &&
-        ($0 ~ /go run \.\/cmd\/server/ || $0 ~ /\/cmd\/server/ || $0 ~ /backend-go\/cmd\/server/ || $0 ~ /\/tmp\/go-build[^ ]*\/exe\/server/ || $0 ~ /(^|[[:space:]])server([[:space:]]|$)/) { print $1 }
+        (index($0, root) > 0 || $0 ~ /go run \.\/cmd\/(backend-api|server)/ || $0 ~ /\/tmp\/go-build[^ ]*\/exe\/(backend-api|server)/) &&
+        ($0 ~ /go run \.\/cmd\/(backend-api|server)/ || $0 ~ /\/cmd\/(backend-api|server)/ || $0 ~ /backend-go\/cmd\/(backend-api|server)/ || $0 ~ /\/tmp\/go-build[^ ]*\/exe\/(backend-api|server)/ || $0 ~ /(^|[[:space:]])(backend-api|server)([[:space:]]|$)/) { print $1 }
     '
 }
 

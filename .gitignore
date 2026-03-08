@@ -19,7 +19,7 @@ web/.env.local
 web/.turbo/
 
 # Backend build/runtime
-backend-go/server
+backend-go/backend-api
 backend-go/*.out
 backend-go/coverage.out
 

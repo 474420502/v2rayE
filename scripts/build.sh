@@ -4,22 +4,20 @@
 
 set -e
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 echo "=== 开始构建 v2rayE ==="
 
 echo ">>> 构建 backend-go..."
-cd backend-go
-go build -o server ./cmd/server
+cd "$ROOT_DIR/backend-go"
+go build -o backend-api ./cmd/backend-api
 echo ">>> backend-go 构建完成"
 
-cd ..
-
 echo ">>> 构建 TUI..."
-cd backend-go/cmd/tui
-go build -o ../../../v2raye-tui .
+cd "$ROOT_DIR/backend-go/cmd/tui"
+go build -o "$ROOT_DIR/v2raye-tui" .
 echo ">>> TUI 构建完成"
 
-cd "$ROOT_DIR/backend-go"
-
 echo "=== 构建完成 ==="
-echo "  - backend: ./backend-go/server"
+echo "  - backend api: ./backend-go/backend-api"
 echo "  - tui: ./v2raye-tui"

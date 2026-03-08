@@ -327,7 +327,7 @@ check_restart_restore() {
     print_header "Restart Restore Check"
     echo "restarting dev stack to verify core auto-restore"
     V2RAYE_COUPLED_LIFECYCLE=0 "$ROOT_DIR/scripts/stop-dev.sh" >/dev/null
-    V2RAYE_COUPLED_LIFECYCLE=0 "$ROOT_DIR/scripts/start-dev.sh" >/dev/null
+    "$ROOT_DIR/scripts/start-backend.sh" >/dev/null
 
     if ! poll_backend_ready; then
         fail "backend did not become healthy after restart"

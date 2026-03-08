@@ -35,7 +35,7 @@ func (a *tuiApp) build() gowid.IWidget {
 	a.settingsSocksPort = edit.New(edit.Options{Caption: "socksPort: "})
 	a.settingsHTTPPort = edit.New(edit.Options{Caption: "httpPort: "})
 	a.settingsTunName = edit.New(edit.Options{Caption: "tunName: "})
-	a.settingsProxyMode = edit.New(edit.Options{Caption: "proxyMode: "})
+	a.settingsProxyMode = edit.New(edit.Options{Caption: "proxyMode(forced_change|forced_clear|pac): "})
 	a.settingsProxyExcept = edit.New(edit.Options{Caption: "proxyExceptions: "})
 
 	root := pile.New([]gowid.IContainerWidget{

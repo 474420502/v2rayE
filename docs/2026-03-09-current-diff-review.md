@@ -186,7 +186,7 @@ cd web && npm test -- --runInBand
 1. 补充 TUI 的使用文档。
    - 至少说明如何启动后端。
    - 如何启动 TUI。
-   - 需要哪些环境变量，例如 `V2RAYE_TUI_BASE_URL`、`V2RAYE_TUI_TOKEN`。
+   - 需要哪些环境变量，例如 `V2RAYN_TUI_BASE_URL`、`V2RAYN_TUI_TOKEN`。
    - 当前支持的功能边界。
 
 2. 做一次真实联调烟测。

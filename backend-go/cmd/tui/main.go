@@ -13,8 +13,8 @@ import (
 )
 
 func main() {
-	baseURL := flag.String("base-url", envOrDefault("V2RAYE_TUI_BASE_URL", "http://127.0.0.1:18000"), "backend API base URL")
-	token := flag.String("token", envOrDefault("V2RAYE_TUI_TOKEN", ""), "bearer token for API access")
+	baseURL := flag.String("base-url", envOrDefault("V2RAYN_TUI_BASE_URL", "http://127.0.0.1:18000"), "backend API base URL")
+	token := flag.String("token", envOrDefault("V2RAYN_TUI_TOKEN", ""), "bearer token for API access")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

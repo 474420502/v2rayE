@@ -710,6 +710,7 @@ func (s *Service) NetworkAvailability() domain.AvailabilityResult {
 }
 
 func (s *Service) ApplySystemProxy(mode, exceptions string) (map[string]interface{}, error) {
+	mode = normalizeSystemProxyMode(mode)
 	switch mode {
 	case "forced_change", "forced_clear", "pac":
 	default:
@@ -739,6 +740,19 @@ func (s *Service) ApplySystemProxy(mode, exceptions string) (map[string]interfac
 			"port": intCfg(cfg, "socksPort", 10808),
 		},
 	}, nil
+}
+
+func normalizeSystemProxyMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "forced_change", "change", "global", "manual", "on", "enable", "enabled":
+		return "forced_change"
+	case "forced_clear", "clear", "off", "disable", "disabled", "direct", "none":
+		return "forced_clear"
+	case "pac":
+		return "pac"
+	default:
+		return strings.ToLower(strings.TrimSpace(mode))
+	}
 }
 
 func (s *Service) applyDesktopSystemProxy(cfg map[string]interface{}, mode, exceptions string) (string, error) {
@@ -1526,7 +1540,7 @@ func (s *Service) clearCoreErrorLocked() {
 
 func (s *Service) clearSystemProxyOnCoreStop() {
 	cfg := s.loadConfig()
-	mode := strCfg(cfg, "systemProxyMode", "forced_clear")
+	mode := normalizeSystemProxyMode(strCfg(cfg, "systemProxyMode", "forced_change"))
 	if mode != "forced_change" && mode != "pac" {
 		return
 	}
@@ -1564,7 +1578,7 @@ func normalizeRuntimeConfig(cfg map[string]interface{}) map[string]interface{} {
 }
 
 func (s *Service) applyConfiguredSystemProxyOnCoreStart(cfg map[string]interface{}) error {
-	mode := strCfg(cfg, "systemProxyMode", "forced_clear")
+	mode := normalizeSystemProxyMode(strCfg(cfg, "systemProxyMode", "forced_change"))
 	if mode != "forced_change" && mode != "pac" {
 		return nil
 	}

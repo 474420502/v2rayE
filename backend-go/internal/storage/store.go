@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"v2raye/backend-go/internal/domain"
@@ -91,7 +92,7 @@ func DefaultConfig() map[string]interface{} {
 		"tunHijackDefaultRoute": false,
 		"tunHijackDefaultRouteExplicit": false,
 		"tunStrictRoute":        false,
-		"systemProxyMode":       "forced_clear",
+		"systemProxyMode":       "forced_change",
 		"systemProxyExceptions": "",
 		"coreAutoRestart":       true,
 		"coreAutoRestartMaxRetries": 5,
@@ -175,6 +176,7 @@ func normalizeConfigMap(cfg map[string]interface{}) map[string]interface{} {
 		normalized["tunHijackDefaultRoute"] = false
 		normalized["tunHijackDefaultRouteExplicit"] = false
 	}
+	normalized["systemProxyMode"] = normalizeSystemProxyMode(asString(normalized["systemProxyMode"]))
 	if tunMode == "off" {
 		if asString(normalized["tunStack"]) == "" {
 			normalized["tunStack"] = "mixed"
@@ -200,6 +202,19 @@ func normalizeTunMode(value string) string {
 func asString(value interface{}) string {
 	s, _ := value.(string)
 	return s
+}
+
+func normalizeSystemProxyMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "forced_change", "change", "global", "manual", "on", "enable", "enabled":
+		return "forced_change"
+	case "forced_clear", "clear", "off", "disable", "disabled", "direct", "none":
+		return "forced_clear"
+	case "pac":
+		return "pac"
+	default:
+		return "forced_change"
+	}
 }
 
 // ─── Routing ─────────────────────────────────────────────────────────────────

@@ -10,6 +10,14 @@
 ./scripts/start-tui.sh
 ```
 
+默认会自动尝试拉起 core（可通过 `V2RAYN_TUI_AUTO_UP=0` 关闭）。
+
+如果你希望一键完成“后端 + core + 系统代理 + 健康检查”：
+
+```bash
+./scripts/vpn-up.sh
+```
+
 如果后端已运行，也可以直接启动：
 
 ```bash
@@ -20,14 +28,14 @@ go run . --base-url http://127.0.0.1:18000
 启用 Bearer token 时：
 
 ```bash
-V2RAYN_API_TOKEN=your-token ./scripts/start-tui.sh
+V2RAYN_TUI_TOKEN=your-token ./scripts/start-tui.sh
 ```
 
-或：
+常用环境变量：
 
-```bash
-V2RAYE_TUI_TOKEN=your-token ./scripts/start-tui.sh
-```
+- `V2RAYN_TUI_AUTO_UP`：`1`（默认）自动启动 core，`0` 关闭自动启动
+- `V2RAYN_VPN_PROXY_MODE`：`vpn-up.sh` 使用的系统代理模式（默认 `global`）
+- `V2RAYN_VPN_PROXY_EXCEPTIONS`：`vpn-up.sh` 系统代理例外域名（默认空）
 
 ## 设计方向
 

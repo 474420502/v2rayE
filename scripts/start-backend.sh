@@ -11,7 +11,6 @@ BACKEND_ADDR="${V2RAYN_API_ADDR:-127.0.0.1:18000}"
 BACKEND_URL="http://$BACKEND_ADDR"
 BACKEND_DATA_DIR="${V2RAYN_DATA_DIR:-$RUN_DIR/data}"
 BACKEND_ASSET_DIR="${V2RAYN_ASSET_DIR:-$ROOT_DIR/backend-go}"
-START_TUI="${V2RAYE_LAUNCH_TUI:-0}"
 
 mkdir -p "$RUN_DIR"
 mkdir -p "$BACKEND_DATA_DIR"
@@ -43,7 +42,7 @@ try {
 
     if [[ -n "$tun_mode" ]]; then
         echo "warning: detected TUN mode (${tun_mode}) in $config_file"
-        echo "warning: Linux TUN route takeover requires root privileges; use: sudo ./scripts/start-dev.sh"
+        echo "warning: Linux TUN route takeover requires root privileges; use: sudo ./scripts/start-backend.sh"
     fi
 }
 
@@ -95,7 +94,7 @@ start_backend() {
         V2RAYN_DATA_DIR="$BACKEND_DATA_DIR" \
         XRAY_LOCATION_ASSET="$BACKEND_ASSET_DIR" \
         V2RAY_LOCATION_ASSET="$BACKEND_ASSET_DIR" \
-        bash -lc "cd '$ROOT_DIR/backend-go' && exec go run ./cmd/server" >> "$BACKEND_LOG_FILE" 2>&1 &
+        bash -lc "cd '$ROOT_DIR/backend-go' && exec go run ./cmd/backend-api" >> "$BACKEND_LOG_FILE" 2>&1 &
     pid=$!
     echo "$pid" > "$BACKEND_PID_FILE"
     for _ in {1..20}; do
@@ -127,13 +126,9 @@ start_backend
 echo "logs:"
 echo "  backend: $BACKEND_LOG_FILE"
 echo ""
-echo "TUI-first workflow:"
+echo "TUI workflow:"
 echo "  start interactive TUI: ./scripts/start-tui.sh"
 echo "  stop backend/TUN cleanup: ./scripts/stop-dev.sh"
-
-if [[ "$START_TUI" == "1" ]]; then
-    exec "$ROOT_DIR/scripts/start-tui.sh"
-fi
 
 if [[ "$EUID" -eq 0 ]]; then
     echo "note: started as root; stop with sudo ./scripts/stop-dev.sh to ensure full TUN cleanup"
