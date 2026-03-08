@@ -18,7 +18,7 @@ cd backend-go/cmd/tui
 go build -o ../../../v2raye-tui .
 echo ">>> TUI 构建完成"
 
-cd ../..
+cd "$ROOT_DIR/backend-go"
 
 echo "=== 构建完成 ==="
 echo "  - backend: ./backend-go/server"

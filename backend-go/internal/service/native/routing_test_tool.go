@@ -176,6 +176,7 @@ func ruleMatchesDomain(host string, raw interface{}) (string, bool) {
 				return value, true
 			}
 		case strings.HasPrefix(candidate, "regexp:"):
+			// Regexp-based domain rules are intentionally not evaluated here.
 			continue
 		case strings.HasPrefix(candidate, "geosite:cn"):
 			if strings.HasSuffix(host, ".cn") {

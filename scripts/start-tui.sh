@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_ADDR="${V2RAYN_API_ADDR:-127.0.0.1:18000}"
 BACKEND_URL="http://$BACKEND_ADDR"
-TOKEN="${V2RAYE_TUI_TOKEN:-${V2RAYN_API_TOKEN:-}}"
+# Token precedence: V2RAYN_TUI_TOKEN (preferred), then V2RAYN_API_TOKEN, then legacy V2RAYE_TUI_TOKEN.
+TOKEN="${V2RAYN_TUI_TOKEN:-${V2RAYN_API_TOKEN:-${V2RAYE_TUI_TOKEN:-}}}"
 
 backend_api_ready() {
     if ! command -v curl >/dev/null 2>&1; then

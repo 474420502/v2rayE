@@ -218,6 +218,8 @@ func DefaultRoutingConfig() domain.RoutingConfig {
 	}
 }
 
+// boolPtr is intentionally local to this file and currently only used for
+// DefaultRoutingConfig; promote it to a shared helper if reused elsewhere.
 func boolPtr(v bool) *bool {
 	return &v
 }
