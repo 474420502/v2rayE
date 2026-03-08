@@ -22,3 +22,5 @@ web/.turbo/
 backend-go/server
 backend-go/*.out
 backend-go/coverage.out
+
+*.dat

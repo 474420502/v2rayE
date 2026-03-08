@@ -88,9 +88,14 @@ func DefaultConfig() map[string]interface{} {
 		"tunStack":              "mixed",
 		"tunMtu":                1500,
 		"tunAutoRoute":          true,
+		"tunHijackDefaultRoute": false,
+		"tunHijackDefaultRouteExplicit": false,
 		"tunStrictRoute":        false,
 		"systemProxyMode":       "forced_clear",
 		"systemProxyExceptions": "",
+		"coreAutoRestart":       true,
+		"coreAutoRestartMaxRetries": 5,
+		"coreAutoRestartBackoffMs":  500,
 		"coreEngine":            "xray-core",
 		"xrayCmd":               "xray",
 		"dnsMode":               "UseSystemDNS",
@@ -166,6 +171,10 @@ func normalizeConfigMap(cfg map[string]interface{}) map[string]interface{} {
 	}
 	normalized["tunMode"] = tunMode
 	normalized["enableTun"] = tunMode != "off"
+	if explicit, ok := normalized["tunHijackDefaultRouteExplicit"].(bool); !ok || !explicit {
+		normalized["tunHijackDefaultRoute"] = false
+		normalized["tunHijackDefaultRouteExplicit"] = false
+	}
 	if tunMode == "off" {
 		if asString(normalized["tunStack"]) == "" {
 			normalized["tunStack"] = "mixed"

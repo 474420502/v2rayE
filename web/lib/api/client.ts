@@ -17,6 +17,7 @@ import type {
 } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '/api';
+const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.NEXT_PUBLIC_API_TIMEOUT_MS ?? '12000', 10);
 
 const API_CODE_MESSAGES: Record<number, string> = {
   40101: '未登录或登录已过期，请重新登录',
@@ -70,17 +71,66 @@ function getTokenFromCookie(): string | null {
   return raw ? decodeURIComponent(raw) : null;
 }
 
+function safeTimeoutMs(): number {
+  if (Number.isFinite(REQUEST_TIMEOUT_MS) && REQUEST_TIMEOUT_MS > 0) {
+    return REQUEST_TIMEOUT_MS;
+  }
+  return 12000;
+}
+
+function joinAbortSignals(a: AbortSignal, b?: AbortSignal | null): AbortSignal {
+  if (!b) return a;
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([a, b]);
+  }
+
+  const relay = new AbortController();
+  const abortRelay = () => relay.abort();
+  if (a.aborted || b.aborted) {
+    relay.abort();
+  } else {
+    a.addEventListener('abort', abortRelay, { once: true });
+    b.addEventListener('abort', abortRelay, { once: true });
+  }
+  return relay.signal;
+}
+
+export function buildEventSourceUrl(path: string): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  const baseUrl = `${API_BASE}${normalized}`;
+  const token = getTokenFromCookie();
+  if (!token) {
+    return baseUrl;
+  }
+  const sep = baseUrl.includes('?') ? '&' : '?';
+  return `${baseUrl}${sep}token=${encodeURIComponent(token)}`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getTokenFromCookie();
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init?.headers ?? {})
-    },
-    cache: 'no-store'
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), safeTimeoutMs());
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init?.headers ?? {})
+      },
+      cache: 'no-store',
+      signal: joinAbortSignals(controller.signal, init?.signal)
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new ApiClientError(`请求超时（>${safeTimeoutMs()}ms）`, { status: 504 });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const contentType = response.headers.get('content-type') ?? '';
   const isJson = contentType.includes('application/json');
@@ -192,11 +242,7 @@ export const api = {
 
   // ── Core logs SSE ─────────────────────────────────────────────────────────
   streamCoreLogs: (onLine: (line: LogLine) => void): () => void => {
-    const token = getTokenFromCookie();
-    const url = `${API_BASE}/logs/stream`;
-    const es = new EventSource(
-      token ? `${url}?token=${encodeURIComponent(token)}` : url
-    );
+    const es = new EventSource(buildEventSourceUrl('/logs/stream'));
     es.addEventListener('log', (e: MessageEvent) => {
       try {
         onLine(JSON.parse(e.data) as LogLine);
@@ -209,11 +255,7 @@ export const api = {
 
   // ── Metadata events SSE ────────────────────────────────────────────────────
   streamEvents: (onEvent: (ev: { event: string; ts: string; data: unknown }) => void): () => void => {
-    const token = getTokenFromCookie();
-    const url = `${API_BASE}/events/stream`;
-    const es = new EventSource(
-      token ? `${url}?token=${encodeURIComponent(token)}` : url
-    );
+    const es = new EventSource(buildEventSourceUrl('/events/stream'));
     es.addEventListener('message', (e: MessageEvent) => {
       try {
         onEvent(JSON.parse(e.data));

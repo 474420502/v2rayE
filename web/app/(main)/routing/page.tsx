@@ -327,6 +327,8 @@ export default function RoutingPage() {
             <p className="muted" style={{ marginTop: 8 }}>
               生成时间: {diagnostics.generatedAt}
               {diagnostics.defaultRouteDevice ? `，default route dev=${diagnostics.defaultRouteDevice}` : ''}
+              {diagnostics.tunTakeoverMode ? `，takeover mode=${diagnostics.tunTakeoverMode}` : ''}
+              {diagnostics.tunPolicyRouteTable ? `，table=${diagnostics.tunPolicyRouteTable}` : ''}
             </p>
             {repairResult ? (
               <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, border: '1px solid color-mix(in srgb, var(--text) 18%, transparent)' }}>
@@ -334,10 +336,25 @@ export default function RoutingPage() {
                 <div className="muted" style={{ fontSize: 13 }}>
                   时间: {repairResult.triggeredAt}；核心运行: {repairResult.running ? 'yes' : 'no'}；
                   TUN接管: {repairResult.tunTakeoverActive ? 'active' : 'inactive'}
+                  {repairResult.tunTakeoverMode ? `；mode=${repairResult.tunTakeoverMode}` : ''}
+                  {repairResult.tunPolicyRouteTable ? `；table=${repairResult.tunPolicyRouteTable}` : ''}
                   {repairResult.defaultRouteDevice ? `；default dev=${repairResult.defaultRouteDevice}` : ''}
                 </div>
+                {repairResult.tunPolicyRules && repairResult.tunPolicyRules.length > 0 ? (
+                  <pre style={{ marginTop: 8, whiteSpace: 'pre-wrap', fontSize: 12, padding: 10, borderRadius: 8, background: 'color-mix(in srgb, var(--text) 4%, transparent)' }}>
+                    {repairResult.tunPolicyRules.join('\n')}
+                  </pre>
+                ) : null}
                 {repairResult.message ? <div style={{ marginTop: 6 }}>{repairResult.message}</div> : null}
                 {repairResult.error ? <div className="status-error" style={{ marginTop: 6 }}>{repairResult.error}</div> : null}
+              </div>
+            ) : null}
+            {diagnostics.tunPolicyRules && diagnostics.tunPolicyRules.length > 0 ? (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>策略路由规则</div>
+                <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12, padding: 10, borderRadius: 8, background: 'color-mix(in srgb, var(--text) 4%, transparent)' }}>
+                  {diagnostics.tunPolicyRules.join('\n')}
+                </pre>
               </div>
             ) : null}
             <div className="table-wrap" style={{ marginTop: 10 }}>

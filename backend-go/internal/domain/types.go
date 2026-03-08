@@ -197,6 +197,9 @@ type RoutingDiagnostics struct {
 	TunMode            string                   `json:"tunMode"`
 	TunEnabled         bool                     `json:"tunEnabled"`
 	TunTakeoverActive  bool                     `json:"tunTakeoverActive"`
+	TunTakeoverMode    string                   `json:"tunTakeoverMode,omitempty"`
+	TunPolicyRouteTable int                     `json:"tunPolicyRouteTable,omitempty"`
+	TunPolicyRules     []string                 `json:"tunPolicyRules,omitempty"`
 	DefaultRouteDevice string                   `json:"defaultRouteDevice,omitempty"`
 	HasGeoIP           bool                     `json:"hasGeoIP"`
 	HasGeoSite         bool                     `json:"hasGeoSite"`
@@ -233,6 +236,9 @@ type TunRepairResult struct {
 	Running            bool   `json:"running"`
 	TunEnabled         bool   `json:"tunEnabled"`
 	TunTakeoverActive  bool   `json:"tunTakeoverActive"`
+	TunTakeoverMode    string `json:"tunTakeoverMode,omitempty"`
+	TunPolicyRouteTable int   `json:"tunPolicyRouteTable,omitempty"`
+	TunPolicyRules     []string `json:"tunPolicyRules,omitempty"`
 	DefaultRouteDevice string `json:"defaultRouteDevice,omitempty"`
 	Message            string `json:"message,omitempty"`
 	Error              string `json:"error,omitempty"`
@@ -257,5 +263,6 @@ type LogLine struct {
 type PersistentState struct {
 	CurrentProfileID string `json:"currentProfileId,omitempty"`
 	CoreType         string `json:"coreType,omitempty"`
+	CoreShouldRestore bool   `json:"coreShouldRestore,omitempty"`
 	UpdatedAt        string `json:"updatedAt,omitempty"`
 }

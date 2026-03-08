@@ -130,6 +130,9 @@ func extractRequestToken(r *http.Request) string {
 	if strings.HasPrefix(hdr, "Bearer ") {
 		return strings.TrimSpace(strings.TrimPrefix(hdr, "Bearer "))
 	}
+	if q := strings.TrimSpace(r.URL.Query().Get("token")); q != "" {
+		return q
+	}
 	if ck, err := r.Cookie("auth_token"); err == nil {
 		return strings.TrimSpace(ck.Value)
 	}

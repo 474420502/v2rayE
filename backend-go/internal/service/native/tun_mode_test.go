@@ -2,6 +2,8 @@ package native
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"v2raye/backend-go/internal/domain"
@@ -313,6 +315,52 @@ func TestGenerateXrayConfigTunBypassCNDoesNotForceAllTunToProxy(t *testing.T) {
 	}
 }
 
+func TestGenerateXrayConfigDisablesTunInboundAutoRouteOnLinux(t *testing.T) {
+	profile := domain.ProfileItem{
+		ID:       "p1",
+		Name:     "test",
+		Protocol: domain.ProtocolVLESS,
+		Address:  "example.com",
+		Port:     443,
+		VLESS: &domain.VLESSConfig{
+			UUID: "11111111-1111-1111-1111-111111111111",
+		},
+	}
+
+	cfg := map[string]interface{}{
+		"tunMode":      "mixed",
+		"tunName":      "xraye0",
+		"tunMtu":       1500,
+		"tunAutoRoute": true,
+	}
+
+	raw, err := generateXrayConfig(profile, cfg, domain.RoutingConfig{Mode: "global"})
+	if err != nil {
+		t.Fatalf("generateXrayConfig() error = %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatalf("unmarshal generated config: %v", err)
+	}
+	inbounds, ok := parsed["inbounds"].([]interface{})
+	if !ok {
+		t.Fatalf("generated config missing inbounds")
+	}
+	for _, inbound := range inbounds {
+		item, ok := inbound.(map[string]interface{})
+		if !ok || item["tag"] != "tun" {
+			continue
+		}
+		settings := item["settings"].(map[string]interface{})
+		if got := settings["autoRoute"]; got != false {
+			t.Fatalf("tun inbound autoRoute = %#v, want false on Linux backend-managed routing", got)
+		}
+		return
+	}
+	t.Fatalf("generated config missing tun inbound")
+}
+
 func containsString(items []string, target string) bool {
 	for _, item := range items {
 		if item == target {
@@ -320,4 +368,30 @@ func containsString(items []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func TestHasGeoAssetChecksEnvAssetDirs(t *testing.T) {
+	tmp := t.TempDir()
+	assetPath := filepath.Join(tmp, "geosite.dat")
+	if err := os.WriteFile(assetPath, []byte("ok"), 0o644); err != nil {
+		t.Fatalf("write geosite.dat: %v", err)
+	}
+
+	oldXray := os.Getenv("XRAY_LOCATION_ASSET")
+	oldV2ray := os.Getenv("V2RAY_LOCATION_ASSET")
+	t.Cleanup(func() {
+		_ = os.Setenv("XRAY_LOCATION_ASSET", oldXray)
+		_ = os.Setenv("V2RAY_LOCATION_ASSET", oldV2ray)
+	})
+
+	if err := os.Setenv("XRAY_LOCATION_ASSET", tmp); err != nil {
+		t.Fatalf("set XRAY_LOCATION_ASSET: %v", err)
+	}
+	if err := os.Setenv("V2RAY_LOCATION_ASSET", ""); err != nil {
+		t.Fatalf("clear V2RAY_LOCATION_ASSET: %v", err)
+	}
+
+	if !hasGeoSiteAsset() {
+		t.Fatalf("expected hasGeoSiteAsset to detect geosite.dat in XRAY_LOCATION_ASSET")
+	}
 }

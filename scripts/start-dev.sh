@@ -12,12 +12,14 @@ FRONTEND_LOG_FILE="$RUN_DIR/frontend.log"
 BACKEND_ADDR="${V2RAYN_API_ADDR:-127.0.0.1:18000}"
 BACKEND_URL="http://$BACKEND_ADDR"
 BACKEND_DATA_DIR="${V2RAYN_DATA_DIR:-$RUN_DIR/data}"
+BACKEND_ASSET_DIR="${V2RAYN_ASSET_DIR:-$ROOT_DIR/backend-go}"
 FRONTEND_PORT="${PORT:-3000}"
 EFFECTIVE_FRONTEND_PORT="$FRONTEND_PORT"
 COUPLED_LIFECYCLE="${V2RAYE_COUPLED_LIFECYCLE:-1}"
 
 mkdir -p "$RUN_DIR"
 mkdir -p "$BACKEND_DATA_DIR"
+mkdir -p "$BACKEND_ASSET_DIR"
 
 warn_tun_requires_sudo() {
     if [[ "$EUID" -eq 0 ]]; then
@@ -92,7 +94,12 @@ start_backend() {
     fi
 
     : > "$BACKEND_LOG_FILE"
-    setsid env V2RAYN_API_ADDR="$BACKEND_ADDR" V2RAYN_DATA_DIR="$BACKEND_DATA_DIR" bash -lc "cd '$ROOT_DIR/backend-go' && exec go run ./cmd/server" >> "$BACKEND_LOG_FILE" 2>&1 &
+    setsid env \
+        V2RAYN_API_ADDR="$BACKEND_ADDR" \
+        V2RAYN_DATA_DIR="$BACKEND_DATA_DIR" \
+        XRAY_LOCATION_ASSET="$BACKEND_ASSET_DIR" \
+        V2RAY_LOCATION_ASSET="$BACKEND_ASSET_DIR" \
+        bash -lc "cd '$ROOT_DIR/backend-go' && exec go run ./cmd/server" >> "$BACKEND_LOG_FILE" 2>&1 &
     pid=$!
     echo "$pid" > "$BACKEND_PID_FILE"
     for _ in {1..20}; do

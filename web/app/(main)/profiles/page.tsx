@@ -5,7 +5,7 @@ import { ImportUriDialog } from '@/components/profiles/import-uri-dialog';
 import { ProfileForm, type ProfileFormState } from '@/components/profiles/profile-form';
 import { ProtoBadge } from '@/components/profiles/proto-badge';
 import { PROTOCOLS, PROTOCOL_LABELS, blankProfile, type Protocol } from '@/components/profiles/protocols';
-import { api } from '@/lib/api/client';
+import { api, buildEventSourceUrl } from '@/lib/api/client';
 import type { CoreStatus, DelayTestResult, ProfileItem } from '@/lib/types';
 
 // ─── Main page ────────────────────────────────────────────────────────────────
@@ -48,8 +48,7 @@ export default function ProfilesPage() {
       clearInterval(fallbackTimerRef.current);
       fallbackTimerRef.current = null;
     };
-    const endpoint = `${process.env.NEXT_PUBLIC_API_BASE ?? '/api'}/events/stream`;
-    const source = new EventSource(endpoint, { withCredentials: true });
+    const source = new EventSource(buildEventSourceUrl('/events/stream'), { withCredentials: true });
     source.onopen = () => stopFallback();
     source.onmessage = (event) => {
       try {

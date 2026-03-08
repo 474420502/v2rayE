@@ -9,6 +9,13 @@ cd backend-go
 go run ./cmd/server
 ```
 
+TUN/VPN 一次性自检：
+
+```bash
+cd ..
+sudo ./scripts/tun-health-check.sh
+```
+
 默认监听：`127.0.0.1:18000`
 
 ## 环境变量
@@ -24,6 +31,14 @@ go run ./cmd/server
 - `V2RAYN_SERVICELIB_BRIDGE_TIMEOUT_MS`：桥接调用超时（毫秒），默认 `3000`
 - `V2RAYN_SERVICELIB_BRIDGE_ALLOW_ACTIONS`：桥接动作白名单（逗号分隔，`*`/`all` 表示全量），默认最小维护集：`core.status,core.start,core.stop,core.restart,config.get,config.update`
 - `V2RAYN_SERVICELIB_BRIDGE_METRICS_LOG`：是否输出 bridge 成功调用耗时日志（`1/true/yes/on` 启用，默认关闭）
+
+运行时配置新增（`/api/config` 可读写）：
+
+- `coreAutoRestart`：核心异常退出后是否自动拉起（默认 `true`）
+- `coreAutoRestartMaxRetries`：自动拉起最大重试次数（默认 `5`，`0` 表示不限制）
+- `coreAutoRestartBackoffMs`：自动拉起基础退避毫秒（默认 `500`，指数退避，最大 30 秒）
+- `tunAutoRoute`：传给 xray TUN inbound 的 `autoRoute`，默认 `true`
+- `tunHijackDefaultRoute`：是否额外由后端手动执行 `ip route replace default dev <tun>`，默认 `false`；这是高风险兼容开关，只有在确有需要时才应开启
 
 ## 目录分层
 

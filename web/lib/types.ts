@@ -148,6 +148,9 @@ export type RoutingDiagnostics = {
   tunMode: string;
   tunEnabled: boolean;
   tunTakeoverActive: boolean;
+  tunTakeoverMode?: string;
+  tunPolicyRouteTable?: number;
+  tunPolicyRules?: string[];
   defaultRouteDevice?: string;
   hasGeoIP: boolean;
   hasGeoSite: boolean;
@@ -181,6 +184,9 @@ export type TunRepairResult = {
   running: boolean;
   tunEnabled: boolean;
   tunTakeoverActive: boolean;
+  tunTakeoverMode?: string;
+  tunPolicyRouteTable?: number;
+  tunPolicyRules?: string[];
   defaultRouteDevice?: string;
   message?: string;
   error?: string;
@@ -244,6 +250,7 @@ export type ConfigDto = {
   tunStack?: string;
   tunMtu?: number;
   tunAutoRoute?: boolean;
+  tunHijackDefaultRoute?: boolean;
   tunStrictRoute?: boolean;
   systemProxyMode?: string;
   systemProxyExceptions?: string;

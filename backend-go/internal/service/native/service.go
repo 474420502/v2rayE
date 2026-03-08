@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -19,6 +20,12 @@ import (
 	"v2raye/backend-go/internal/domain"
 	"v2raye/backend-go/internal/service"
 	"v2raye/backend-go/internal/storage"
+)
+
+const (
+	tunPolicyRouteTable      = 20230
+	tunPolicyRulePriorityMin = 10000
+	tunPolicyRulePriorityMax = 10199
 )
 
 // Service implements service.BackendService by managing a real Xray process.
@@ -40,16 +47,22 @@ type Service struct {
 	stats *statsTracker
 
 	tunRestoreRoutes []string
+
+	watchdogRestartAttempts  int
+	watchdogRestartScheduled bool
+	watchdogRestarting       bool
 }
 
 // New creates a native Service using the given storage and xray binary path.
 func New(dataDir, xrayCmd string, store *storage.Store) *Service {
-	return &Service{
+	svc := &Service{
 		store:   store,
 		dataDir: dataDir,
 		xrayCmd: xrayCmd,
 		logs:    newLogBroker(),
 	}
+	go svc.watchdogLoop()
+	return svc
 }
 
 // ─── Core lifecycle ───────────────────────────────────────────────────────────
@@ -72,9 +85,19 @@ func (s *Service) StartCore() domain.CoreStatus {
 		}
 	}
 
-	cfg, _ := s.store.LoadConfig()
-	routing, _ := s.store.LoadRoutingConfig()
-	state, _ := s.store.LoadState()
+	cfg := s.loadConfig()
+	routing := s.loadRoutingConfig()
+	needGeoSite, needGeoIP := routingGeoDataRequirements(routing)
+	missingNeeded := (needGeoSite && !hasGeoSiteAsset()) || (needGeoIP && !hasGeoIPAsset())
+	if missingNeeded {
+		// Keep startup resilient: try to self-heal geodata before generating routing rules.
+		if result, geErr := s.ensureGeoSiteData(); geErr != nil {
+			log.Printf("[native] StartCore: ensure geodata failed: %v", geErr)
+		} else {
+			log.Printf("[native] StartCore: geodata ensured: geositeUpdated=%v geoipUpdated=%v", result["geositeUpdated"], result["geoipUpdated"])
+		}
+	}
+	state := s.loadState()
 	selectedProfile := s.pickSelectedProfile(state.CurrentProfileID)
 	if selectedProfile != nil && state.CurrentProfileID != selectedProfile.ID {
 		state.CurrentProfileID = selectedProfile.ID
@@ -103,6 +126,9 @@ func (s *Service) StartCore() domain.CoreStatus {
 	}
 
 	if tunModeFromConfig(cfg) != "off" {
+		if err := s.clearManagedTunPolicyRouting(cfg, nil); err != nil {
+			log.Printf("[native] StartCore: clear stale TUN policy routing failed: %v", err)
+		}
 		if err := s.cleanupStaleTunInterface(cfg); err != nil {
 			s.setCoreError(err.Error())
 			log.Printf("[native] StartCore: stale TUN cleanup failed: %v", err)
@@ -138,6 +164,9 @@ func (s *Service) StartCore() domain.CoreStatus {
 	s.xrayCore = xrayCore
 	s.trackedPID = 0
 	s.running = true
+	s.watchdogRestartAttempts = 0
+	s.watchdogRestartScheduled = false
+	s.watchdogRestarting = false
 	s.clearCoreErrorLocked()
 	s.lastEngine = resolved
 
@@ -148,11 +177,11 @@ func (s *Service) StartCore() domain.CoreStatus {
 	s.stats.reset()
 	s.stats.start()
 
-	if tunModeFromConfig(cfg) != "off" && boolCfg(cfg, "tunAutoRoute", true) {
-		if err := s.setupTunRouting(cfg); err != nil {
+	if shouldManageTunTraffic(cfg) {
+		if err := s.setupManagedTunRouting(cfg, &profile); err != nil {
 			log.Printf("[native] StartCore: TUN route setup failed (first attempt): %v", err)
 			_ = s.cleanupStaleTunInterface(cfg)
-			if retryErr := s.setupTunRouting(cfg); retryErr != nil {
+			if retryErr := s.setupManagedTunRouting(cfg, &profile); retryErr != nil {
 				log.Printf("[native] StartCore: TUN route setup failed (retry): %v", retryErr)
 				s.setCoreError(fmt.Sprintf("TUN 接管失败，核心已降级为仅本地代理可用: %s", retryErr.Error()))
 				s.logs.AppLog("warning", fmt.Sprintf("tun route takeover failed; core kept running: %v", retryErr))
@@ -169,7 +198,7 @@ func (s *Service) StartCore() domain.CoreStatus {
 
 	log.Printf("[native] core started in managed xray-core mode with config=%s", configPath)
 	s.logs.AppLog("info", fmt.Sprintf("core started (engine=%s, profile=%s)", resolved, profile.Name))
-	_ = s.saveState()
+	_ = s.saveState(true)
 	return s.buildStatus()
 }
 
@@ -181,6 +210,9 @@ func (s *Service) StopCore() domain.CoreStatus {
 	s.xrayCore = nil
 	s.running = false
 	s.trackedPID = 0
+	s.watchdogRestartAttempts = 0
+	s.watchdogRestartScheduled = false
+	s.watchdogRestarting = false
 	s.clearCoreErrorLocked()
 	if s.stats != nil {
 		s.stats.shutdown()
@@ -195,14 +227,14 @@ func (s *Service) StopCore() domain.CoreStatus {
 		_ = xrayCore.Close()
 	}
 	s.clearTunRouting()
-	if cfg, _ := s.store.LoadConfig(); tunModeFromConfig(cfg) != "off" {
+	if cfg := s.loadConfig(); tunModeFromConfig(cfg) != "off" {
 		if err := s.cleanupStaleTunInterface(cfg); err != nil {
 			log.Printf("[native] StopCore: stale TUN cleanup failed: %v", err)
 		}
 	}
 	s.clearSystemProxyOnCoreStop()
 	s.logs.AppLog("info", "core stopped")
-	_ = s.saveState()
+	_ = s.saveState(false)
 	return s.CoreStatus()
 }
 
@@ -223,8 +255,8 @@ func (s *Service) ClearCoreError() domain.CoreStatus {
 // ─── Profiles ─────────────────────────────────────────────────────────────────
 
 func (s *Service) ListProfiles() []domain.ProfileItem {
-	profiles, _ := s.store.LoadProfiles()
-	subs, _ := s.store.LoadSubscriptions()
+	profiles := s.loadProfiles()
+	subs := s.loadSubscriptions()
 	subMap := make(map[string]string, len(subs))
 	for _, sub := range subs {
 		subMap[sub.ID] = sub.Remarks
@@ -238,7 +270,7 @@ func (s *Service) ListProfiles() []domain.ProfileItem {
 }
 
 func (s *Service) GetProfile(id string) (domain.ProfileItem, error) {
-	profiles, _ := s.store.LoadProfiles()
+	profiles := s.loadProfiles()
 	for _, p := range profiles {
 		if p.ID == id {
 			return p, nil
@@ -252,7 +284,7 @@ func (s *Service) CreateProfile(input domain.ProfileItem) (domain.ProfileItem, e
 		return domain.ProfileItem{}, err
 	}
 	input.ID = newProfileID()
-	profiles, _ := s.store.LoadProfiles()
+	profiles := s.loadProfiles()
 	profiles = append(profiles, input)
 	if err := s.store.SaveProfiles(profiles); err != nil {
 		return domain.ProfileItem{}, fmt.Errorf("save profiles: %w", err)
@@ -264,7 +296,7 @@ func (s *Service) UpdateProfile(id string, input domain.ProfileItem) (domain.Pro
 	if err := validateProfile(input); err != nil {
 		return domain.ProfileItem{}, err
 	}
-	profiles, _ := s.store.LoadProfiles()
+	profiles := s.loadProfiles()
 	for i, p := range profiles {
 		if p.ID == id {
 			input.ID = id
@@ -299,7 +331,7 @@ func (s *Service) DeleteProfiles(ids []string) error {
 		return service.ErrInvalidMode
 	}
 
-	profiles, _ := s.store.LoadProfiles()
+	profiles := s.loadProfiles()
 	newList := profiles[:0]
 	removedIDs := make(map[string]struct{}, len(idSet))
 	for _, p := range profiles {
@@ -316,7 +348,7 @@ func (s *Service) DeleteProfiles(ids []string) error {
 		return err
 	}
 
-	state, _ := s.store.LoadState()
+	state := s.loadState()
 	selectedRemoved := false
 	nextSelectedID := state.CurrentProfileID
 	if _, ok := removedIDs[state.CurrentProfileID]; ok {
@@ -353,7 +385,7 @@ func (s *Service) SelectProfile(id string) error {
 	if _, err := s.GetProfile(id); err != nil {
 		return service.ErrNotFound
 	}
-	state, _ := s.store.LoadState()
+	state := s.loadState()
 	state.CurrentProfileID = id
 	if err := s.store.SaveState(state); err != nil {
 		return err
@@ -387,7 +419,7 @@ func (s *Service) TestProfileDelay(id string) domain.DelayTestResult {
 	}
 	conn.Close()
 
-	profiles, _ := s.store.LoadProfiles()
+	profiles := s.loadProfiles()
 	for i := range profiles {
 		if profiles[i].ID == id {
 			profiles[i].DelayMs = elapsed
@@ -409,8 +441,8 @@ func (s *Service) ImportProfileFromURI(uri string) (domain.ProfileItem, error) {
 // ─── Subscriptions ────────────────────────────────────────────────────────────
 
 func (s *Service) ListSubscriptions() []domain.SubscriptionItem {
-	subs, _ := s.store.LoadSubscriptions()
-	profiles, _ := s.store.LoadProfiles()
+	subs := s.loadSubscriptions()
+	profiles := s.loadProfiles()
 	countMap := make(map[string]int)
 	for _, p := range profiles {
 		if p.SubID != "" {
@@ -438,7 +470,7 @@ func (s *Service) CreateSubscription(input domain.SubscriptionUpsertRequest) (do
 		AutoUpdateMinutes: input.AutoUpdateMinutes,
 		UpdatedAt:         time.Now().UTC().Format(time.RFC3339),
 	}
-	subs, _ := s.store.LoadSubscriptions()
+	subs := s.loadSubscriptions()
 	subs = append(subs, item)
 	if err := s.store.SaveSubscriptions(subs); err != nil {
 		return domain.SubscriptionItem{}, fmt.Errorf("save: %w", err)
@@ -450,7 +482,7 @@ func (s *Service) UpdateSubscription(id string, input domain.SubscriptionUpsertR
 	if strings.TrimSpace(input.Remarks) == "" || strings.TrimSpace(input.URL) == "" {
 		return domain.SubscriptionItem{}, service.ErrInvalidMode
 	}
-	subs, _ := s.store.LoadSubscriptions()
+	subs := s.loadSubscriptions()
 	for i, sub := range subs {
 		if sub.ID == id {
 			subs[i].Remarks = strings.TrimSpace(input.Remarks)
@@ -471,7 +503,7 @@ func (s *Service) UpdateSubscription(id string, input domain.SubscriptionUpsertR
 }
 
 func (s *Service) DeleteSubscription(id string) error {
-	subs, _ := s.store.LoadSubscriptions()
+	subs := s.loadSubscriptions()
 	newSubs := subs[:0]
 	found := false
 	for _, sub := range subs {
@@ -487,7 +519,7 @@ func (s *Service) DeleteSubscription(id string) error {
 	if err := s.store.SaveSubscriptions(newSubs); err != nil {
 		return err
 	}
-	profiles, _ := s.store.LoadProfiles()
+	profiles := s.loadProfiles()
 	kept := profiles[:0]
 	for _, p := range profiles {
 		if p.SubID != id {
@@ -498,7 +530,7 @@ func (s *Service) DeleteSubscription(id string) error {
 }
 
 func (s *Service) UpdateSubscriptions() int {
-	subs, _ := s.store.LoadSubscriptions()
+	subs := s.loadSubscriptions()
 	updated := 0
 	for _, sub := range subs {
 		if !sub.Enabled {
@@ -512,7 +544,7 @@ func (s *Service) UpdateSubscriptions() int {
 }
 
 func (s *Service) UpdateSubscriptionByID(id string) error {
-	subs, _ := s.store.LoadSubscriptions()
+	subs := s.loadSubscriptions()
 	var sub domain.SubscriptionItem
 	found := false
 	for _, item := range subs {
@@ -532,7 +564,7 @@ func (s *Service) UpdateSubscriptionByID(id string) error {
 		return fmt.Errorf("fetch subscription: %w", err)
 	}
 
-	existing, _ := s.store.LoadProfiles()
+	existing := s.loadProfiles()
 	kept := existing[:0]
 	for _, p := range existing {
 		if p.SubID != id {
@@ -571,7 +603,7 @@ func (s *Service) ApplySystemProxy(mode, exceptions string) (map[string]interfac
 	default:
 		return nil, service.ErrInvalidMode
 	}
-	cfg, _ := s.store.LoadConfig()
+	cfg := s.loadConfig()
 	backend, err := s.applyDesktopSystemProxy(cfg, mode, exceptions)
 	if err != nil {
 		return nil, err
@@ -832,12 +864,12 @@ func formatGSettingsStringArray(values []string) string {
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 func (s *Service) GetConfig() map[string]interface{} {
-	cfg, _ := s.store.LoadConfig()
+	cfg := s.loadConfig()
 	return cfg
 }
 
 func (s *Service) UpdateConfig(next map[string]interface{}) map[string]interface{} {
-	cfg, _ := s.store.LoadConfig()
+	cfg := s.loadConfig()
 	previousTunMode := tunModeFromConfig(cfg)
 	for k, v := range next {
 		cfg[k] = v
@@ -865,7 +897,7 @@ func (s *Service) UpdateConfig(next map[string]interface{}) map[string]interface
 // ─── Routing ──────────────────────────────────────────────────────────────────
 
 func (s *Service) GetRoutingConfig() domain.RoutingConfig {
-	rc, _ := s.store.LoadRoutingConfig()
+	rc := s.loadRoutingConfig()
 	return rc
 }
 
@@ -896,9 +928,9 @@ func (s *Service) UpdateRoutingConfig(rc domain.RoutingConfig) domain.RoutingCon
 }
 
 func (s *Service) GetRoutingDiagnostics() domain.RoutingDiagnostics {
-	cfg, _ := s.store.LoadConfig()
-	rc, _ := s.store.LoadRoutingConfig()
-	state, _ := s.store.LoadState()
+	cfg := s.loadConfig()
+	rc := s.loadRoutingConfig()
+	state := s.loadState()
 	profile := s.pickSelectedProfile(state.CurrentProfileID)
 
 	hasGeoIP := hasGeoIPAsset()
@@ -917,8 +949,21 @@ func (s *Service) GetRoutingDiagnostics() domain.RoutingDiagnostics {
 	}
 	if dev, err := getDefaultRouteDevice(); err == nil {
 		diag.DefaultRouteDevice = dev
+	}
+	if diag.TunEnabled {
 		tunName := strCfg(cfg, "tunName", "xraye0")
-		diag.TunTakeoverActive = diag.TunEnabled && dev == tunName
+		diag.TunPolicyRouteTable = tunPolicyRouteTable
+		diag.TunPolicyRules = collectManagedTunPolicyRules()
+		policyActive := len(diag.TunPolicyRules) > 0 && isManagedTunPolicyRoutingActive(cfg, tunName)
+		diag.TunTakeoverActive = diag.DefaultRouteDevice == tunName || policyActive
+		switch {
+		case diag.DefaultRouteDevice == tunName:
+			diag.TunTakeoverMode = "default-route"
+		case policyActive:
+			diag.TunTakeoverMode = "policy-routing"
+		default:
+			diag.TunTakeoverMode = "inactive"
+		}
 	}
 
 	if profile != nil {
@@ -1014,7 +1059,7 @@ func (s *Service) RepairTunAndRestart() domain.TunRepairResult {
 		TriggeredAt: time.Now().UTC().Format(time.RFC3339),
 	}
 
-	cfg, _ := s.store.LoadConfig()
+	cfg := s.loadConfig()
 	tunMode := tunModeFromConfig(cfg)
 	result.TunEnabled = tunMode != "off"
 	if !result.TunEnabled {
@@ -1052,8 +1097,21 @@ func (s *Service) RepairTunAndRestart() domain.TunRepairResult {
 
 	if dev, err := getDefaultRouteDevice(); err == nil {
 		result.DefaultRouteDevice = dev
+	}
+	if result.TunEnabled {
 		tunName := strCfg(cfg, "tunName", "xraye0")
-		result.TunTakeoverActive = result.TunEnabled && dev == tunName
+		result.TunPolicyRouteTable = tunPolicyRouteTable
+		result.TunPolicyRules = collectManagedTunPolicyRules()
+		policyActive := len(result.TunPolicyRules) > 0 && isManagedTunPolicyRoutingActive(cfg, tunName)
+		result.TunTakeoverActive = result.DefaultRouteDevice == tunName || policyActive
+		switch {
+		case result.DefaultRouteDevice == tunName:
+			result.TunTakeoverMode = "default-route"
+		case policyActive:
+			result.TunTakeoverMode = "policy-routing"
+		default:
+			result.TunTakeoverMode = "inactive"
+		}
 	}
 
 	if result.Error != "" {
@@ -1103,10 +1161,115 @@ func (s *Service) checkProcExited() {
 	}
 }
 
+func (s *Service) watchdogLoop() {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.watchdogTick()
+	}
+}
+
+func (s *Service) watchdogTick() {
+	s.mu.Lock()
+	wasRunning := s.running
+	s.checkProcExited()
+	if !(wasRunning && !s.running) {
+		s.mu.Unlock()
+		return
+	}
+	if s.watchdogRestarting || s.watchdogRestartScheduled {
+		s.mu.Unlock()
+		return
+	}
+	s.scheduleAutoRestartLocked("core exited unexpectedly")
+	s.mu.Unlock()
+}
+
+func (s *Service) scheduleAutoRestartLocked(reason string) {
+	cfg := s.loadConfig()
+	if !boolCfg(cfg, "coreAutoRestart", true) {
+		log.Printf("[native] watchdog: auto restart disabled, skip (%s)", reason)
+		return
+	}
+
+	maxRetries := intCfg(cfg, "coreAutoRestartMaxRetries", 5)
+	if maxRetries < 0 {
+		maxRetries = 0
+	}
+	if maxRetries > 0 && s.watchdogRestartAttempts >= maxRetries {
+		log.Printf("[native] watchdog: max retries reached (%d), stop auto restart", maxRetries)
+		s.logs.AppLog("error", fmt.Sprintf("core auto restart stopped after %d retries", maxRetries))
+		return
+	}
+
+	baseMs := intCfg(cfg, "coreAutoRestartBackoffMs", 500)
+	if baseMs < 100 {
+		baseMs = 100
+	}
+	if baseMs > 30000 {
+		baseMs = 30000
+	}
+
+	s.watchdogRestartAttempts++
+	attempt := s.watchdogRestartAttempts
+	delay := time.Duration(baseMs) * time.Millisecond
+	for i := 1; i < attempt; i++ {
+		delay *= 2
+		if delay >= 30*time.Second {
+			delay = 30 * time.Second
+			break
+		}
+	}
+
+	s.watchdogRestartScheduled = true
+	log.Printf("[native] watchdog: schedule auto restart attempt=%d delay=%s reason=%s", attempt, delay, reason)
+	go s.runScheduledAutoRestart(delay, attempt)
+}
+
+func (s *Service) runScheduledAutoRestart(delay time.Duration, attempt int) {
+	time.Sleep(delay)
+
+	s.mu.Lock()
+	if !s.watchdogRestartScheduled {
+		s.mu.Unlock()
+		return
+	}
+	if s.running {
+		s.watchdogRestartScheduled = false
+		s.mu.Unlock()
+		return
+	}
+	s.watchdogRestartScheduled = false
+	s.watchdogRestarting = true
+	s.mu.Unlock()
+
+	log.Printf("[native] watchdog: auto restart attempt=%d starting", attempt)
+	st := s.StartCore()
+
+	s.mu.Lock()
+	s.watchdogRestarting = false
+	if st.Running {
+		s.watchdogRestartAttempts = 0
+		s.mu.Unlock()
+		s.logs.AppLog("info", "core auto restart succeeded")
+		return
+	}
+	errMsg := strings.TrimSpace(st.Error)
+	if errMsg == "" {
+		errMsg = "unknown start failure"
+	}
+	log.Printf("[native] watchdog: auto restart attempt=%d failed: %s", attempt, errMsg)
+	s.logs.AppLog("warning", fmt.Sprintf("core auto restart failed (attempt=%d): %s", attempt, errMsg))
+	if !s.watchdogRestartScheduled {
+		s.scheduleAutoRestartLocked("previous auto restart attempt failed")
+	}
+	s.mu.Unlock()
+}
+
 func (s *Service) buildStatus() domain.CoreStatus {
-	state, _ := s.store.LoadState()
-	cfg, _ := s.store.LoadConfig()
-	routing, _ := s.store.LoadRoutingConfig()
+	state := s.loadState()
+	cfg := s.loadConfig()
+	routing := s.loadRoutingConfig()
 	profile := s.pickSelectedProfile(state.CurrentProfileID)
 	_, mode, policyResolved := selectCoreEngine(cfg, routing, profile)
 	st := "stopped"
@@ -1133,22 +1296,23 @@ func (s *Service) buildStatus() domain.CoreStatus {
 	}
 }
 
-func (s *Service) saveState() error {
-	state, _ := s.store.LoadState()
+func (s *Service) saveState(coreShouldRestore bool) error {
+	state := s.loadState()
+	state.CoreShouldRestore = coreShouldRestore
 	state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	return s.store.SaveState(state)
 }
 
 func (s *Service) findProfile(id string) (domain.ProfileItem, error) {
 	if id != "" {
-		profiles, _ := s.store.LoadProfiles()
+		profiles := s.loadProfiles()
 		for _, p := range profiles {
 			if p.ID == id {
 				return p, nil
 			}
 		}
 	}
-	profiles, _ := s.store.LoadProfiles()
+	profiles := s.loadProfiles()
 	if len(profiles) == 0 {
 		return domain.ProfileItem{}, fmt.Errorf("no profiles configured")
 	}
@@ -1182,7 +1346,7 @@ func selectCoreEngine(cfg map[string]interface{}, routing domain.RoutingConfig, 
 }
 
 func (s *Service) pickSelectedProfile(currentID string) *domain.ProfileItem {
-	profiles, _ := s.store.LoadProfiles()
+	profiles := s.loadProfiles()
 	if len(profiles) == 0 {
 		return nil
 	}
@@ -1215,7 +1379,7 @@ func (s *Service) waitProc(cmd *exec.Cmd) {
 	}
 	s.mu.Unlock()
 	log.Printf("[native] core process exited")
-	_ = s.saveState()
+	_ = s.saveState(true)
 }
 
 func (s *Service) setCoreError(message string) {
@@ -1233,7 +1397,7 @@ func (s *Service) clearCoreErrorLocked() {
 }
 
 func (s *Service) clearSystemProxyOnCoreStop() {
-	cfg, _ := s.store.LoadConfig()
+	cfg := s.loadConfig()
 	mode := strCfg(cfg, "systemProxyMode", "forced_clear")
 	if mode != "forced_change" && mode != "pac" {
 		return
@@ -1306,6 +1470,51 @@ func detectDefaultRouteInterface() (string, error) {
 	return "", nil
 }
 
+func (s *Service) loadConfig() map[string]interface{} {
+	cfg, err := s.store.LoadConfig()
+	if err != nil {
+		log.Printf("[native] storage load config failed, fallback to defaults: %v", err)
+		return storage.DefaultConfig()
+	}
+	return cfg
+}
+
+func (s *Service) loadRoutingConfig() domain.RoutingConfig {
+	rc, err := s.store.LoadRoutingConfig()
+	if err != nil {
+		log.Printf("[native] storage load routing config failed, fallback to defaults: %v", err)
+		return storage.DefaultRoutingConfig()
+	}
+	return rc
+}
+
+func (s *Service) loadState() domain.PersistentState {
+	state, err := s.store.LoadState()
+	if err != nil {
+		log.Printf("[native] storage load state failed, fallback to empty state: %v", err)
+		return domain.PersistentState{}
+	}
+	return state
+}
+
+func (s *Service) loadProfiles() []domain.ProfileItem {
+	profiles, err := s.store.LoadProfiles()
+	if err != nil {
+		log.Printf("[native] storage load profiles failed, fallback to empty list: %v", err)
+		return []domain.ProfileItem{}
+	}
+	return profiles
+}
+
+func (s *Service) loadSubscriptions() []domain.SubscriptionItem {
+	subs, err := s.store.LoadSubscriptions()
+	if err != nil {
+		log.Printf("[native] storage load subscriptions failed, fallback to empty list: %v", err)
+		return []domain.SubscriptionItem{}
+	}
+	return subs
+}
+
 func getDefaultRouteLines() ([]string, error) {
 	out, err := exec.Command("ip", "-4", "route", "show", "default").CombinedOutput() //nolint:gosec
 	if err != nil {
@@ -1360,15 +1569,110 @@ func (s *Service) setupTunRouting(cfg map[string]interface{}) error {
 	if err != nil {
 		return err
 	}
+	restoreRoutes := s.resolveTunRestoreRoutes(cfg, routes, tunName)
+	if len(restoreRoutes) == 0 {
+		return fmt.Errorf("refusing TUN route takeover without a non-TUN restore route for %s", tunName)
+	}
 	if err := waitForNetworkInterface(tunName, 5*time.Second); err != nil {
 		return err
 	}
-	if out, err := exec.Command("ip", "route", "replace", "default", "dev", tunName).CombinedOutput(); err != nil { //nolint:gosec
+	if out, err := exec.Command("ip", "route", "replace", "default", "dev", tunName).CombinedOutput(); err != nil {
 		return fmt.Errorf("replace default route with %s failed: %w (%s)", tunName, err, strings.TrimSpace(string(out)))
 	}
-	s.tunRestoreRoutes = append([]string(nil), routes...)
+	if err := s.setupTunDnsRouting(cfg, tunName); err != nil {
+		log.Printf("[native] setupTunDnsRouting: %v", err)
+	}
+	s.tunRestoreRoutes = append([]string(nil), restoreRoutes...)
 	s.persistTunRestoreRoutes(s.tunRestoreRoutes, tunName)
 	return nil
+}
+
+func (s *Service) setupManagedTunRouting(cfg map[string]interface{}, profile *domain.ProfileItem) error {
+	if shouldHijackTunDefaultRoute(cfg) {
+		return s.setupTunRouting(cfg)
+	}
+	return s.setupTunPolicyRouting(cfg, profile)
+}
+
+func (s *Service) setupTunPolicyRouting(cfg map[string]interface{}, profile *domain.ProfileItem) error {
+	if runtime.GOOS != "linux" {
+		return fmt.Errorf("TUN policy routing is only implemented on Linux")
+	}
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("TUN policy routing requires root privileges")
+	}
+	if !hasCommand("ip") {
+		return fmt.Errorf("TUN policy routing requires ip command")
+	}
+	tunName := strCfg(cfg, "tunName", "xraye0")
+	if err := waitForNetworkInterface(tunName, 5*time.Second); err != nil {
+		return err
+	}
+	mainRoutes, err := getIPv4RouteLines("main")
+	if err != nil {
+		return err
+	}
+	bypassRules := buildTunPolicyBypassRules(mainRoutes, cfg, profile)
+	if err := s.clearManagedTunPolicyRouting(cfg, &tunName); err != nil {
+		log.Printf("[native] setupTunPolicyRouting: clear stale rules failed: %v", err)
+	}
+	if out, err := exec.Command("ip", "-4", "route", "replace", "table", fmt.Sprintf("%d", tunPolicyRouteTable), "default", "dev", tunName).CombinedOutput(); err != nil { //nolint:gosec
+		return fmt.Errorf("install TUN policy default route failed: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	priority := tunPolicyRulePriorityMin
+	for _, target := range bypassRules {
+		if priority >= tunPolicyRulePriorityMax {
+			break
+		}
+		if out, err := exec.Command("ip", "-4", "rule", "add", "priority", fmt.Sprintf("%d", priority), "to", target, "lookup", "main").CombinedOutput(); err != nil { //nolint:gosec
+			return fmt.Errorf("install TUN bypass rule %s failed: %w (%s)", target, err, strings.TrimSpace(string(out)))
+		}
+		priority++
+	}
+	if out, err := exec.Command("ip", "-4", "rule", "add", "priority", fmt.Sprintf("%d", priority), "lookup", fmt.Sprintf("%d", tunPolicyRouteTable)).CombinedOutput(); err != nil { //nolint:gosec
+		return fmt.Errorf("install TUN catch-all rule failed: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	_, _ = exec.Command("ip", "route", "flush", "cache").CombinedOutput() //nolint:gosec
+	return nil
+}
+
+func (s *Service) setupTunDnsRouting(cfg map[string]interface{}, tunName string) error {
+	if runtime.GOOS != "linux" || !hasCommand("ip") {
+		return nil
+	}
+	dnsServers := []string{"1.1.1.1", "8.8.8.8"}
+	if dnsList, ok := cfg["dnsList"].([]interface{}); ok {
+		for _, item := range dnsList {
+			if s, ok := item.(string); ok && s != "" {
+				dnsServers = append(dnsServers, s)
+			}
+		}
+	}
+	for _, dns := range dnsServers {
+		if out, err := exec.Command("ip", "route", "add", dns, "via", "0.0.0.0", "dev", tunName).CombinedOutput(); err != nil {
+			log.Printf("[native] setupTunDnsRouting: add route for %s failed (may already exist): %v", dns, strings.TrimSpace(string(out)))
+		}
+	}
+	return nil
+}
+
+func (s *Service) clearTunDnsRouting(cfg map[string]interface{}, tunName string) {
+	if runtime.GOOS != "linux" || !hasCommand("ip") {
+		return
+	}
+	dnsServers := []string{"1.1.1.1", "8.8.8.8"}
+	if dnsList, ok := cfg["dnsList"].([]interface{}); ok {
+		for _, item := range dnsList {
+			if s, ok := item.(string); ok && s != "" {
+				dnsServers = append(dnsServers, s)
+			}
+		}
+	}
+	for _, dns := range dnsServers {
+		if out, err := exec.Command("ip", "route", "del", dns, "dev", tunName).CombinedOutput(); err != nil {
+			log.Printf("[native] clearTunDnsRouting: remove route for %s failed: %v", dns, strings.TrimSpace(string(out)))
+		}
+	}
 }
 
 func (s *Service) clearTunRouting() {
@@ -1377,14 +1681,18 @@ func (s *Service) clearTunRouting() {
 		s.persistTunRestoreRoutes(nil, "")
 		return
 	}
-	cfg, _ := s.store.LoadConfig()
+	cfg := s.loadConfig()
 	tunName := strCfg(cfg, "tunName", "xraye0")
-	routes := append([]string(nil), s.tunRestoreRoutes...)
+	if err := s.clearManagedTunPolicyRouting(cfg, &tunName); err != nil {
+		log.Printf("[native] clear managed TUN policy routing failed: %v", err)
+	}
+	s.clearTunDnsRouting(cfg, tunName)
+	routes := sanitizeTunRestoreRoutes(s.tunRestoreRoutes, tunName)
 	if len(routes) == 0 {
-		routes = s.loadPersistedTunRestoreRoutes()
+		routes = sanitizeTunRestoreRoutes(s.loadPersistedTunRestoreRoutes(), tunName)
 	}
 	if len(routes) == 0 {
-		routes = s.buildTunRestoreFallbackRoutes(cfg, tunName)
+		routes = sanitizeTunRestoreRoutes(s.buildTunRestoreFallbackRoutes(cfg, tunName), tunName)
 	}
 	if len(routes) == 0 {
 		log.Printf("[native] clearTunRouting: no restore routes found; proceeding with best-effort stale route/device cleanup")
@@ -1413,11 +1721,15 @@ func (s *Service) clearTunRouting() {
 }
 
 func (s *Service) persistTunRestoreRoutes(routes []string, tunName string) {
-	cfg, _ := s.store.LoadConfig()
+	cfg := s.loadConfig()
+	explicitClear := len(routes) == 0
+	routes = sanitizeTunRestoreRoutes(routes, tunName)
 	if len(routes) == 0 {
 		delete(cfg, "tunRestoreRoutes")
-		delete(cfg, "tunRestoreHintDev")
-		delete(cfg, "tunRestoreHintVia")
+		if explicitClear {
+			delete(cfg, "tunRestoreHintDev")
+			delete(cfg, "tunRestoreHintVia")
+		}
 	} else {
 		cfg["tunRestoreRoutes"] = routes
 		dev, via := parseDefaultRouteHint(routes, tunName)
@@ -1435,6 +1747,16 @@ func (s *Service) persistTunRestoreRoutes(routes []string, tunName string) {
 	if err := s.store.SaveConfig(cfg); err != nil {
 		log.Printf("[native] persist tun restore routes failed: %v", err)
 	}
+}
+
+func (s *Service) resolveTunRestoreRoutes(cfg map[string]interface{}, currentRoutes []string, tunName string) []string {
+	if routes := sanitizeTunRestoreRoutes(currentRoutes, tunName); len(routes) != 0 {
+		return routes
+	}
+	if routes := sanitizeTunRestoreRoutes(s.loadPersistedTunRestoreRoutes(), tunName); len(routes) != 0 {
+		return routes
+	}
+	return sanitizeTunRestoreRoutes(s.buildTunRestoreFallbackRoutes(cfg, tunName), tunName)
 }
 
 func (s *Service) buildTunRestoreFallbackRoutes(cfg map[string]interface{}, tunName string) []string {
@@ -1472,8 +1794,215 @@ func parseDefaultRouteHint(routes []string, tunName string) (dev string, via str
 	return "", ""
 }
 
+func sanitizeTunRestoreRoutes(routes []string, tunName string) []string {
+	clean := make([]string, 0, len(routes))
+	seen := make(map[string]struct{}, len(routes))
+	for _, route := range routes {
+		route = strings.TrimSpace(route)
+		if route == "" || routeUsesDevice(route, tunName) {
+			continue
+		}
+		if _, ok := seen[route]; ok {
+			continue
+		}
+		seen[route] = struct{}{}
+		clean = append(clean, route)
+	}
+	return clean
+}
+
+func routeUsesDevice(route string, device string) bool {
+	device = strings.TrimSpace(device)
+	if device == "" {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(route))
+	if len(fields) == 0 || fields[0] != "default" {
+		return false
+	}
+	for i := 0; i < len(fields)-1; i++ {
+		if fields[i] == "dev" && fields[i+1] == device {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldHijackTunDefaultRoute(cfg map[string]interface{}) bool {
+	if tunModeFromConfig(cfg) == "off" {
+		return false
+	}
+	return boolCfg(cfg, "tunHijackDefaultRoute", false)
+}
+
+func shouldManageTunTraffic(cfg map[string]interface{}) bool {
+	if tunModeFromConfig(cfg) == "off" {
+		return false
+	}
+	return boolCfg(cfg, "tunAutoRoute", true)
+}
+
+func getIPv4RouteLines(table string) ([]string, error) {
+	args := []string{"-4", "route", "show"}
+	if table = strings.TrimSpace(table); table != "" {
+		args = append(args, "table", table)
+	}
+	out, err := exec.Command("ip", args...).CombinedOutput() //nolint:gosec
+	if err != nil {
+		return nil, fmt.Errorf("read IPv4 route table %s: %w (%s)", table, err, strings.TrimSpace(string(out)))
+	}
+	text := strings.TrimSpace(string(out))
+	if text == "" {
+		return nil, nil
+	}
+	lines := strings.Split(text, "\n")
+	res := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			res = append(res, line)
+		}
+	}
+	return res, nil
+}
+
+func buildTunPolicyBypassRules(mainRoutes []string, cfg map[string]interface{}, profile *domain.ProfileItem) []string {
+	seen := make(map[string]struct{})
+	rules := make([]string, 0, len(mainRoutes)+8)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, err := netip.ParsePrefix(value); err != nil {
+			return
+		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		rules = append(rules, value)
+	}
+	for _, line := range mainRoutes {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || fields[0] == "default" {
+			continue
+		}
+		add(fields[0])
+	}
+	if profile != nil {
+		if prefix, ok := parseIPv4Prefix(profile.Address); ok {
+			add(prefix)
+		}
+	}
+	for _, raw := range toStringSlice(cfg["dnsList"]) {
+		if prefix, ok := parseIPv4Prefix(raw); ok {
+			add(prefix)
+		}
+	}
+	for _, raw := range toStringSlice(cfg["dnsServers"]) {
+		if prefix, ok := parseIPv4Prefix(raw); ok {
+			add(prefix)
+		}
+	}
+	return rules
+}
+
+func parseIPv4Prefix(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.Contains(raw, "://") {
+		return "", false
+	}
+	if strings.Contains(raw, "/") {
+		prefix, err := netip.ParsePrefix(raw)
+		if err != nil || !prefix.Addr().Is4() {
+			return "", false
+		}
+		return prefix.String(), true
+	}
+	addr, err := netip.ParseAddr(raw)
+	if err != nil || !addr.Is4() {
+		return "", false
+	}
+	return addr.String() + "/32", true
+}
+
+func (s *Service) clearManagedTunPolicyRouting(cfg map[string]interface{}, tunNameHint *string) error {
+	if runtime.GOOS != "linux" || !hasCommand("ip") {
+		return nil
+	}
+	tunName := strCfg(cfg, "tunName", "xraye0")
+	if tunNameHint != nil && strings.TrimSpace(*tunNameHint) != "" {
+		tunName = strings.TrimSpace(*tunNameHint)
+	}
+	var firstErr error
+	for priority := tunPolicyRulePriorityMin; priority <= tunPolicyRulePriorityMax; priority++ {
+		if out, err := exec.Command("ip", "-4", "rule", "del", "priority", fmt.Sprintf("%d", priority)).CombinedOutput(); err != nil { //nolint:gosec
+			msg := strings.ToLower(strings.TrimSpace(string(out)))
+			if msg == "" || strings.Contains(msg, "not found") || strings.Contains(msg, "cannot find") || strings.Contains(msg, "no such file") || strings.Contains(msg, "no such process") {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = fmt.Errorf("delete TUN policy rule priority %d: %w (%s)", priority, err, strings.TrimSpace(string(out)))
+			}
+		}
+	}
+	if out, err := exec.Command("ip", "-4", "route", "del", "table", fmt.Sprintf("%d", tunPolicyRouteTable), "default", "dev", tunName).CombinedOutput(); err != nil { //nolint:gosec
+		msg := strings.ToLower(strings.TrimSpace(string(out)))
+		if !(msg == "" || strings.Contains(msg, "not found") || strings.Contains(msg, "cannot find") || strings.Contains(msg, "no such process")) {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("delete TUN policy route table entry: %w (%s)", err, strings.TrimSpace(string(out)))
+			}
+		}
+	}
+	_, _ = exec.Command("ip", "route", "flush", "cache").CombinedOutput() //nolint:gosec
+	return firstErr
+}
+
+func isManagedTunPolicyRoutingActive(cfg map[string]interface{}, tunName string) bool {
+	if runtime.GOOS != "linux" || !hasCommand("ip") {
+		return false
+	}
+	tableID := fmt.Sprintf("%d", tunPolicyRouteTable)
+	routeOut, err := exec.Command("ip", "-4", "route", "show", "table", tableID, "default").CombinedOutput() //nolint:gosec
+	if err != nil || !strings.Contains(strings.TrimSpace(string(routeOut)), "dev "+tunName) {
+		return false
+	}
+	ruleOut, err := exec.Command("ip", "-4", "rule", "show").CombinedOutput() //nolint:gosec
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(ruleOut), "lookup "+tableID)
+}
+
+func collectManagedTunPolicyRules() []string {
+	if runtime.GOOS != "linux" || !hasCommand("ip") {
+		return nil
+	}
+	out, err := exec.Command("ip", "-4", "rule", "show").CombinedOutput() //nolint:gosec
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	rules := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		for priority := tunPolicyRulePriorityMin; priority <= tunPolicyRulePriorityMax; priority++ {
+			prefix := fmt.Sprintf("%d:", priority)
+			if strings.HasPrefix(line, prefix) {
+				rules = append(rules, line)
+				break
+			}
+		}
+	}
+	return rules
+}
+
 func (s *Service) loadPersistedTunRestoreRoutes() []string {
-	cfg, _ := s.store.LoadConfig()
+	cfg := s.loadConfig()
 	raw, ok := cfg["tunRestoreRoutes"]
 	if !ok {
 		return nil

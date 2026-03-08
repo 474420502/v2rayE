@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '@/lib/api/client';
+import { api, buildEventSourceUrl } from '@/lib/api/client';
 import type { ConfigDto, CoreStatus } from '@/lib/types';
 
 export default function SettingsPage() {
@@ -35,8 +35,7 @@ export default function SettingsPage() {
             clearInterval(fallbackTimerRef.current);
             fallbackTimerRef.current = null;
         };
-        const endpoint = `${process.env.NEXT_PUBLIC_API_BASE ?? '/api'}/events/stream`;
-        const source = new EventSource(endpoint, { withCredentials: true });
+        const source = new EventSource(buildEventSourceUrl('/events/stream'), { withCredentials: true });
         source.onopen = () => stopFallback();
         source.onmessage = (event) => {
             try {
@@ -252,6 +251,9 @@ export default function SettingsPage() {
                 <p className="muted" style={{ marginBottom: 8 }}>
                     系统代理会在核心启动时自动应用、停止时自动清理。TUN 会接管更多不读取桌面代理设置的流量；Linux 下启用 TUN 时请使用 sudo 启动，停止时也建议使用 sudo 以确保路由与网卡清理完整。
                 </p>
+                <p className="muted" style={{ marginBottom: 8 }}>
+                    默认仅启用 xray 自带的 TUN 路由能力，不会额外强改系统主默认路由。只有在少数兼容性场景下，才建议手动开启高级接管选项。
+                </p>
                 <div className="form-grid" style={{ marginTop: 12 }}>
                     <label>系统代理策略</label>
                     <select
@@ -289,7 +291,7 @@ export default function SettingsPage() {
                         value={config.tunMtu ?? 1500}
                         onChange={(e) => set({ tunMtu: Number(e.target.value) })}
                     />
-                    <label>自动改默认路由</label>
+                    <label>xray 自动路由</label>
                     <input
                         type="checkbox"
                         checked={Boolean(config.tunAutoRoute ?? true)}
@@ -301,6 +303,19 @@ export default function SettingsPage() {
                         checked={Boolean(config.tunStrictRoute)}
                         onChange={(e) => set({ tunStrictRoute: e.target.checked })}
                     />
+                </div>
+                <div className="field" style={{ marginTop: 12 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input
+                            type="checkbox"
+                            checked={Boolean(config.tunHijackDefaultRoute)}
+                            onChange={(e) => set({ tunHijackDefaultRoute: e.target.checked, tunHijackDefaultRouteExplicit: true })}
+                        />
+                        高级: 手动劫持系统默认路由
+                    </label>
+                    <p className="muted" style={{ marginTop: 6 }}>
+                        默认关闭。开启后后端会直接执行系统级默认路由切换；如果系统当前路由状态异常，可能导致临时断网，仅建议在明确需要且知道如何恢复路由时使用。
+                    </p>
                 </div>
                 <div className="field" style={{ marginTop: 12 }}>
                     <label htmlFor="proxy-exceptions">系统代理例外</label>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api } from '@/lib/api/client';
+import { api, buildEventSourceUrl } from '@/lib/api/client';
 import type { AvailabilityResult, ConfigDto, CoreStatus, DelayTestResult, LogLine, ProfileItem, StatsResult, SubscriptionItem } from '@/lib/types';
 
 type DashboardSnapshot = {
@@ -96,8 +96,7 @@ export default function DashboardPage() {
 
         void loadStatus();
 
-        const endpoint = `${process.env.NEXT_PUBLIC_API_BASE ?? '/api'}/events/stream`;
-        const source = new EventSource(endpoint, { withCredentials: true });
+        const source = new EventSource(buildEventSourceUrl('/events/stream'), { withCredentials: true });
 
         source.onopen = () => { stopFallbackPolling(); };
         source.onmessage = (event) => {
@@ -143,8 +142,7 @@ export default function DashboardPage() {
     // SSE: log stream (mini console)
     const connectLogs = useCallback(() => {
         if (logEsRef.current) logEsRef.current.close();
-        const endpoint = `${process.env.NEXT_PUBLIC_API_BASE ?? '/api'}/logs/stream`;
-        const es = new EventSource(endpoint, { withCredentials: true });
+        const es = new EventSource(buildEventSourceUrl('/logs/stream'), { withCredentials: true });
         logEsRef.current = es;
         es.addEventListener('ready', () => setLogConnected(true));
         es.addEventListener('log', (e: Event) => {

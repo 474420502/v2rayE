@@ -119,8 +119,8 @@ graceful_backend_shutdown() {
         return 0
     fi
 
-    # Best effort: stop core and clear desktop proxy before backend exits.
-    post_backend_api "/api/core/stop" "{}"
+    # Let the backend process handle StopCore() during SIGTERM so runtime
+    # restore intent survives restart workflows.
     post_backend_api "/api/system-proxy/apply" '{"mode":"forced_clear","exceptions":""}'
 }
 

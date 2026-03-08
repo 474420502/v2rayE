@@ -5,10 +5,48 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"v2raye/backend-go/internal/domain"
 )
+
+var builtinCNIPs = []string{
+	"1.0.1.0/24",
+	"1.2.4.0/24",
+	"14.102.0.0/21",
+	"14.196.0.0/16",
+	"27.0.0.0/10",
+	"27.36.0.0/14",
+	"27.116.0.0/14",
+	"27.176.0.0/12",
+	"36.32.0.0/12",
+	"36.152.0.0/12",
+	"42.0.0.0/8",
+	"42.176.0.0/12",
+	"58.14.0.0/15",
+	"58.16.0.0/13",
+	"60.0.0.0/10",
+	"101.0.0.0/10",
+	"103.0.0.0/10",
+	"106.0.0.0/8",
+	"110.0.0.0/7",
+	"112.0.0.0/6",
+	"116.0.0.0/6",
+	"120.0.0.0/6",
+	"123.0.0.0/8",
+	"124.0.0.0/7",
+	"140.64.0.0/11",
+	"175.0.0.0/8",
+	"180.64.0.0/10",
+	"182.0.0.0/8",
+	"202.0.0.0/9",
+	"210.0.0.0/10",
+	"218.0.0.0/8",
+	"221.0.0.0/9",
+	"222.0.0.0/8",
+	"223.0.0.0/8",
+}
 
 // generateXrayConfig produces a complete Xray config.json for the given profile.
 func generateXrayConfig(
@@ -74,7 +112,7 @@ func generateXrayConfig(
 				"mtu":         intCfg(cfg, "tunMtu", 1500),
 				"userLevel":   0,
 				"stack":       tunMode,
-				"autoRoute":   boolCfg(cfg, "tunAutoRoute", true),
+				"autoRoute":   effectiveTunInboundAutoRoute(cfg),
 				"strictRoute": boolCfg(cfg, "tunStrictRoute", false),
 			},
 			"sniffing": map[string]interface{}{
@@ -142,6 +180,16 @@ func generateXrayConfig(
 	}
 
 	return json.MarshalIndent(xrayCfg, "", "  ")
+}
+
+func effectiveTunInboundAutoRoute(cfg map[string]interface{}) bool {
+	if !boolCfg(cfg, "tunAutoRoute", true) {
+		return false
+	}
+	if runtime.GOOS == "linux" {
+		return false
+	}
+	return true
 }
 
 func tunModeFromConfig(cfg map[string]interface{}) string {
@@ -499,19 +547,26 @@ func buildRoutingRules(routing domain.RoutingConfig, hasGeoIP, hasGeoSite bool) 
 			})
 		if hasGeoIP {
 			rules = append(rules,
-			map[string]interface{}{
-				"type":        "field",
-				"ip":          []string{"geoip:cn"},
-				"outboundTag": "direct",
-			})
+				map[string]interface{}{
+					"type":        "field",
+					"ip":          []string{"geoip:cn"},
+					"outboundTag": "direct",
+				})
+		} else {
+			rules = append(rules,
+				map[string]interface{}{
+					"type":        "field",
+					"ip":          builtinCNIPs,
+					"outboundTag": "direct",
+				})
 		}
 		if hasGeoSite {
 			rules = append(rules,
-			map[string]interface{}{
-				"type":        "field",
-				"domain":      []string{"geosite:cn"},
-				"outboundTag": "direct",
-			})
+				map[string]interface{}{
+					"type":        "field",
+					"domain":      []string{"geosite:cn"},
+					"outboundTag": "direct",
+				})
 		}
 	case "direct":
 		rules = append(rules, map[string]interface{}{
@@ -519,7 +574,7 @@ func buildRoutingRules(routing domain.RoutingConfig, hasGeoIP, hasGeoSite bool) 
 			"network":     "tcp,udp",
 			"outboundTag": "direct",
 		})
-	// "global" needs no extra rules — everything goes through proxy by default.
+		// "global" needs no extra rules — everything goes through proxy by default.
 	}
 
 	// User-defined custom rules.
@@ -589,7 +644,16 @@ func hasGeoAsset(fileName string) bool {
 
 func geoDataSearchDirs() []string {
 	execPath, _ := os.Executable()
-	searchDirs := []string{".", filepath.Dir(execPath)}
+	searchDirs := []string{
+		".",
+		filepath.Dir(execPath),
+		strings.TrimSpace(os.Getenv("XRAY_LOCATION_ASSET")),
+		strings.TrimSpace(os.Getenv("V2RAY_LOCATION_ASSET")),
+		"/usr/local/share/xray",
+		"/usr/share/xray",
+		"/usr/local/share/v2ray",
+		"/usr/share/v2ray",
+	}
 	seen := make(map[string]struct{}, len(searchDirs))
 	result := make([]string, 0, len(searchDirs))
 	for _, dir := range searchDirs {

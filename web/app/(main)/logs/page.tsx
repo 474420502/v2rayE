@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { buildEventSourceUrl } from '@/lib/api/client';
 import type { LogLine } from '@/lib/types';
 
 const MAX_LINES = 2000;
@@ -51,8 +52,7 @@ export default function LogsPage() {
     if (esRef.current) {
       esRef.current.close();
     }
-    const endpoint = `${process.env.NEXT_PUBLIC_API_BASE ?? '/api'}/logs/stream`;
-    const es = new EventSource(endpoint, { withCredentials: true });
+    const es = new EventSource(buildEventSourceUrl('/logs/stream'), { withCredentials: true });
     esRef.current = es;
 
     es.addEventListener('ready', () => {

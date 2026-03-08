@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api } from '@/lib/api/client';
+import { api, buildEventSourceUrl } from '@/lib/api/client';
 import type { SubscriptionItem, SubscriptionUpsertInput } from '@/lib/types';
 
 const EMPTY_FORM: SubscriptionUpsertInput = {
@@ -53,8 +53,7 @@ export default function SubscriptionsPage() {
             fallbackTimerRef.current = null;
         };
 
-        const endpoint = `${process.env.NEXT_PUBLIC_API_BASE ?? '/api'}/events/stream`;
-        const source = new EventSource(endpoint, { withCredentials: true });
+        const source = new EventSource(buildEventSourceUrl('/events/stream'), { withCredentials: true });
 
         source.onopen = () => {
             stopFallbackPolling();

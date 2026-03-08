@@ -12,6 +12,41 @@ import (
 	"v2raye/backend-go/internal/storage"
 )
 
+func TestExtractRequestTokenPriority(t *testing.T) {
+	t.Parallel()
+
+	t.Run("authorization header has highest priority", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest(http.MethodGet, "http://example.com/api/logs/stream?token=query-token", nil)
+		req.Header.Set("Authorization", "Bearer header-token")
+		req.AddCookie(&http.Cookie{Name: "auth_token", Value: "cookie-token"})
+
+		if got := extractRequestToken(req); got != "header-token" {
+			t.Fatalf("expected header-token, got %q", got)
+		}
+	})
+
+	t.Run("query token is used when header is absent", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest(http.MethodGet, "http://example.com/api/logs/stream?token=query-token", nil)
+		req.AddCookie(&http.Cookie{Name: "auth_token", Value: "cookie-token"})
+
+		if got := extractRequestToken(req); got != "query-token" {
+			t.Fatalf("expected query-token, got %q", got)
+		}
+	})
+
+	t.Run("cookie token is fallback", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest(http.MethodGet, "http://example.com/api/logs/stream", nil)
+		req.AddCookie(&http.Cookie{Name: "auth_token", Value: "cookie-token"})
+
+		if got := extractRequestToken(req); got != "cookie-token" {
+			t.Fatalf("expected cookie-token, got %q", got)
+		}
+	})
+}
+
 type envelope struct {
 	Code    int                    `json:"code"`
 	Message string                 `json:"message"`
