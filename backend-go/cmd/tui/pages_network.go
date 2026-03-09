@@ -39,10 +39,10 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
 	actionsPanel.AddItem(primaryActions, primaryActionsHeight, 0, false)
 	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
-	actionsPanel.AddItem(modeActions, modeActionsHeight, 0, false)
-	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
-	actionsPanel.AddItem(newMutedText("targetMode"), 1, 0, false)
+	actionsPanel.AddItem(newMutedText("Target Mode"), 1, 0, false)
 	actionsPanel.AddItem(a.networkRoutingMode, 1, 0, false)
+	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
+	actionsPanel.AddItem(modeActions, modeActionsHeight, 0, false)
 
 	controls.AddItem(a.networkDomainStrategy, 1, 0, false)
 	controls.AddItem(a.networkLocalBypass, 1, 0, false)
@@ -73,8 +73,12 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	return builtPage{
 		root: root,
 		focusables: joinFocusables(
-			buttonsToFocusables(checkBtn, globalPreset, bypassPreset, directPreset, applyProxy, clearProxy, saveRouting, geoUpdate, repairTun, routeTest, selectGlobal, selectBypass, selectDirect, selectCustom),
-			primitivesToFocusables(a.networkRoutingMode, a.networkDomainStrategy, a.networkLocalBypass, a.networkTestTarget, a.networkTestPort),
+			buttonsToFocusables(checkBtn, globalPreset, bypassPreset, directPreset, applyProxy, clearProxy),
+			primitivesToFocusables(a.networkRoutingMode),
+			buttonsToFocusables(selectGlobal, selectBypass, selectDirect, selectCustom),
+			primitivesToFocusables(a.networkDomainStrategy, a.networkLocalBypass),
+			buttonsToFocusables(saveRouting, geoUpdate, repairTun, routeTest),
+			primitivesToFocusables(a.networkTestTarget, a.networkTestPort),
 		),
 	}
 }

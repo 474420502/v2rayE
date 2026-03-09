@@ -79,8 +79,10 @@ func (a *tuiApp) buildProfilesPage() builtPage {
 		root: root,
 		focusables: joinFocusables(
 			primitivesToFocusables(a.profileImport),
-			buttonsToFocusables(importBtn, importLoadBtn, activateBtn, batchBtn, delayBtn, deleteBtn, loadBtn, resetBtn, saveBtn),
-			primitivesToFocusables(a.profilesList, a.profileDeleteConfirm, a.profileEditName, a.profileEditAddress, a.profileEditPort, a.profileEditNetwork, a.profileEditTLS, a.profileEditSNI, a.profileEditFingerprint, a.profileEditALPN, a.profileEditRealityPK, a.profileEditRealitySID, a.profileEditWSPath, a.profileEditGRPCSvc),
+			buttonsToFocusables(importBtn, importLoadBtn, activateBtn, batchBtn, delayBtn, deleteBtn),
+			primitivesToFocusables(a.profileDeleteConfirm),
+			buttonsToFocusables(loadBtn, resetBtn, saveBtn),
+			primitivesToFocusables(a.profilesList, a.profileEditName, a.profileEditAddress, a.profileEditPort, a.profileEditNetwork, a.profileEditTLS, a.profileEditSNI, a.profileEditFingerprint, a.profileEditALPN, a.profileEditRealityPK, a.profileEditRealitySID, a.profileEditWSPath, a.profileEditGRPCSvc),
 		),
 	}
 }
