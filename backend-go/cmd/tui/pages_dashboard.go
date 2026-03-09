@@ -22,12 +22,8 @@ func (a *tuiApp) buildDashboardPage() builtPage {
 	)
 
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
-	actionsHeight := 1
-	if a.useStackedLayout() {
-		actionsHeight = 7
-	}
+	actionsHeight := actionBlockHeight(a.useStackedLayout(), 4)
 	root.AddItem(newMutedText("Core lifecycle and runtime telemetry overview"), 1, 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
 	root.AddItem(actions, actionsHeight, 0, false)
 	root.AddItem(verticalSpacer(1), 1, 0, false)
 	root.AddItem(mainContent, 0, 1, false)

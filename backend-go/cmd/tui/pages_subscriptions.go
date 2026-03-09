@@ -17,9 +17,10 @@ func (a *tuiApp) buildSubscriptionsPage() builtPage {
 		6,
 	)
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
+	actionsHeight := actionBlockHeight(a.useStackedLayout(), 2)
 	root.AddItem(newMutedText("Update all or only the selected subscription source"), 1, 0, false)
 	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(actions, 3, 0, false)
+	root.AddItem(actions, actionsHeight, 0, false)
 	root.AddItem(verticalSpacer(1), 1, 0, false)
 	root.AddItem(body, 0, 1, false)
 	return builtPage{

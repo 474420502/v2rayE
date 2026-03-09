@@ -79,9 +79,7 @@ func (a *tuiApp) build() tview.Primitive {
 	root.AddItem(title, 1, 0, false)
 	root.AddItem(a.tabBar, 1, 0, false)
 	root.AddItem(help, 1, 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
 	root.AddItem(a.pageHolder, 0, 1, true)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
 	root.AddItem(a.footer, 1, 0, false)
 
 	a.syncPages()

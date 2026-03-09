@@ -11,7 +11,7 @@ import (
 	"github.com/rivo/tview"
 )
 
-const narrowLayoutBreakpoint = 110
+const narrowLayoutBreakpoint = 130
 
 type textWidget struct {
 	*tview.TextView
@@ -158,6 +158,32 @@ func splitContent(stacked bool, first, second tview.Primitive, firstWeight, seco
 	row.AddItem(horizontalSpacer(1), 1, 0, false)
 	row.AddItem(second, 0, secondWeight, false)
 	return row
+}
+
+func actionBlockHeight(stacked bool, buttonCount int) int {
+	if !stacked {
+		return 1
+	}
+	if buttonCount <= 0 {
+		return 1
+	}
+	// Stacked buttons are rendered as button + spacer (+ button...), so reserve exact rows.
+	return buttonCount*2 - 1
+}
+
+func dualItemRowHeight(stacked bool) int {
+	if stacked {
+		return 3
+	}
+	return 1
+}
+
+func panelHeight(contentHeight int) int {
+	if contentHeight < 1 {
+		contentHeight = 1
+	}
+	// Account for top and bottom borders.
+	return contentHeight + 2
 }
 
 func joinFocusables(groups ...[]tview.Primitive) []tview.Primitive {
@@ -425,7 +451,10 @@ func emphasizeKeyword(message, keyword string) string {
 }
 
 func (a *tuiApp) useStackedLayout() bool {
-	return a.viewportCols > 0 && a.viewportCols < narrowLayoutBreakpoint
+	if a.viewportCols > 0 && a.viewportCols < narrowLayoutBreakpoint {
+		return true
+	}
+	return a.viewportRows > 0 && a.viewportRows < 38
 }
 
 func parseBoolText(value string) bool {

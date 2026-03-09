@@ -20,6 +20,7 @@ type tuiApp struct {
 
 	footerStatus string
 	viewportCols int
+	viewportRows int
 
 	pageHolder *tview.Pages
 	tabBar     *tview.Flex
