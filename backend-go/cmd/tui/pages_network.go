@@ -34,17 +34,16 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	secondaryActionsHeight := actionBlockHeight(a.useStackedLayout(), 4)
 	testRowHeight := dualItemRowHeight(a.useStackedLayout())
 	actionsPanel := tview.NewFlex().SetDirection(tview.FlexRow)
-	actionsPanelHeight := 1 + 1 + primaryActionsHeight + 1 + modeActionsHeight + 1 + 1
+	actionsPanelHeight := 1 + 1 + primaryActionsHeight + 1 + modeActionsHeight + 1 + 1 + 1
 	actionsPanel.AddItem(newMutedText("Routing/Proxy presets"), 1, 0, false)
 	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
 	actionsPanel.AddItem(primaryActions, primaryActionsHeight, 0, false)
 	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
 	actionsPanel.AddItem(modeActions, modeActionsHeight, 0, false)
 	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
+	actionsPanel.AddItem(newMutedText("targetMode"), 1, 0, false)
 	actionsPanel.AddItem(a.networkRoutingMode, 1, 0, false)
 
-	controls.AddItem(newMutedText("Edit routing fields then save/apply test"), 1, 0, false)
-	controls.AddItem(verticalSpacer(1), 1, 0, false)
 	controls.AddItem(a.networkDomainStrategy, 1, 0, false)
 	controls.AddItem(a.networkLocalBypass, 1, 0, false)
 	controls.AddItem(verticalSpacer(1), 1, 0, false)
@@ -57,18 +56,20 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	results.AddItem(verticalSpacer(1), 1, 0, false)
 	results.AddItem(wrapPanel("Route Test Result", a.networkTestResult), 0, 2, false)
 
+	leftWeight := 4
+	rightWeight := 7
+	if !a.useStackedLayout() {
+		leftWeight = 5
+		rightWeight = 6
+	}
 	body := splitContent(
 		a.useStackedLayout(),
-		wrapPanel("Control Center", controls),
+		wrapPanel("Routing Form", controls),
 		results,
-		4,
-		7,
+		leftWeight,
+		rightWeight,
 	)
-
-	root := tview.NewFlex().SetDirection(tview.FlexRow)
-	root.AddItem(wrapPanel("Actions", actionsPanel), panelHeight(actionsPanelHeight), 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(body, 0, 1, false)
+	root := buildPageLayout("Actions", actionsPanel, actionsPanelHeight, body)
 	return builtPage{
 		root: root,
 		focusables: joinFocusables(

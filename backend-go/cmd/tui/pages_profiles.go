@@ -73,10 +73,7 @@ func (a *tuiApp) buildProfilesPage() builtPage {
 	controls.AddItem(verticalSpacer(1), 1, 0, false)
 	controls.AddItem(editActions, editActionsHeight, 0, false)
 
-	root := tview.NewFlex().SetDirection(tview.FlexRow)
-	root.AddItem(wrapPanel("Controls", controls), panelHeight(controlsContentHeight), 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(workspace, 0, 1, false)
+	root := buildPageLayout("Controls", controls, controlsContentHeight, workspace)
 
 	return builtPage{
 		root: root,

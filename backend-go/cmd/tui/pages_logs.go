@@ -25,7 +25,6 @@ func (a *tuiApp) buildLogsPage() builtPage {
 	sourceToolbarHeight := actionBlockHeight(a.useStackedLayout(), 3)
 	searchRowHeight := dualItemRowHeight(a.useStackedLayout())
 	filtersContentHeight := 1 + 1 + toolbarHeight + 1 + sourceToolbarHeight + 1 + searchRowHeight + 1 + 1
-	root := tview.NewFlex().SetDirection(tview.FlexRow)
 	filters := tview.NewFlex().SetDirection(tview.FlexRow)
 	filters.AddItem(newMutedText("Filter by level/source and narrow with search to isolate faults quickly"), 1, 0, false)
 	filters.AddItem(verticalSpacer(1), 1, 0, false)
@@ -36,9 +35,8 @@ func (a *tuiApp) buildLogsPage() builtPage {
 	filters.AddItem(searchRow, searchRowHeight, 0, false)
 	filters.AddItem(verticalSpacer(1), 1, 0, false)
 	filters.AddItem(a.logsStatus, 1, 0, false)
-	root.AddItem(wrapPanel("Filters", filters), panelHeight(filtersContentHeight), 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(wrapPanel("Logs", a.logsView), 0, 1, false)
+	body := wrapPanel("Logs", a.logsView)
+	root := buildPageLayout("Filters", filters, filtersContentHeight, body)
 	return builtPage{
 		root:       root,
 		focusables: joinFocusables(buttonsToFocusables(allBtn, errorBtn, warnBtn, infoBtn, debugBtn, srcAllBtn, appBtn, xrayBtn, applyBtn, clearBtn), primitivesToFocusables(a.logsSearchInput, a.logsView)),

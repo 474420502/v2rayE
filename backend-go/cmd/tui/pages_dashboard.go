@@ -21,15 +21,13 @@ func (a *tuiApp) buildDashboardPage() builtPage {
 		2,
 	)
 
-	root := tview.NewFlex().SetDirection(tview.FlexRow)
 	actionsHeight := actionBlockHeight(a.useStackedLayout(), 4)
+	actionsContentHeight := 1 + 1 + actionsHeight
 	actionsPanel := tview.NewFlex().SetDirection(tview.FlexRow)
 	actionsPanel.AddItem(newMutedText("Core lifecycle and runtime telemetry overview"), 1, 0, false)
 	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
 	actionsPanel.AddItem(actions, actionsHeight, 0, false)
-	root.AddItem(wrapPanel("Actions", actionsPanel), panelHeight(1+1+actionsHeight), 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(mainContent, 0, 1, false)
+	root := buildPageLayout("Actions", actionsPanel, actionsContentHeight, mainContent)
 
 	return builtPage{
 		root:       root,

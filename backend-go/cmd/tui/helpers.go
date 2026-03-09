@@ -186,6 +186,14 @@ func panelHeight(contentHeight int) int {
 	return contentHeight + 2
 }
 
+func buildPageLayout(headerTitle string, header tview.Primitive, headerContentHeight int, body tview.Primitive) tview.Primitive {
+	root := tview.NewFlex().SetDirection(tview.FlexRow)
+	root.AddItem(wrapPanel(headerTitle, header), panelHeight(headerContentHeight), 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
+	root.AddItem(body, 0, 1, false)
+	return root
+}
+
 func joinFocusables(groups ...[]tview.Primitive) []tview.Primitive {
 	var out []tview.Primitive
 	for _, group := range groups {
