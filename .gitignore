@@ -24,6 +24,7 @@ backend-go/*.out
 backend-go/coverage.out
 
 *.dat
-
+dist/*
+*.deb
 v2raye
 v2raye-tui

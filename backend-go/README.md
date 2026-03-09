@@ -53,6 +53,31 @@ sudo ./scripts/tun-health-check.sh
 
 默认终端界面：`backend-go/cmd/tui`
 
+## Debian 打包（.deb）
+
+在项目根目录执行：
+
+```bash
+./scripts/build-deb.sh 0.1.0
+```
+
+输出路径：`dist/v2raye_<version>_<arch>.deb`
+
+安装/卸载：
+
+```bash
+sudo apt install ./dist/v2raye_0.1.0_amd64.deb
+sudo apt remove v2raye
+sudo apt purge v2raye
+```
+
+说明：
+
+- 安装后服务文件在 `/usr/lib/systemd/system/v2raye-server.service`
+- 可执行文件在 `/opt/v2rayE/v2raye`
+- 全局命令在 `/usr/bin/v2raye`（软链接到 `/opt/v2rayE/v2raye`）
+- 安装时会自动 `daemon-reload` 并 `enable` 服务（默认不主动启动）
+
 ## 环境变量
 
 - `V2RAYN_API_ADDR`：监听地址，默认 `127.0.0.1:18000`

@@ -1,0 +1,94 @@
+name: release-deb
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, for example 0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-deb-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-24.04
+    env:
+      GOFLAGS: -buildvcs=false
+      PKG_MAINTAINER: 474420502 <474420502@users.noreply.github.com>
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend-go/go.mod
+          cache-dependency-path: backend-go/go.sum
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            raw="${{ inputs.version }}"
+          else
+            raw="${GITHUB_REF_NAME}"
+          fi
+          version="${raw#v}"
+          if [[ -z "$version" ]]; then
+            echo "version must not be empty" >&2
+            exit 1
+          fi
+          echo "raw=$raw" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd backend-go
+          go test ./...
+
+      - name: Build Debian package
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/build-deb.sh "${{ steps.version.outputs.version }}"
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum *.deb > SHA256SUMS
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2raye-deb-${{ steps.version.outputs.version }}
+          path: |
+            dist/*.deb
+            dist/SHA256SUMS
+
+      - name: Publish GitHub release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: v2rayE ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            dist/*.deb
+            dist/SHA256SUMS
