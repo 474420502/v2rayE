@@ -80,5 +80,13 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 			buttonsToFocusables(saveRouting, geoUpdate, repairTun, routeTest),
 			primitivesToFocusables(a.networkTestTarget, a.networkTestPort),
 		),
+		focusGroups: [][]tview.Primitive{
+			buttonsToFocusables(checkBtn, globalPreset, bypassPreset, directPreset, applyProxy, clearProxy),
+			primitivesToFocusables(a.networkRoutingMode),
+			buttonsToFocusables(selectGlobal, selectBypass, selectDirect, selectCustom),
+			primitivesToFocusables(a.networkDomainStrategy, a.networkLocalBypass),
+			buttonsToFocusables(saveRouting, geoUpdate, repairTun, routeTest),
+			primitivesToFocusables(a.networkTestTarget, a.networkTestPort),
+		},
 	}
 }

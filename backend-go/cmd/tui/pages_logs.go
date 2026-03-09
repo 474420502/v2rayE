@@ -40,5 +40,12 @@ func (a *tuiApp) buildLogsPage() builtPage {
 	return builtPage{
 		root:       root,
 		focusables: joinFocusables(buttonsToFocusables(allBtn, errorBtn, warnBtn, infoBtn, debugBtn, srcAllBtn, appBtn, xrayBtn, applyBtn, clearBtn), primitivesToFocusables(a.logsSearchInput, a.logsView)),
+		focusGroups: [][]tview.Primitive{
+			buttonsToFocusables(allBtn, errorBtn, warnBtn, infoBtn, debugBtn),
+			buttonsToFocusables(srcAllBtn, appBtn, xrayBtn),
+			primitivesToFocusables(a.logsSearchInput),
+			buttonsToFocusables(applyBtn, clearBtn),
+			primitivesToFocusables(a.logsView),
+		},
 	}
 }

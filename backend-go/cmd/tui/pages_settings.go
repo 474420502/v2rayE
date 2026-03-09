@@ -86,5 +86,17 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 			buttonsToFocusables(proxyOn, proxyOff, proxyPac),
 			primitivesToFocusables(a.settingsProxyMode, a.settingsProxyExcept),
 		),
+		focusGroups: [][]tview.Primitive{
+			buttonsToFocusables(saveBtn, clearErrBtn, exitCleanupBtn),
+			primitivesToFocusables(a.settingsListenAddr, a.settingsSocksPort, a.settingsHTTPPort),
+			buttonsToFocusables(engineXray),
+			primitivesToFocusables(a.settingsCoreEngine),
+			buttonsToFocusables(logDebug, logInfo, logWarn, logError),
+			primitivesToFocusables(a.settingsLogLevel, a.settingsSkipCert, a.settingsTunName),
+			buttonsToFocusables(tunOff, tunMixed, tunSystem, tunGvisor),
+			primitivesToFocusables(a.settingsTunMode, a.settingsTunMtu, a.settingsTunAutoRoute, a.settingsTunStrict, a.settingsDNSMode, a.settingsDNSList),
+			buttonsToFocusables(proxyOn, proxyOff, proxyPac),
+			primitivesToFocusables(a.settingsProxyMode, a.settingsProxyExcept),
+		},
 	}
 }

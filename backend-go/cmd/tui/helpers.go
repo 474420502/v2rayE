@@ -13,6 +13,11 @@ import (
 
 const narrowLayoutBreakpoint = 130
 
+const (
+	editableValueColor = tcell.ColorLightCyan
+	editableLabelColor = tcell.ColorMediumTurquoise
+)
+
 type textWidget struct {
 	*tview.TextView
 }
@@ -40,8 +45,8 @@ func newInputWidget(label string, onChange func(string)) *inputWidget {
 	widget := &inputWidget{InputField: tview.NewInputField()}
 	widget.SetLabel(label)
 	widget.SetFieldWidth(0)
-	widget.SetLabelColor(tcell.ColorLightGray)
-	widget.SetFieldTextColor(tcell.ColorWhite)
+	widget.SetLabelColor(editableLabelColor)
+	widget.SetFieldTextColor(editableValueColor)
 	widget.SetFieldBackgroundColor(tcell.ColorBlack)
 	widget.SetPlaceholderTextColor(tcell.ColorDarkGray)
 	widget.SetChangedFunc(onChange)
@@ -61,8 +66,9 @@ type textSetter interface {
 }
 
 type builtPage struct {
-	root       tview.Primitive
-	focusables []tview.Primitive
+	root        tview.Primitive
+	focusables  []tview.Primitive
+	focusGroups [][]tview.Primitive
 }
 
 func readOnlyEditor(content string) *textWidget {
@@ -80,7 +86,7 @@ func newMutedText(content string) *tview.TextView {
 func newListWidget() *tview.List {
 	list := tview.NewList()
 	list.ShowSecondaryText(false)
-	list.SetMainTextColor(tcell.ColorWhite)
+	list.SetMainTextColor(editableValueColor)
 	list.SetSelectedTextColor(tcell.ColorBlack)
 	list.SetSelectedBackgroundColor(tcell.ColorYellow)
 	list.SetHighlightFullLine(true)

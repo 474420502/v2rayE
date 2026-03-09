@@ -23,9 +23,11 @@ type tuiApp struct {
 	viewportRows int
 	compactMode  bool
 
-	pageHolder *tview.Pages
-	tabBar     *tview.Flex
-	focusables []tview.Primitive
+	pageHolder  *tview.Pages
+	tabBar      *tview.Flex
+	focusables  []tview.Primitive
+	focusGroups [][]tview.Primitive
+	focusGroup  int
 
 	commandPalette       *tview.List
 	commandPaletteInput  *tview.InputField

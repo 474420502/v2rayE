@@ -43,25 +43,25 @@ func (a *tuiApp) handler(event *tcell.EventKey) *tcell.EventKey {
 		if a.focusHandlesDirectionalKeys() {
 			return event
 		}
-		a.cycleFocus(false)
+		a.cycleFocusItems(false)
 		return nil
 	case tcell.KeyLeft:
 		if a.focusHandlesDirectionalKeys() {
 			return event
 		}
-		a.cycleFocus(true)
+		a.cycleFocusItems(true)
 		return nil
 	case tcell.KeyDown:
 		if a.focusHandlesDirectionalKeys() {
 			return event
 		}
-		a.cycleFocus(false)
+		a.cycleFocusItems(false)
 		return nil
 	case tcell.KeyUp:
 		if a.focusHandlesDirectionalKeys() {
 			return event
 		}
-		a.cycleFocus(true)
+		a.cycleFocusItems(true)
 		return nil
 	case tcell.KeyTAB:
 		a.cycleFocus(false)
@@ -127,7 +127,48 @@ func (a *tuiApp) actionButton(label string, action func(context.Context) error) 
 }
 
 func (a *tuiApp) cycleFocus(reverse bool) {
-	if a.app == nil || len(a.focusables) == 0 {
+	if a.app == nil {
+		return
+	}
+	if len(a.focusGroups) > 1 {
+		current := a.app.GetFocus()
+		groupIdx := -1
+		for idx, group := range a.focusGroups {
+			for _, primitive := range group {
+				if primitive == current {
+					groupIdx = idx
+					break
+				}
+			}
+			if groupIdx >= 0 {
+				break
+			}
+		}
+		if groupIdx < 0 {
+			groupIdx = a.focusGroup
+		}
+		if groupIdx < 0 || groupIdx >= len(a.focusGroups) {
+			groupIdx = 0
+		}
+		if reverse {
+			groupIdx = (groupIdx - 1 + len(a.focusGroups)) % len(a.focusGroups)
+		} else {
+			groupIdx = (groupIdx + 1) % len(a.focusGroups)
+		}
+		a.focusGroup = groupIdx
+		if len(a.focusGroups[groupIdx]) > 0 {
+			a.app.SetFocus(a.focusGroups[groupIdx][0])
+		}
+		return
+	}
+	a.cycleFocusItems(reverse)
+}
+
+func (a *tuiApp) cycleFocusItems(reverse bool) {
+	if a.app == nil {
+		return
+	}
+	if len(a.focusables) == 0 {
 		return
 	}
 	current := a.app.GetFocus()

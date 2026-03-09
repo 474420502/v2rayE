@@ -135,11 +135,26 @@ func (a *tuiApp) syncPages() {
 	}
 
 	a.focusables = page.focusables
+	a.focusGroups = nil
+	for _, group := range page.focusGroups {
+		if len(group) == 0 {
+			continue
+		}
+		a.focusGroups = append(a.focusGroups, group)
+	}
+	if len(a.focusGroups) == 0 && len(a.focusables) > 0 {
+		a.focusGroups = [][]tview.Primitive{a.focusables}
+	}
+	a.focusGroup = 0
 	a.buildTabs()
 	a.pageHolder.RemovePage("current")
 	a.pageHolder.AddAndSwitchToPage("current", page.root, true)
-	if a.app != nil && len(a.focusables) > 0 {
-		a.app.SetFocus(a.focusables[0])
+	if a.app != nil {
+		if len(a.focusGroups) > 0 && len(a.focusGroups[0]) > 0 {
+			a.app.SetFocus(a.focusGroups[0][0])
+		} else if len(a.focusables) > 0 {
+			a.app.SetFocus(a.focusables[0])
+		}
 	}
 	a.refreshFooter()
 }
