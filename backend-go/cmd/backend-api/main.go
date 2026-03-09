@@ -16,8 +16,9 @@ func main() {
 	defer cancel()
 
 	err := launcher.RunServer(ctx, launcher.ServerOptions{
-		Addr:           envOrDefault("V2RAYN_API_ADDR", "127.0.0.1:18000"),
+		Addr:           envOrDefault("V2RAYN_API_ADDR", "0.0.0.0:18000"),
 		DataDir:        envOrDefault("V2RAYN_DATA_DIR", "/opt/v2rayE"),
+		AllowPublic:    envBool("V2RAYN_API_ALLOW_PUBLIC"),
 		LogStartupInfo: true,
 	})
 	if err != nil {
@@ -30,4 +31,13 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envBool(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }

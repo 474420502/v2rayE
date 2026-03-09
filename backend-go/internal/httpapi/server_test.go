@@ -411,7 +411,7 @@ func TestSystemProxyUsersEndpoint(t *testing.T) {
 	}
 
 	var env struct {
-		Code int `json:"code"`
+		Code int                      `json:"code"`
 		Data []map[string]interface{} `json:"data"`
 	}
 	decodeJSON(t, resp.Body, &env)
@@ -478,6 +478,56 @@ func TestProfilesBatchDelayEndpoint(t *testing.T) {
 	}
 	if _, ok := env.Data["results"]; !ok {
 		t.Fatalf("missing results in batch delay response")
+	}
+}
+
+func TestBackendRejectsPublicClientByDefault(t *testing.T) {
+	t.Parallel()
+
+	dataDir := t.TempDir()
+	store, err := storage.New(dataDir)
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	svc := native.New(dataDir, "xray", store)
+	server := New("", "", svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req.RemoteAddr = "8.8.8.8:12345"
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for public client, got %d", rec.Code)
+	}
+
+	var env envelope
+	decodeJSON(t, rec.Body, &env)
+	if env.Code != 40301 {
+		t.Fatalf("expected code=40301, got %d", env.Code)
+	}
+}
+
+func TestBackendAllowsPublicClientWhenConfigured(t *testing.T) {
+	t.Parallel()
+
+	dataDir := t.TempDir()
+	store, err := storage.New(dataDir)
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	svc := native.New(dataDir, "xray", store)
+	server := New("", "", svc, WithPublicAccessAllowed())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req.RemoteAddr = "8.8.8.8:12345"
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 when public access enabled, got %d", rec.Code)
 	}
 }
 

@@ -7,10 +7,11 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/opt/v2rayE
-ExecStart=/opt/v2rayE/v2raye --server --api-addr 127.0.0.1:18000 --data-dir /opt/v2rayE
+ExecStart=/usr/lib/v2raye/v2raye --server --api-addr 0.0.0.0:18000 --data-dir /opt/v2rayE
 Restart=always
 RestartSec=3
 Environment=V2RAYN_API_TOKEN=
+Environment=V2RAYN_API_ALLOW_PUBLIC=0
 Environment=V2RAYN_XRAY_CMD=xray
 Environment=V2RAYN_DESKTOP_USER=
 

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/netip"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -21,6 +23,7 @@ type Server struct {
 	httpServer   *http.Server
 	requireToken bool
 	token        string
+	allowPublic  bool
 	svc          service.BackendService
 
 	mu          sync.Mutex
@@ -28,14 +31,27 @@ type Server struct {
 	nextSubID   int
 }
 
+type Option func(*Server)
+
+func WithPublicAccessAllowed() Option {
+	return func(s *Server) {
+		s.allowPublic = true
+	}
+}
+
 // New creates an HTTP API server bound to addr with optional Bearer token auth.
-func New(addr, token string, svc service.BackendService) *Server {
+func New(addr, token string, svc service.BackendService, opts ...Option) *Server {
 	requireToken := strings.TrimSpace(token) != ""
 	s := &Server{
 		requireToken: requireToken,
 		token:        token,
 		svc:          svc,
 		subscribers:  make(map[int]chan []byte),
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(s)
+		}
 	}
 
 	mux := http.NewServeMux()
@@ -84,9 +100,14 @@ func New(addr, token string, svc service.BackendService) *Server {
 	// Events SSE (metadata events)
 	mux.HandleFunc("/api/events/stream", s.auth(s.handleEventsStream))
 
+	var handler http.Handler = mux
+	if !s.allowPublic {
+		handler = s.lanOnly(handler)
+	}
+
 	s.httpServer = &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	return s
@@ -113,6 +134,45 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
+
+func (s *Server) lanOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		addr, ok := remoteAddr(r)
+		if !ok || !isLANAddr(addr) {
+			writeError(w, http.StatusForbidden, 40301, "forbidden: backend only accepts loopback or LAN clients by default", map[string]any{
+				"remoteAddr": r.RemoteAddr,
+			})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func remoteAddr(r *http.Request) (netip.Addr, bool) {
+	host := strings.TrimSpace(r.RemoteAddr)
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	host = strings.Trim(host, "[]")
+	if host == "" {
+		return netip.Addr{}, false
+	}
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return netip.Addr{}, false
+	}
+	return addr.Unmap(), true
+}
+
+func isLANAddr(addr netip.Addr) bool {
+	if !addr.IsValid() {
+		return false
+	}
+	if addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast() {
+		return true
+	}
+	return false
+}
 
 func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

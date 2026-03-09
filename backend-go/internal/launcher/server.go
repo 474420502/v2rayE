@@ -16,6 +16,7 @@ type ServerOptions struct {
 	Token          string
 	DataDir        string
 	XrayCmd        string
+	AllowPublic    bool
 	RestoreOnBoot  bool
 	LogStartupInfo bool
 }
@@ -28,7 +29,11 @@ func RunServer(ctx context.Context, opts ServerOptions) error {
 	}
 
 	svc := native.New(opts.DataDir, opts.XrayCmd, store)
-	server := httpapi.New(opts.Addr, opts.Token, svc)
+	httpOpts := make([]httpapi.Option, 0, 1)
+	if opts.AllowPublic {
+		httpOpts = append(httpOpts, httpapi.WithPublicAccessAllowed())
+	}
+	server := httpapi.New(opts.Addr, opts.Token, svc, httpOpts...)
 
 	restoreOnBoot := opts.RestoreOnBoot
 	if !restoreOnBoot {
@@ -46,6 +51,11 @@ func RunServer(ctx context.Context, opts ServerOptions) error {
 	go func() {
 		if opts.LogStartupInfo {
 			log.Printf("[go-api] listening on http://%s  (xray=%s, data=%s)", opts.Addr, opts.XrayCmd, opts.DataDir)
+			if opts.AllowPublic {
+				log.Printf("[go-api] client scope: public access allowed")
+			} else {
+				log.Printf("[go-api] client scope: loopback + LAN only (set allow public to disable)")
+			}
 			if strings.TrimSpace(opts.Token) != "" {
 				log.Printf("[go-api] token auth: enabled")
 			} else {

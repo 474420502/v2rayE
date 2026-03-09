@@ -133,9 +133,10 @@ sudo apt purge v2raye
 
 Installed layout:
 
-- binary: `/opt/v2rayE/v2raye`
+- binary: `/usr/lib/v2raye/v2raye`
 - global command: `/usr/bin/v2raye`
 - systemd unit: `/usr/lib/systemd/system/v2raye-server.service`
+- runtime data directory: `/opt/v2rayE`
 
 ## systemd deployment
 
@@ -147,7 +148,9 @@ Manual setup:
 
 ```bash
 sudo install -d -m 755 /opt/v2rayE
-sudo install -m 755 ./v2raye /opt/v2rayE/v2raye
+sudo install -d -m 755 /usr/lib/v2raye
+sudo install -m 755 ./v2raye /usr/lib/v2raye/v2raye
+sudo ln -sf /usr/lib/v2raye/v2raye /usr/bin/v2raye
 sudo install -m 644 ./docs/systemd/v2raye-server.service /etc/systemd/system/v2raye-server.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now v2raye-server
@@ -155,7 +158,8 @@ sudo systemctl enable --now v2raye-server
 
 ## Key environment variables
 
-- `V2RAYN_API_ADDR`: backend listen address, default `127.0.0.1:18000`
+- `V2RAYN_API_ADDR`: backend listen address, default `0.0.0.0:18000`
+- `V2RAYN_API_ALLOW_PUBLIC`: whether to allow public internet clients to reach the backend API; disabled by default, which limits access to loopback and LAN clients
 - `V2RAYN_DATA_DIR`: data directory, default `/opt/v2rayE`
 - `V2RAYN_API_TOKEN`: optional API token
 - `V2RAYN_BACKEND_MODE`: backend mode, default `native`

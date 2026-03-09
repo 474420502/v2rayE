@@ -12,6 +12,7 @@ BUILD_ROOT="$DIST_DIR/deb-build"
 PKG_ROOT="$BUILD_ROOT/${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}"
 DEBIAN_DIR="$PKG_ROOT/DEBIAN"
 INSTALL_ROOT="$PKG_ROOT/opt/v2rayE"
+LIBEXEC_ROOT="$PKG_ROOT/usr/lib/$PKG_NAME"
 SYSTEMD_DIR="$PKG_ROOT/usr/lib/systemd/system"
 BIN_DIR="$PKG_ROOT/usr/bin"
 OUTPUT_DEB="$DIST_DIR/${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}.deb"
@@ -26,11 +27,13 @@ echo "=== Build v2rayE binary ==="
 
 echo "=== Prepare deb layout ==="
 rm -rf "$PKG_ROOT"
-mkdir -p "$DEBIAN_DIR" "$INSTALL_ROOT" "$SYSTEMD_DIR" "$BIN_DIR" "$DIST_DIR"
+mkdir -p "$DEBIAN_DIR" "$INSTALL_ROOT" "$LIBEXEC_ROOT" "$SYSTEMD_DIR" "$BIN_DIR" "$DIST_DIR"
+chmod 750 "$INSTALL_ROOT"
+chmod 755 "$LIBEXEC_ROOT" "$SYSTEMD_DIR" "$BIN_DIR"
 
-install -m 755 "$ROOT_DIR/v2raye" "$INSTALL_ROOT/v2raye"
+install -m 755 "$ROOT_DIR/v2raye" "$LIBEXEC_ROOT/v2raye"
 install -m 644 "$ROOT_DIR/docs/systemd/v2raye-server.service" "$SYSTEMD_DIR/v2raye-server.service"
-ln -s /opt/v2rayE/v2raye "$BIN_DIR/v2raye"
+ln -s /usr/lib/$PKG_NAME/v2raye "$BIN_DIR/v2raye"
 
 cat >"$DEBIAN_DIR/control" <<EOF
 Package: $PKG_NAME
@@ -52,7 +55,9 @@ set -e
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || true
     if [ "$1" = "configure" ]; then
+        rm -f /opt/v2rayE/v2raye || true
         systemctl enable v2raye-server.service >/dev/null 2>&1 || true
+        systemctl restart v2raye-server.service >/dev/null 2>&1 || systemctl start v2raye-server.service >/dev/null 2>&1 || true
     fi
 fi
 
@@ -95,7 +100,7 @@ EOF
 chmod 755 "$DEBIAN_DIR/postinst" "$DEBIAN_DIR/prerm" "$DEBIAN_DIR/postrm"
 
 echo "=== Build deb package ==="
-dpkg-deb --build --root-owner-group "$PKG_ROOT" "$OUTPUT_DEB"
+dpkg-deb -Zxz --build --root-owner-group "$PKG_ROOT" "$OUTPUT_DEB"
 
 echo "=== Done ==="
 echo "deb package: $OUTPUT_DEB"

@@ -3,7 +3,7 @@ name: release-deb
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
       version:
@@ -26,12 +26,12 @@ jobs:
       PKG_MAINTAINER: 474420502 <474420502@users.noreply.github.com>
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
         with:
           fetch-depth: 0
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v5.0.2
         with:
           go-version-file: backend-go/go.mod
           cache-dependency-path: backend-go/go.sum
@@ -74,21 +74,63 @@ jobs:
           cd dist
           sha256sum *.deb > SHA256SUMS
 
+      - name: Generate release notes body
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > dist/RELEASE_NOTES.md <<EOF
+          ## Install
+
+          ```bash
+          sudo apt install ./v2raye_${{ steps.version.outputs.version }}_amd64.deb
+          ```
+
+          Upgrade an existing install:
+
+          ```bash
+          sudo apt install --reinstall ./v2raye_${{ steps.version.outputs.version }}_amd64.deb
+          ```
+
+          ## Installed Layout
+
+          - executable: /usr/lib/v2raye/v2raye
+          - user command: /usr/bin/v2raye
+          - systemd unit: /usr/lib/systemd/system/v2raye-server.service
+          - runtime data directory: /opt/v2rayE
+
+          ## Runtime Model
+
+          - The Debian package enables and starts the root-owned backend service during install.
+          - Installed users can run `v2raye` directly as a normal user to enter the TUI.
+          - The backend listens on `0.0.0.0:18000` by default, but public internet access is disabled unless `V2RAYN_API_ALLOW_PUBLIC=1` is set.
+
+          ## Verify
+
+          ```bash
+          command -v v2raye
+          systemctl is-enabled v2raye-server.service
+          systemctl is-active v2raye-server.service
+          v2raye --help
+          ```
+          EOF
+
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.0
         with:
           name: v2raye-deb-${{ steps.version.outputs.version }}
           path: |
             dist/*.deb
             dist/SHA256SUMS
+            dist/RELEASE_NOTES.md
 
       - name: Publish GitHub release
         if: github.event_name == 'push'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.0.6
         with:
           tag_name: ${{ github.ref_name }}
           name: v2rayE ${{ steps.version.outputs.version }}
           generate_release_notes: true
+          body_path: dist/RELEASE_NOTES.md
           files: |
             dist/*.deb
             dist/SHA256SUMS

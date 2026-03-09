@@ -14,13 +14,14 @@ import (
 )
 
 func main() {
-	defaultAddr := envOrDefault("V2RAYN_API_ADDR", "127.0.0.1:18000")
-	defaultBaseURL := envOrDefault("V2RAYN_TUI_BASE_URL", "http://"+defaultAddr)
+	defaultAddr := envOrDefault("V2RAYN_API_ADDR", "0.0.0.0:18000")
+	defaultBaseURL := envOrDefault("V2RAYN_TUI_BASE_URL", "http://127.0.0.1:18000")
 
 	serverMode := flag.Bool("server", false, "run backend API server mode")
 	apiAddr := flag.String("api-addr", defaultAddr, "backend API listen address")
 	baseURL := flag.String("base-url", defaultBaseURL, "backend API base URL for TUI mode")
 	dataDir := flag.String("data-dir", envOrDefault("V2RAYN_DATA_DIR", "/opt/v2rayE"), "backend data directory")
+	allowPublic := flag.Bool("allow-public", envBool("V2RAYN_API_ALLOW_PUBLIC"), "allow public internet clients to access backend API")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -30,6 +31,7 @@ func main() {
 		err := launcher.RunServer(ctx, launcher.ServerOptions{
 			Addr:           *apiAddr,
 			DataDir:        strings.TrimSpace(*dataDir),
+			AllowPublic:    *allowPublic,
 			LogStartupInfo: true,
 		})
 		if err != nil {
@@ -48,4 +50,13 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envBool(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
