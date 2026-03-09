@@ -11,6 +11,7 @@ import (
 
 	"v2raye/backend-go/cmd/tui"
 	"v2raye/backend-go/internal/launcher"
+	"v2raye/backend-go/internal/storage"
 )
 
 func main() {
@@ -20,7 +21,7 @@ func main() {
 	serverMode := flag.Bool("server", false, "run backend API server mode")
 	apiAddr := flag.String("api-addr", defaultAddr, "backend API listen address")
 	baseURL := flag.String("base-url", defaultBaseURL, "backend API base URL for TUI mode")
-	dataDir := flag.String("data-dir", envOrDefault("V2RAYN_DATA_DIR", "/opt/v2rayE"), "backend data directory")
+	dataDir := flag.String("data-dir", envOrDefault("V2RAYN_DATA_DIR", storage.DefaultDataDir), "backend data directory")
 	allowPublic := flag.Bool("allow-public", envBool("V2RAYN_API_ALLOW_PUBLIC"), "allow public internet clients to access backend API")
 	flag.Parse()
 
@@ -28,9 +29,10 @@ func main() {
 	defer cancel()
 
 	if *serverMode {
+		resolvedDataDir := storage.ResolveDataDir(*dataDir)
 		err := launcher.RunServer(ctx, launcher.ServerOptions{
 			Addr:           *apiAddr,
-			DataDir:        strings.TrimSpace(*dataDir),
+			DataDir:        resolvedDataDir,
 			AllowPublic:    *allowPublic,
 			LogStartupInfo: true,
 		})

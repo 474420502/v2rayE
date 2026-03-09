@@ -672,3 +672,34 @@ func TestHasGeoAssetChecksEnvAssetDirs(t *testing.T) {
 		t.Fatalf("expected hasGeoSiteAsset to detect geosite.dat in XRAY_LOCATION_ASSET")
 	}
 }
+
+func TestGeoDataSearchDirsPreferAssetEnvOverExecDir(t *testing.T) {
+	tmp := t.TempDir()
+
+	oldXray := os.Getenv("XRAY_LOCATION_ASSET")
+	oldV2ray := os.Getenv("V2RAY_LOCATION_ASSET")
+	t.Cleanup(func() {
+		_ = os.Setenv("XRAY_LOCATION_ASSET", oldXray)
+		_ = os.Setenv("V2RAY_LOCATION_ASSET", oldV2ray)
+	})
+
+	if err := os.Setenv("XRAY_LOCATION_ASSET", tmp); err != nil {
+		t.Fatalf("set XRAY_LOCATION_ASSET: %v", err)
+	}
+	if err := os.Setenv("V2RAY_LOCATION_ASSET", ""); err != nil {
+		t.Fatalf("clear V2RAY_LOCATION_ASSET: %v", err)
+	}
+
+	dirs := geoDataSearchDirs()
+	if len(dirs) == 0 {
+		t.Fatalf("expected geodata search dirs")
+	}
+	if dirs[0] != tmp {
+		t.Fatalf("geoDataSearchDirs()[0] = %q, want %q", dirs[0], tmp)
+	}
+	for _, dir := range dirs {
+		if dir == filepath.Dir(os.Args[0]) && dirs[0] == filepath.Dir(os.Args[0]) {
+			t.Fatalf("expected executable dir to not take precedence over asset env")
+		}
+	}
+}

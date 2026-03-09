@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"v2raye/backend-go/internal/launcher"
+	"v2raye/backend-go/internal/storage"
 )
 
 func main() {
@@ -17,7 +18,7 @@ func main() {
 
 	err := launcher.RunServer(ctx, launcher.ServerOptions{
 		Addr:           envOrDefault("V2RAYN_API_ADDR", "0.0.0.0:18000"),
-		DataDir:        envOrDefault("V2RAYN_DATA_DIR", "/opt/v2rayE"),
+		DataDir:        storage.ResolveDataDir(envOrDefault("V2RAYN_DATA_DIR", storage.DefaultDataDir)),
 		AllowPublic:    envBool("V2RAYN_API_ALLOW_PUBLIC"),
 		LogStartupInfo: true,
 	})

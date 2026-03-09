@@ -12,14 +12,37 @@ import (
 	"v2raye/backend-go/internal/domain"
 )
 
+const DefaultDataDir = "/opt/v2rayE"
+
+var legacyDefaultDataDirs = map[string]struct{}{
+	"/var/lib/v2raye": {},
+	"/var/lib/v2rayE": {},
+	"/var/opt/v2rayE": {},
+}
+
 // Store manages JSON data files under a single data directory.
 type Store struct {
 	dataDir string
 	mu      sync.RWMutex
 }
 
+// ResolveDataDir normalizes the configured data directory and keeps legacy
+// mistaken defaults pinned to the current root-owned location.
+func ResolveDataDir(dataDir string) string {
+	trimmed := strings.TrimSpace(dataDir)
+	if trimmed == "" {
+		return DefaultDataDir
+	}
+	cleaned := filepath.Clean(trimmed)
+	if _, ok := legacyDefaultDataDirs[cleaned]; ok {
+		return DefaultDataDir
+	}
+	return cleaned
+}
+
 // New creates a Store and ensures the data directory exists.
 func New(dataDir string) (*Store, error) {
+	dataDir = ResolveDataDir(dataDir)
 	if err := os.MkdirAll(dataDir, 0o750); err != nil {
 		return nil, fmt.Errorf("create data dir %q: %w", dataDir, err)
 	}
@@ -75,33 +98,33 @@ func (s *Store) configPath() string {
 // DefaultConfig returns the default application configuration.
 func DefaultConfig() map[string]interface{} {
 	return map[string]interface{}{
-		"socksPort":             10808,
-		"httpPort":              10809,
-		"listenAddr":            "127.0.0.1",
-		"allowLan":              false,
-		"logLevel":              "warning",
-		"statsPort":             10085,
-		"autoRun":               false,
-		"skipCertVerify":        false,
-		"enableTun":             false,
-		"tunMode":               "off",
-		"tunName":               "xraye0",
-		"tunStack":              "mixed",
-		"tunMtu":                1500,
-		"tunAutoRoute":          true,
-		"tunHijackDefaultRoute": false,
+		"socksPort":                     10808,
+		"httpPort":                      10809,
+		"listenAddr":                    "127.0.0.1",
+		"allowLan":                      false,
+		"logLevel":                      "warning",
+		"statsPort":                     10085,
+		"autoRun":                       false,
+		"skipCertVerify":                false,
+		"enableTun":                     false,
+		"tunMode":                       "off",
+		"tunName":                       "xraye0",
+		"tunStack":                      "mixed",
+		"tunMtu":                        1500,
+		"tunAutoRoute":                  true,
+		"tunHijackDefaultRoute":         false,
 		"tunHijackDefaultRouteExplicit": false,
-		"tunStrictRoute":        false,
-		"systemProxyMode":       "forced_change",
-		"systemProxyExceptions": "",
-		"systemProxyUsers":      []interface{}{},
-		"coreAutoRestart":       true,
-		"coreAutoRestartMaxRetries": 5,
-		"coreAutoRestartBackoffMs":  500,
-		"coreEngine":            "xray-core",
-		"xrayCmd":               "xray",
-		"dnsMode":               "UseSystemDNS",
-		"dnsList":               []interface{}{"1.1.1.1", "8.8.8.8"},
+		"tunStrictRoute":                false,
+		"systemProxyMode":               "forced_change",
+		"systemProxyExceptions":         "",
+		"systemProxyUsers":              []interface{}{},
+		"coreAutoRestart":               true,
+		"coreAutoRestartMaxRetries":     5,
+		"coreAutoRestartBackoffMs":      500,
+		"coreEngine":                    "xray-core",
+		"xrayCmd":                       "xray",
+		"dnsMode":                       "UseSystemDNS",
+		"dnsList":                       []interface{}{"1.1.1.1", "8.8.8.8"},
 	}
 }
 

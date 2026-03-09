@@ -23,6 +23,7 @@ type ServerOptions struct {
 
 // RunServer starts backend services and blocks until ctx is cancelled or the server exits.
 func RunServer(ctx context.Context, opts ServerOptions) error {
+	opts.DataDir = storage.ResolveDataDir(opts.DataDir)
 	store, err := storage.New(opts.DataDir)
 	if err != nil {
 		return err

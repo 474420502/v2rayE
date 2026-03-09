@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"v2raye/backend-go/internal/domain"
+	"v2raye/backend-go/internal/storage"
 )
 
 var builtinCNIPs = []string{
@@ -688,14 +689,15 @@ func hasGeoAsset(fileName string) bool {
 func geoDataSearchDirs() []string {
 	execPath, _ := os.Executable()
 	searchDirs := []string{
-		".",
-		filepath.Dir(execPath),
+		preferredGeoDataDir(),
 		strings.TrimSpace(os.Getenv("XRAY_LOCATION_ASSET")),
 		strings.TrimSpace(os.Getenv("V2RAY_LOCATION_ASSET")),
+		".",
 		"/usr/local/share/xray",
 		"/usr/share/xray",
 		"/usr/local/share/v2ray",
 		"/usr/share/v2ray",
+		filepath.Dir(execPath),
 	}
 	seen := make(map[string]struct{}, len(searchDirs))
 	result := make([]string, 0, len(searchDirs))
@@ -711,6 +713,16 @@ func geoDataSearchDirs() []string {
 		result = append(result, dir)
 	}
 	return result
+}
+
+func preferredGeoDataDir() string {
+	if dir := strings.TrimSpace(os.Getenv("XRAY_LOCATION_ASSET")); dir != "" {
+		return filepath.Clean(dir)
+	}
+	if dir := strings.TrimSpace(os.Getenv("V2RAY_LOCATION_ASSET")); dir != "" {
+		return filepath.Clean(dir)
+	}
+	return storage.DefaultDataDir
 }
 
 func fileExists(path string) bool {

@@ -67,8 +67,22 @@ func New(dataDir, xrayCmd string, store *storage.Store) *Service {
 		xrayCmd: xrayCmd,
 		logs:    newLogBroker(),
 	}
+	svc.ensureGeoDataAssetEnv()
 	go svc.watchdogLoop()
 	return svc
+}
+
+func (s *Service) ensureGeoDataAssetEnv() {
+	assetDir := storage.ResolveDataDir(s.dataDir)
+	if strings.TrimSpace(assetDir) == "" {
+		assetDir = storage.DefaultDataDir
+	}
+	if strings.TrimSpace(os.Getenv("XRAY_LOCATION_ASSET")) == "" {
+		_ = os.Setenv("XRAY_LOCATION_ASSET", assetDir)
+	}
+	if strings.TrimSpace(os.Getenv("V2RAY_LOCATION_ASSET")) == "" {
+		_ = os.Setenv("V2RAY_LOCATION_ASSET", assetDir)
+	}
 }
 
 // ─── Core lifecycle ───────────────────────────────────────────────────────────
@@ -83,6 +97,7 @@ func (s *Service) CoreStatus() domain.CoreStatus {
 func (s *Service) StartCore() domain.CoreStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.ensureGeoDataAssetEnv()
 
 	if s.running {
 		s.checkProcExited()
