@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os/exec"
@@ -179,7 +180,7 @@ func (a *tuiApp) openImportProfileDialogAction(context.Context) error {
 func (a *tuiApp) importProfileFromClipboardAction(ctx context.Context) error {
 	uri, err := readClipboardText(ctx)
 	if err != nil {
-		return fmt.Errorf(a.t("error.profile.clipboardUnavailable"))
+		return errors.New(a.t("error.profile.clipboardUnavailable"))
 	}
 	return a.importProfileURI(ctx, uri, false)
 }
@@ -218,7 +219,7 @@ func (a *tuiApp) openProfileQuickEditDialog() {
 		parseEditor := func() (ProfileItem, error) {
 			text := strings.TrimSpace(editor.GetText())
 			if text == "" {
-				return ProfileItem{}, fmt.Errorf(a.t("error.profile.emptyJSON"))
+				return ProfileItem{}, errors.New(a.t("error.profile.emptyJSON"))
 			}
 			var updated ProfileItem
 			if err := json.Unmarshal([]byte(text), &updated); err != nil {
@@ -228,16 +229,16 @@ func (a *tuiApp) openProfileQuickEditDialog() {
 				updated.ID = selected.ID
 			}
 			if updated.ID != selected.ID {
-				return ProfileItem{}, fmt.Errorf(a.t("error.profile.idImmutable"))
+				return ProfileItem{}, errors.New(a.t("error.profile.idImmutable"))
 			}
 			if strings.TrimSpace(updated.Protocol) == "" {
-				return ProfileItem{}, fmt.Errorf(a.t("error.profile.protocolRequired"))
+				return ProfileItem{}, errors.New(a.t("error.profile.protocolRequired"))
 			}
 			if strings.TrimSpace(updated.Address) == "" {
-				return ProfileItem{}, fmt.Errorf(a.t("error.profile.addressRequired"))
+				return ProfileItem{}, errors.New(a.t("error.profile.addressRequired"))
 			}
 			if updated.Port <= 0 || updated.Port > 65535 {
-				return ProfileItem{}, fmt.Errorf(a.t("error.profile.invalidPortRange"))
+				return ProfileItem{}, errors.New(a.t("error.profile.invalidPortRange"))
 			}
 			return updated, nil
 		}
@@ -638,7 +639,7 @@ func (a *tuiApp) submitProfileImport(loadEditor bool) {
 func (a *tuiApp) importProfileURI(ctx context.Context, uri string, loadEditor bool) error {
 	uri = strings.TrimSpace(uri)
 	if uri == "" {
-		return fmt.Errorf(a.t("error.profile.emptyURI"))
+		return errors.New(a.t("error.profile.emptyURI"))
 	}
 	if strings.HasPrefix(strings.ToLower(uri), "http://") || strings.HasPrefix(strings.ToLower(uri), "https://") {
 		return a.importSubscriptionURI(ctx, uri)
@@ -710,7 +711,7 @@ func readClipboardText(ctx context.Context) (string, error) {
 			return text, nil
 		}
 	}
-	return "", fmt.Errorf("clipboard unavailable (need wl-paste/xclip/xsel)")
+	return "", errors.New("clipboard unavailable (need wl-paste/xclip/xsel)")
 }
 
 func (a *tuiApp) importProfileAction(ctx context.Context) error {
@@ -726,7 +727,7 @@ func (a *tuiApp) importAndLoadProfileAction(ctx context.Context) error {
 func (a *tuiApp) loadSelectedProfileEditorAction(ctx context.Context) error {
 	id := a.currentProfileID()
 	if id == "" {
-		return fmt.Errorf(a.t("error.profile.noSelection"))
+		return errors.New(a.t("error.profile.noSelection"))
 	}
 	profile, err := a.client.GetProfile(ctx, id)
 	if err != nil {
@@ -747,7 +748,7 @@ func (a *tuiApp) resetProfileEditAction(ctx context.Context) error {
 func (a *tuiApp) saveSelectedProfileEditAction(ctx context.Context) error {
 	id := a.currentProfileID()
 	if id == "" {
-		return fmt.Errorf(a.t("error.profile.noSelection"))
+		return errors.New(a.t("error.profile.noSelection"))
 	}
 
 	profile, err := a.client.GetProfile(ctx, id)
@@ -787,7 +788,7 @@ func (a *tuiApp) saveSelectedProfileEditAction(ctx context.Context) error {
 	if portText != "" {
 		parsed, convErr := strconv.Atoi(portText)
 		if convErr != nil || parsed <= 0 || parsed > 65535 {
-			err := fmt.Errorf(a.t("error.profile.invalidPortRange"))
+			err := errors.New(a.t("error.profile.invalidPortRange"))
 			a.setProfileEditMessage(a.tf("profileEdit.message.error", err.Error()))
 			return err
 		}
@@ -795,7 +796,7 @@ func (a *tuiApp) saveSelectedProfileEditAction(ctx context.Context) error {
 	}
 	network := strings.TrimSpace(strings.ToLower(a.profileEditNetwork.Text()))
 	if network != "" && network != "tcp" && network != "ws" && network != "grpc" && network != "h2" && network != "kcp" && network != "quic" {
-		err := fmt.Errorf(a.t("error.profile.invalidNetwork"))
+		err := errors.New(a.t("error.profile.invalidNetwork"))
 		a.setProfileEditMessage(a.tf("profileEdit.message.error", err.Error()))
 		return err
 	}
@@ -812,7 +813,7 @@ func (a *tuiApp) saveSelectedProfileEditAction(ctx context.Context) error {
 	grpcService := strings.TrimSpace(a.profileEditGRPCSvc.Text())
 	grpcMode := strings.TrimSpace(strings.ToLower(a.profileEditGRPCMode.Text()))
 	if grpcMode != "" && grpcMode != "gun" && grpcMode != "multi" {
-		err := fmt.Errorf(a.t("error.profile.invalidGRPCMode"))
+		err := errors.New(a.t("error.profile.invalidGRPCMode"))
 		a.setProfileEditMessage(a.tf("profileEdit.message.error", err.Error()))
 		return err
 	}
@@ -821,7 +822,7 @@ func (a *tuiApp) saveSelectedProfileEditAction(ctx context.Context) error {
 	if vmessAlterText != "" {
 		parsed, convErr := strconv.Atoi(vmessAlterText)
 		if convErr != nil || parsed < 0 {
-			err := fmt.Errorf(a.t("error.profile.invalidVMessAlterID"))
+			err := errors.New(a.t("error.profile.invalidVMessAlterID"))
 			a.setProfileEditMessage(a.tf("profileEdit.message.error", err.Error()))
 			return err
 		}
@@ -832,7 +833,7 @@ func (a *tuiApp) saveSelectedProfileEditAction(ctx context.Context) error {
 	if hy2UpText != "" {
 		parsed, convErr := strconv.Atoi(hy2UpText)
 		if convErr != nil || parsed < 0 {
-			err := fmt.Errorf(a.t("error.profile.invalidHy2Up"))
+			err := errors.New(a.t("error.profile.invalidHy2Up"))
 			a.setProfileEditMessage(a.tf("profileEdit.message.error", err.Error()))
 			return err
 		}
@@ -842,7 +843,7 @@ func (a *tuiApp) saveSelectedProfileEditAction(ctx context.Context) error {
 	if hy2DownText != "" {
 		parsed, convErr := strconv.Atoi(hy2DownText)
 		if convErr != nil || parsed < 0 {
-			err := fmt.Errorf(a.t("error.profile.invalidHy2Down"))
+			err := errors.New(a.t("error.profile.invalidHy2Down"))
 			a.setProfileEditMessage(a.tf("profileEdit.message.error", err.Error()))
 			return err
 		}
@@ -962,7 +963,7 @@ func (a *tuiApp) saveSelectedProfileEditAction(ctx context.Context) error {
 func (a *tuiApp) activateProfileAction(ctx context.Context) error {
 	id := a.currentProfileID()
 	if id == "" {
-		return fmt.Errorf(a.t("error.profile.noSelection"))
+		return errors.New(a.t("error.profile.noSelection"))
 	}
 	if err := a.client.SelectProfile(ctx, id); err != nil {
 		return err
@@ -973,7 +974,7 @@ func (a *tuiApp) activateProfileAction(ctx context.Context) error {
 func (a *tuiApp) deleteSelectedProfileAction(ctx context.Context) error {
 	id := a.currentProfileID()
 	if id == "" {
-		return fmt.Errorf(a.t("error.profile.noSelection"))
+		return errors.New(a.t("error.profile.noSelection"))
 	}
 	if err := a.client.DeleteProfile(ctx, id); err != nil {
 		a.setProfileEditMessage(a.t("profileEdit.message.deleteFailed"))
@@ -998,7 +999,7 @@ func (a *tuiApp) batchDelayProfilesAction(ctx context.Context) error {
 	if len(ids) == 0 {
 		a.storeBatchDelayState(false, nil)
 		a.refreshWidgets()
-		return fmt.Errorf(a.t("error.profile.noProfiles"))
+		return errors.New(a.t("error.profile.noProfiles"))
 	}
 	result, err := a.client.BatchTestProfileDelay(ctx, ids, 5000, 5)
 	if err == nil {
@@ -1017,7 +1018,7 @@ func (a *tuiApp) batchDelayProfilesAction(ctx context.Context) error {
 func (a *tuiApp) testSelectedProfileDelayAction(ctx context.Context) error {
 	id := a.currentProfileID()
 	if id == "" {
-		return fmt.Errorf(a.t("error.profile.noSelection"))
+		return errors.New(a.t("error.profile.noSelection"))
 	}
 	result, err := a.client.TestProfileDelay(ctx, id)
 	if err != nil {
@@ -1037,7 +1038,7 @@ func (a *tuiApp) updateAllSubscriptionsAction(ctx context.Context) error {
 func (a *tuiApp) updateSelectedSubscriptionAction(ctx context.Context) error {
 	id := a.currentSubscriptionID()
 	if id == "" {
-		return fmt.Errorf(a.t("error.subscription.noSelection"))
+		return errors.New(a.t("error.subscription.noSelection"))
 	}
 	if err := a.client.UpdateSubscription(ctx, id); err != nil {
 		return err

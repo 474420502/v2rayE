@@ -236,6 +236,8 @@ type RoutingDiagnostics struct {
 	TunEnabled          bool                     `json:"tunEnabled"`
 	TunTakeoverActive   bool                     `json:"tunTakeoverActive"`
 	TunTakeoverMode     string                   `json:"tunTakeoverMode,omitempty"`
+	TunDirectBypassMark int                      `json:"tunDirectBypassMark,omitempty"`
+	TunDirectBypassRule bool                     `json:"tunDirectBypassRule"`
 	TunPolicyRouteTable int                      `json:"tunPolicyRouteTable,omitempty"`
 	TunPolicyRules      []string                 `json:"tunPolicyRules,omitempty"`
 	DefaultRouteDevice  string                   `json:"defaultRouteDevice,omitempty"`
@@ -296,6 +298,8 @@ type TunRepairResult struct {
 	TunEnabled          bool     `json:"tunEnabled"`
 	TunTakeoverActive   bool     `json:"tunTakeoverActive"`
 	TunTakeoverMode     string   `json:"tunTakeoverMode,omitempty"`
+	TunDirectBypassMark int      `json:"tunDirectBypassMark,omitempty"`
+	TunDirectBypassRule bool     `json:"tunDirectBypassRule"`
 	TunPolicyRouteTable int      `json:"tunPolicyRouteTable,omitempty"`
 	TunPolicyRules      []string `json:"tunPolicyRules,omitempty"`
 	DefaultRouteDevice  string   `json:"defaultRouteDevice,omitempty"`

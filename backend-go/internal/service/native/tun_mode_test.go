@@ -122,6 +122,81 @@ func TestGenerateXrayConfigIncludesTunSettings(t *testing.T) {
 	}
 }
 
+func TestGenerateXrayConfigBindsProxyAndDirectOutboundsToPhysicalInterface(t *testing.T) {
+	profile := domain.ProfileItem{
+		ID:       "p1",
+		Name:     "test",
+		Protocol: domain.ProtocolVLESS,
+		Address:  "example.com",
+		Port:     443,
+		VLESS: &domain.VLESSConfig{
+			UUID: "11111111-1111-1111-1111-111111111111",
+		},
+		Transport: &domain.TransportConfig{
+			Network: "tcp",
+			TLS:     true,
+		},
+	}
+
+	cfg := map[string]interface{}{
+		"listenAddr":        "127.0.0.1",
+		"outboundInterface": "eth0",
+		"tunMode":           "system",
+	}
+
+	raw, err := generateXrayConfig(profile, cfg, domain.RoutingConfig{Mode: "bypass_cn", DomainStrategy: "IPIfNonMatch"})
+	if err != nil {
+		t.Fatalf("generateXrayConfig() error = %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatalf("unmarshal generated config: %v", err)
+	}
+
+	outbounds, ok := parsed["outbounds"].([]interface{})
+	if !ok {
+		t.Fatalf("generated config missing outbounds")
+	}
+
+	assertSockopt := func(tag string, wantIface string, wantMark int, expectMark bool) {
+		t.Helper()
+		for _, entry := range outbounds {
+			outbound, ok := entry.(map[string]interface{})
+			if !ok || outbound["tag"] != tag {
+				continue
+			}
+			streamSettings, ok := outbound["streamSettings"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("%s outbound missing streamSettings", tag)
+			}
+			sockopt, ok := streamSettings["sockopt"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("%s outbound missing sockopt", tag)
+			}
+			if got := sockopt["interface"]; got != wantIface {
+				t.Fatalf("%s outbound interface = %#v, want %q", tag, got, wantIface)
+			}
+			mark, hasMark := sockopt["mark"]
+			if expectMark {
+				if !hasMark {
+					t.Fatalf("%s outbound missing mark", tag)
+				}
+				if got := int(mark.(float64)); got != wantMark {
+					t.Fatalf("%s outbound mark = %d, want %d", tag, got, wantMark)
+				}
+			} else if hasMark {
+				t.Fatalf("%s outbound unexpected mark = %#v", tag, mark)
+			}
+			return
+		}
+		t.Fatalf("outbound %s not found", tag)
+	}
+
+	assertSockopt("proxy", "eth0", 0, false)
+	assertSockopt("direct", "eth0", tunDirectBypassMark, true)
+}
+
 func TestBuildRoutingRulesBypassCNFallbackWithoutGeoData(t *testing.T) {
 	rules := buildRoutingRules(domain.RoutingConfig{Mode: "bypass_cn"}, false, false)
 	privateRule, ipList := findRuleWithIPCIDR(rules, "10.0.0.0/8")

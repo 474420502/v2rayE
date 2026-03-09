@@ -127,14 +127,16 @@ func generateXrayConfig(
 	if err != nil {
 		return nil, fmt.Errorf("build outbound: %w", err)
 	}
+	directOutbound := map[string]interface{}{
+		"tag":      "direct",
+		"protocol": "freedom",
+		"settings": map[string]interface{}{},
+	}
+	attachOutboundSockopt(directOutbound, cfg, directOutboundMark(cfg))
 
 	outbounds := []interface{}{
 		outbound,
-		map[string]interface{}{
-			"tag":      "direct",
-			"protocol": "freedom",
-			"settings": map[string]interface{}{},
-		},
+		directOutbound,
 		map[string]interface{}{
 			"tag":      "block",
 			"protocol": "blackhole",
@@ -402,14 +404,14 @@ func buildOutbound(profile domain.ProfileItem, cfg map[string]interface{}, skipC
 		return nil, fmt.Errorf("unsupported protocol: %q", profile.Protocol)
 	}
 
-	attachOutboundSockopt(outbound, cfg)
+	attachOutboundSockopt(outbound, cfg, 0)
 
 	return outbound, nil
 }
 
-func attachOutboundSockopt(outbound map[string]interface{}, cfg map[string]interface{}) {
+func attachOutboundSockopt(outbound map[string]interface{}, cfg map[string]interface{}, mark int) {
 	iface := strings.TrimSpace(strCfg(cfg, "outboundInterface", ""))
-	if iface == "" {
+	if iface == "" && mark <= 0 {
 		return
 	}
 	streamSettings, _ := outbound["streamSettings"].(map[string]interface{})
@@ -422,7 +424,22 @@ func attachOutboundSockopt(outbound map[string]interface{}, cfg map[string]inter
 		sockopt = map[string]interface{}{}
 		streamSettings["sockopt"] = sockopt
 	}
-	sockopt["interface"] = iface
+	if iface != "" {
+		sockopt["interface"] = iface
+	}
+	if mark > 0 {
+		sockopt["mark"] = mark
+	}
+}
+
+func directOutboundMark(cfg map[string]interface{}) int {
+	if runtime.GOOS != "linux" {
+		return 0
+	}
+	if tunModeFromConfig(cfg) == "off" || !boolCfg(cfg, "tunAutoRoute", true) {
+		return 0
+	}
+	return tunDirectBypassMark
 }
 
 func buildStreamSettings(transport *domain.TransportConfig, skipCertVerify bool) map[string]interface{} {

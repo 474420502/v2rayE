@@ -27,7 +27,8 @@ import (
 const (
 	tunPolicyRouteTable      = 20230
 	tunPolicyRulePriorityMin = 10000
-	tunPolicyRulePriorityMax = 10199
+	tunPolicyRulePriorityMax = 10999
+	tunDirectBypassMark      = 0x2d11
 )
 
 var lookupIPForTunBypass = net.LookupIP
@@ -1331,6 +1332,8 @@ func (s *Service) GetRoutingDiagnostics() domain.RoutingDiagnostics {
 	}
 	if diag.TunEnabled {
 		tunName := strCfg(cfg, "tunName", "xraye0")
+		diag.TunDirectBypassMark = tunDirectBypassMark
+		diag.TunDirectBypassRule = isDirectBypassMarkRuleActive()
 		diag.TunPolicyRouteTable = tunPolicyRouteTable
 		diag.TunPolicyRules = collectManagedTunPolicyRules()
 		policyActive := len(diag.TunPolicyRules) > 0 && isManagedTunPolicyRoutingActive(cfg, tunName)
@@ -1342,6 +1345,22 @@ func (s *Service) GetRoutingDiagnostics() domain.RoutingDiagnostics {
 			diag.TunTakeoverMode = "policy-routing"
 		default:
 			diag.TunTakeoverMode = "inactive"
+		}
+		if hasIPv6DefaultRoute() && !isManagedTunPolicyRoutingActiveForFamily(tunName, "-6") {
+			msg := "IPv6 default route detected, but current TUN policy takeover is IPv4-only; IPv6 traffic may bypass proxy/TUN"
+			if diag.Warning == "" {
+				diag.Warning = msg
+			} else {
+				diag.Warning = diag.Warning + "; " + msg
+			}
+		}
+		if !diag.TunDirectBypassRule {
+			msg := fmt.Sprintf("TUN direct bypass mark rule is missing (fwmark=%d -> main); direct traffic may be re-captured into TUN", tunDirectBypassMark)
+			if diag.Warning == "" {
+				diag.Warning = msg
+			} else {
+				diag.Warning = diag.Warning + "; " + msg
+			}
 		}
 	}
 
@@ -1479,6 +1498,8 @@ func (s *Service) RepairTunAndRestart() domain.TunRepairResult {
 	}
 	if result.TunEnabled {
 		tunName := strCfg(cfg, "tunName", "xraye0")
+		result.TunDirectBypassMark = tunDirectBypassMark
+		result.TunDirectBypassRule = isDirectBypassMarkRuleActive()
 		result.TunPolicyRouteTable = tunPolicyRouteTable
 		result.TunPolicyRules = collectManagedTunPolicyRules()
 		policyActive := len(result.TunPolicyRules) > 0 && isManagedTunPolicyRoutingActive(cfg, tunName)
@@ -1861,13 +1882,18 @@ func (s *Service) loadSubscriptions() []domain.SubscriptionItem {
 }
 
 func getDefaultRouteLines() ([]string, error) {
-	out, err := exec.Command("ip", "-4", "route", "show", "default").CombinedOutput() //nolint:gosec
+	return getDefaultRouteLinesForFamily("-4")
+}
+
+func getDefaultRouteLinesForFamily(family string) ([]string, error) {
+	label := routeFamilyLabel(family)
+	out, err := exec.Command("ip", family, "route", "show", "default").CombinedOutput() //nolint:gosec
 	if err != nil {
-		return nil, fmt.Errorf("read default route: %w (%s)", err, strings.TrimSpace(string(out)))
+		return nil, fmt.Errorf("read %s default route: %w (%s)", label, err, strings.TrimSpace(string(out)))
 	}
 	text := strings.TrimSpace(string(out))
 	if text == "" {
-		return nil, fmt.Errorf("no IPv4 default route found")
+		return nil, fmt.Errorf("no %s default route found", label)
 	}
 	lines := strings.Split(text, "\n")
 	res := make([]string, 0, len(lines))
@@ -1878,7 +1904,7 @@ func getDefaultRouteLines() ([]string, error) {
 		}
 	}
 	if len(res) == 0 {
-		return nil, fmt.Errorf("no IPv4 default route found")
+		return nil, fmt.Errorf("no %s default route found", label)
 	}
 	return res, nil
 }
@@ -1950,31 +1976,61 @@ func (s *Service) setupTunPolicyRouting(cfg map[string]interface{}, profile *dom
 	if err := waitForNetworkInterface(tunName, 5*time.Second); err != nil {
 		return err
 	}
-	mainRoutes, err := getIPv4RouteLines("main")
+	mainRoutes, err := getIPRouteLinesForFamily("-4", "main")
 	if err != nil {
 		return err
 	}
-	bypassRules := buildTunPolicyBypassRules(mainRoutes, cfg, profile)
+	bypassRules := buildTunPolicyBypassRulesForFamily(mainRoutes, cfg, profile, "-4")
 	if err := s.clearManagedTunPolicyRouting(cfg, &tunName); err != nil {
 		log.Printf("[native] setupTunPolicyRouting: clear stale rules failed: %v", err)
 	}
-	if out, err := exec.Command("ip", "-4", "route", "replace", "table", fmt.Sprintf("%d", tunPolicyRouteTable), "default", "dev", tunName).CombinedOutput(); err != nil { //nolint:gosec
-		return fmt.Errorf("install TUN policy default route failed: %w (%s)", err, strings.TrimSpace(string(out)))
+	if err := s.installTunPolicyRoutingForFamily("-4", tunName, bypassRules); err != nil {
+		return err
 	}
-	priority := tunPolicyRulePriorityMin
-	for _, target := range bypassRules {
-		if priority >= tunPolicyRulePriorityMax {
-			break
+	if hasIPv6DefaultRoute() {
+		mainRoutes6, err := getIPRouteLinesForFamily("-6", "main")
+		if err != nil {
+			return err
 		}
-		if out, err := exec.Command("ip", "-4", "rule", "add", "priority", fmt.Sprintf("%d", priority), "to", target, "lookup", "main").CombinedOutput(); err != nil { //nolint:gosec
-			return fmt.Errorf("install TUN bypass rule %s failed: %w (%s)", target, err, strings.TrimSpace(string(out)))
+		bypassRules6 := buildTunPolicyBypassRulesForFamily(mainRoutes6, cfg, profile, "-6")
+		if err := s.installTunPolicyRoutingForFamily("-6", tunName, bypassRules6); err != nil {
+			return err
 		}
-		priority++
-	}
-	if out, err := exec.Command("ip", "-4", "rule", "add", "priority", fmt.Sprintf("%d", priority), "lookup", fmt.Sprintf("%d", tunPolicyRouteTable)).CombinedOutput(); err != nil { //nolint:gosec
-		return fmt.Errorf("install TUN catch-all rule failed: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
 	_, _ = exec.Command("ip", "route", "flush", "cache").CombinedOutput() //nolint:gosec
+	return nil
+}
+
+func (s *Service) installTunPolicyRoutingForFamily(family, tunName string, bypassRules []string) error {
+	label := routeFamilyLabel(family)
+	if out, err := exec.Command("ip", family, "route", "replace", "table", fmt.Sprintf("%d", tunPolicyRouteTable), "default", "dev", tunName).CombinedOutput(); err != nil { //nolint:gosec
+		return fmt.Errorf("install %s TUN policy default route failed: %w (%s)", label, err, strings.TrimSpace(string(out)))
+	}
+	priority := tunPolicyRulePriorityMin
+	if out, err := exec.Command("ip", family, "rule", "add", "priority", fmt.Sprintf("%d", priority), "fwmark", fmt.Sprintf("%d", tunDirectBypassMark), "lookup", "main").CombinedOutput(); err != nil { //nolint:gosec
+		return fmt.Errorf("install %s TUN direct-bypass mark rule failed: %w (%s)", label, err, strings.TrimSpace(string(out)))
+	}
+	priority++
+	installedBypass := 0
+	truncated := false
+	for _, target := range bypassRules {
+		if priority >= tunPolicyRulePriorityMax {
+			truncated = true
+			break
+		}
+		if out, err := exec.Command("ip", family, "rule", "add", "priority", fmt.Sprintf("%d", priority), "to", target, "lookup", "main").CombinedOutput(); err != nil { //nolint:gosec
+			return fmt.Errorf("install %s TUN bypass rule %s failed: %w (%s)", label, target, err, strings.TrimSpace(string(out)))
+		}
+		installedBypass++
+		priority++
+	}
+	if out, err := exec.Command("ip", family, "rule", "add", "priority", fmt.Sprintf("%d", priority), "lookup", fmt.Sprintf("%d", tunPolicyRouteTable)).CombinedOutput(); err != nil { //nolint:gosec
+		return fmt.Errorf("install %s TUN catch-all rule failed: %w (%s)", label, err, strings.TrimSpace(string(out)))
+	}
+	if truncated {
+		log.Printf("[native] setupTunPolicyRouting: %s bypass rules truncated (installed=%d total=%d priorityWindow=%d-%d)", label, installedBypass, len(bypassRules), tunPolicyRulePriorityMin, tunPolicyRulePriorityMax)
+		s.logs.AppLog("warning", fmt.Sprintf("%s tun bypass rules truncated (%d/%d); consider reducing route noise (docker/k8s/vpn) or disabling tunAutoRoute", label, installedBypass, len(bypassRules)))
+	}
 	return nil
 }
 
@@ -2145,13 +2201,18 @@ func shouldManageTunTraffic(cfg map[string]interface{}) bool {
 }
 
 func getIPv4RouteLines(table string) ([]string, error) {
-	args := []string{"-4", "route", "show"}
+	return getIPRouteLinesForFamily("-4", table)
+}
+
+func getIPRouteLinesForFamily(family, table string) ([]string, error) {
+	args := []string{family, "route", "show"}
 	if table = strings.TrimSpace(table); table != "" {
 		args = append(args, "table", table)
 	}
 	out, err := exec.Command("ip", args...).CombinedOutput() //nolint:gosec
+	label := routeFamilyLabel(family)
 	if err != nil {
-		return nil, fmt.Errorf("read IPv4 route table %s: %w (%s)", table, err, strings.TrimSpace(string(out)))
+		return nil, fmt.Errorf("read %s route table %s: %w (%s)", label, table, err, strings.TrimSpace(string(out)))
 	}
 	text := strings.TrimSpace(string(out))
 	if text == "" {
@@ -2169,6 +2230,10 @@ func getIPv4RouteLines(table string) ([]string, error) {
 }
 
 func buildTunPolicyBypassRules(mainRoutes []string, cfg map[string]interface{}, profile *domain.ProfileItem) []string {
+	return buildTunPolicyBypassRulesForFamily(mainRoutes, cfg, profile, "-4")
+}
+
+func buildTunPolicyBypassRulesForFamily(mainRoutes []string, cfg map[string]interface{}, profile *domain.ProfileItem, family string) []string {
 	seen := make(map[string]struct{})
 	rules := make([]string, 0, len(mainRoutes)+8)
 	add := func(value string) {
@@ -2185,6 +2250,22 @@ func buildTunPolicyBypassRules(mainRoutes []string, cfg map[string]interface{}, 
 		seen[value] = struct{}{}
 		rules = append(rules, value)
 	}
+	// Add critical dynamic bypass targets first so they are kept even when rule capacity is tight.
+	if profile != nil {
+		for _, prefix := range resolveProfileBypassPrefixesForFamily(profile, family) {
+			add(prefix)
+		}
+	}
+	for _, raw := range toStringSlice(cfg["dnsList"]) {
+		if prefix, ok := parseIPPrefixForFamily(raw, family); ok {
+			add(prefix)
+		}
+	}
+	for _, raw := range toStringSlice(cfg["dnsServers"]) {
+		if prefix, ok := parseIPPrefixForFamily(raw, family); ok {
+			add(prefix)
+		}
+	}
 	for _, line := range mainRoutes {
 		fields := strings.Fields(line)
 		if len(fields) == 0 || fields[0] == "default" {
@@ -2192,29 +2273,26 @@ func buildTunPolicyBypassRules(mainRoutes []string, cfg map[string]interface{}, 
 		}
 		add(fields[0])
 	}
-	if profile != nil {
-		for _, prefix := range resolveProfileBypassPrefixes(profile) {
-			add(prefix)
-		}
-	}
-	for _, raw := range toStringSlice(cfg["dnsList"]) {
-		if prefix, ok := parseIPv4Prefix(raw); ok {
-			add(prefix)
-		}
-	}
-	for _, raw := range toStringSlice(cfg["dnsServers"]) {
-		if prefix, ok := parseIPv4Prefix(raw); ok {
-			add(prefix)
-		}
-	}
 	return rules
 }
 
+func hasIPv6DefaultRoute() bool {
+	if runtime.GOOS != "linux" || !hasCommand("ip") {
+		return false
+	}
+	_, err := getDefaultRouteLinesForFamily("-6")
+	return err == nil
+}
+
 func resolveProfileBypassPrefixes(profile *domain.ProfileItem) []string {
+	return resolveProfileBypassPrefixesForFamily(profile, "-4")
+}
+
+func resolveProfileBypassPrefixesForFamily(profile *domain.ProfileItem, family string) []string {
 	if profile == nil {
 		return nil
 	}
-	if prefix, ok := parseIPv4Prefix(profile.Address); ok {
+	if prefix, ok := parseIPPrefixForFamily(profile.Address, family); ok {
 		return []string{prefix}
 	}
 	host := strings.TrimSpace(profile.Address)
@@ -2232,9 +2310,8 @@ func resolveProfileBypassPrefixes(profile *domain.ProfileItem) []string {
 		if addr == nil {
 			continue
 		}
-		if ip4 := addr.To4(); ip4 != nil {
-			prefix := ip4.String() + "/32"
-			if _, ok := seen[prefix]; ok {
+		if prefix, ok := ipNetPrefixForFamily(addr, family); ok {
+			if _, exists := seen[prefix]; exists {
 				continue
 			}
 			seen[prefix] = struct{}{}
@@ -2245,20 +2322,27 @@ func resolveProfileBypassPrefixes(profile *domain.ProfileItem) []string {
 }
 
 func parseIPv4Prefix(raw string) (string, bool) {
+	return parseIPPrefixForFamily(raw, "-4")
+}
+
+func parseIPPrefixForFamily(raw string, family string) (string, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || strings.Contains(raw, "://") {
 		return "", false
 	}
 	if strings.Contains(raw, "/") {
 		prefix, err := netip.ParsePrefix(raw)
-		if err != nil || !prefix.Addr().Is4() {
+		if err != nil || !addrMatchesFamily(prefix.Addr(), family) {
 			return "", false
 		}
 		return prefix.String(), true
 	}
 	addr, err := netip.ParseAddr(raw)
-	if err != nil || !addr.Is4() {
+	if err != nil || !addrMatchesFamily(addr, family) {
 		return "", false
+	}
+	if family == "-6" {
+		return addr.String() + "/128", true
 	}
 	return addr.String() + "/32", true
 }
@@ -2272,69 +2356,150 @@ func (s *Service) clearManagedTunPolicyRouting(cfg map[string]interface{}, tunNa
 		tunName = strings.TrimSpace(*tunNameHint)
 	}
 	var firstErr error
-	for priority := tunPolicyRulePriorityMin; priority <= tunPolicyRulePriorityMax; priority++ {
-		if out, err := exec.Command("ip", "-4", "rule", "del", "priority", fmt.Sprintf("%d", priority)).CombinedOutput(); err != nil { //nolint:gosec
-			msg := strings.ToLower(strings.TrimSpace(string(out)))
-			if msg == "" || strings.Contains(msg, "not found") || strings.Contains(msg, "cannot find") || strings.Contains(msg, "no such file") || strings.Contains(msg, "no such process") {
-				continue
-			}
-			if firstErr == nil {
-				firstErr = fmt.Errorf("delete TUN policy rule priority %d: %w (%s)", priority, err, strings.TrimSpace(string(out)))
-			}
-		}
-	}
-	if out, err := exec.Command("ip", "-4", "route", "del", "table", fmt.Sprintf("%d", tunPolicyRouteTable), "default", "dev", tunName).CombinedOutput(); err != nil { //nolint:gosec
-		msg := strings.ToLower(strings.TrimSpace(string(out)))
-		if !(msg == "" || strings.Contains(msg, "not found") || strings.Contains(msg, "cannot find") || strings.Contains(msg, "no such process")) {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("delete TUN policy route table entry: %w (%s)", err, strings.TrimSpace(string(out)))
-			}
+	for _, family := range []string{"-4", "-6"} {
+		if err := clearManagedTunPolicyRoutingForFamily(family, tunName); err != nil && firstErr == nil {
+			firstErr = err
 		}
 	}
 	_, _ = exec.Command("ip", "route", "flush", "cache").CombinedOutput() //nolint:gosec
 	return firstErr
 }
 
+func clearManagedTunPolicyRoutingForFamily(family, tunName string) error {
+	label := routeFamilyLabel(family)
+	var firstErr error
+	for priority := tunPolicyRulePriorityMin; priority <= tunPolicyRulePriorityMax; priority++ {
+		if out, err := exec.Command("ip", family, "rule", "del", "priority", fmt.Sprintf("%d", priority)).CombinedOutput(); err != nil { //nolint:gosec
+			msg := strings.ToLower(strings.TrimSpace(string(out)))
+			if msg == "" || strings.Contains(msg, "not found") || strings.Contains(msg, "cannot find") || strings.Contains(msg, "no such file") || strings.Contains(msg, "no such process") {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = fmt.Errorf("delete %s TUN policy rule priority %d: %w (%s)", label, priority, err, strings.TrimSpace(string(out)))
+			}
+		}
+	}
+	if out, err := exec.Command("ip", family, "route", "del", "table", fmt.Sprintf("%d", tunPolicyRouteTable), "default", "dev", tunName).CombinedOutput(); err != nil { //nolint:gosec
+		msg := strings.ToLower(strings.TrimSpace(string(out)))
+		if !(msg == "" || strings.Contains(msg, "not found") || strings.Contains(msg, "cannot find") || strings.Contains(msg, "no such process")) {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("delete %s TUN policy route table entry: %w (%s)", label, err, strings.TrimSpace(string(out)))
+			}
+		}
+	}
+	return firstErr
+}
+
 func isManagedTunPolicyRoutingActive(cfg map[string]interface{}, tunName string) bool {
+	if isManagedTunPolicyRoutingActiveForFamily(tunName, "-4") {
+		return true
+	}
+	if hasIPv6DefaultRoute() && isManagedTunPolicyRoutingActiveForFamily(tunName, "-6") {
+		return true
+	}
+	return false
+}
+
+func isManagedTunPolicyRoutingActiveForFamily(tunName, family string) bool {
 	if runtime.GOOS != "linux" || !hasCommand("ip") {
 		return false
 	}
 	tableID := fmt.Sprintf("%d", tunPolicyRouteTable)
-	routeOut, err := exec.Command("ip", "-4", "route", "show", "table", tableID, "default").CombinedOutput() //nolint:gosec
+	routeOut, err := exec.Command("ip", family, "route", "show", "table", tableID, "default").CombinedOutput() //nolint:gosec
 	if err != nil || !strings.Contains(strings.TrimSpace(string(routeOut)), "dev "+tunName) {
 		return false
 	}
-	ruleOut, err := exec.Command("ip", "-4", "rule", "show").CombinedOutput() //nolint:gosec
+	ruleOut, err := exec.Command("ip", family, "rule", "show").CombinedOutput() //nolint:gosec
 	if err != nil {
 		return false
 	}
 	return strings.Contains(string(ruleOut), "lookup "+tableID)
 }
 
+func isDirectBypassMarkRuleActive() bool {
+	if !isDirectBypassMarkRuleActiveForFamily("-4") {
+		return false
+	}
+	if hasIPv6DefaultRoute() && !isDirectBypassMarkRuleActiveForFamily("-6") {
+		return false
+	}
+	return true
+}
+
+func isDirectBypassMarkRuleActiveForFamily(family string) bool {
+	if runtime.GOOS != "linux" || !hasCommand("ip") {
+		return false
+	}
+	out, err := exec.Command("ip", family, "rule", "show").CombinedOutput() //nolint:gosec
+	if err != nil {
+		return false
+	}
+	text := string(out)
+	markDec := fmt.Sprintf("fwmark %d", tunDirectBypassMark)
+	markHex := fmt.Sprintf("fwmark 0x%x", tunDirectBypassMark)
+	return strings.Contains(text, "lookup main") && (strings.Contains(text, markDec) || strings.Contains(text, markHex))
+}
+
 func collectManagedTunPolicyRules() []string {
 	if runtime.GOOS != "linux" || !hasCommand("ip") {
 		return nil
 	}
-	out, err := exec.Command("ip", "-4", "rule", "show").CombinedOutput() //nolint:gosec
-	if err != nil {
-		return nil
-	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	rules := make([]string, 0, len(lines))
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	rules := make([]string, 0, 16)
+	for _, family := range []string{"-4", "-6"} {
+		label := strings.ToLower(routeFamilyLabel(family))
+		out, err := exec.Command("ip", family, "rule", "show").CombinedOutput() //nolint:gosec
+		if err != nil {
 			continue
 		}
-		for priority := tunPolicyRulePriorityMin; priority <= tunPolicyRulePriorityMax; priority++ {
-			prefix := fmt.Sprintf("%d:", priority)
-			if strings.HasPrefix(line, prefix) {
-				rules = append(rules, line)
-				break
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			for priority := tunPolicyRulePriorityMin; priority <= tunPolicyRulePriorityMax; priority++ {
+				prefix := fmt.Sprintf("%d:", priority)
+				if strings.HasPrefix(line, prefix) {
+					rules = append(rules, label+": "+line)
+					break
+				}
 			}
 		}
 	}
 	return rules
+}
+
+func routeFamilyLabel(family string) string {
+	if family == "-6" {
+		return "IPv6"
+	}
+	return "IPv4"
+}
+
+func addrMatchesFamily(addr netip.Addr, family string) bool {
+	if family == "-6" {
+		return addr.Is6()
+	}
+	return addr.Is4()
+}
+
+func ipNetPrefixForFamily(addr net.IP, family string) (string, bool) {
+	if addr == nil {
+		return "", false
+	}
+	if family == "-6" {
+		if addr.To4() != nil {
+			return "", false
+		}
+		if ip16 := addr.To16(); ip16 != nil {
+			return net.IP(ip16).String() + "/128", true
+		}
+		return "", false
+	}
+	if ip4 := addr.To4(); ip4 != nil {
+		return ip4.String() + "/32", true
+	}
+	return "", false
 }
 
 func (s *Service) loadPersistedTunRestoreRoutes() []string {

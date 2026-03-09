@@ -247,9 +247,42 @@ func TestBuildTunPolicyBypassRulesResolvesProfileDomain(t *testing.T) {
 	}
 }
 
+func TestBuildTunPolicyBypassRulesIPv6(t *testing.T) {
+	rules := buildTunPolicyBypassRulesForFamily([]string{
+		"default via fe80::1 dev enp9s0 proto ra metric 100",
+		"2001:db8:1::/64 dev enp9s0 proto kernel metric 256 pref medium",
+		"fd00:1234::/64 dev docker0 proto kernel metric 256 pref medium",
+	}, map[string]interface{}{
+		"dnsList": []interface{}{"2606:4700:4700::1111", "https://dns.google/dns-query", "2001:4860:4860::8888"},
+	}, &domain.ProfileItem{Address: "2001:db8::10"}, "-6")
+
+	want := map[string]bool{
+		"2001:db8::10/128":          true,
+		"2606:4700:4700::1111/128":  true,
+		"2001:4860:4860::8888/128":  true,
+		"2001:db8:1::/64":           true,
+		"fd00:1234::/64":            true,
+	}
+	if len(rules) != len(want) {
+		t.Fatalf("unexpected IPv6 bypass rules: %#v", rules)
+	}
+	for _, rule := range rules {
+		if !want[rule] {
+			t.Fatalf("unexpected IPv6 bypass rule %q in %#v", rule, rules)
+		}
+	}
+}
+
 func TestResolveProfileBypassPrefixesDirectIPv4(t *testing.T) {
 	prefixes := resolveProfileBypassPrefixes(&domain.ProfileItem{Address: "45.63.82.225"})
 	if len(prefixes) != 1 || prefixes[0] != "45.63.82.225/32" {
 		t.Fatalf("resolveProfileBypassPrefixes() = %#v", prefixes)
+	}
+}
+
+func TestResolveProfileBypassPrefixesDirectIPv6(t *testing.T) {
+	prefixes := resolveProfileBypassPrefixesForFamily(&domain.ProfileItem{Address: "2001:db8::10"}, "-6")
+	if len(prefixes) != 1 || prefixes[0] != "2001:db8::10/128" {
+		t.Fatalf("resolveProfileBypassPrefixesForFamily() = %#v", prefixes)
 	}
 }

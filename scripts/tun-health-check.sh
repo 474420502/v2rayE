@@ -17,9 +17,10 @@ Usage:
 What this script checks:
   1) Core is running and TUN mode is enabled
   2) TUN takeover is active in policy-routing mode
-  3) Policy route table and rule count are present in kernel state
-  4) Local HTTP/SOCKS proxy ports can reach an external probe URL
-  5) Optional dev restart restores the core and TUN takeover automatically
+    3) Direct-bypass fwmark rule is present in kernel state
+    4) IPv6 policy routing is present when an IPv6 default route exists
+    5) Local HTTP/SOCKS proxy ports can reach an external probe URL
+    6) Optional dev restart restores the core and TUN takeover automatically
 
 Environment overrides:
   V2RAYN_API_ADDR                 backend api address, default 127.0.0.1:18000
@@ -214,13 +215,14 @@ poll_core_restored() {
         status_json="$(api_call GET /api/core/status || true)"
         diag_json="$(api_call GET /api/routing/diagnostics || true)"
 
-        local running current_profile takeover_active takeover_mode
+        local running current_profile takeover_active takeover_mode direct_bypass_rule
         running="$(json_get "$status_json" data.running)"
         current_profile="$(json_get "$status_json" data.currentProfileId)"
         takeover_active="$(json_get "$diag_json" data.tunTakeoverActive)"
         takeover_mode="$(json_get "$diag_json" data.tunTakeoverMode)"
+        direct_bypass_rule="$(json_get "$diag_json" data.tunDirectBypassRule)"
 
-        if [[ "$running" == "true" && "$current_profile" == "$expected_profile" && "$takeover_active" == "true" && "$takeover_mode" == "policy-routing" ]]; then
+        if [[ "$running" == "true" && "$current_profile" == "$expected_profile" && "$takeover_active" == "true" && "$takeover_mode" == "policy-routing" && "$direct_bypass_rule" == "true" ]]; then
             return 0
         fi
 
@@ -244,9 +246,16 @@ collect_runtime_state() {
     CURRENT_PROFILE_ID="$(json_get "$STATUS_JSON" data.currentProfileId)"
     TUN_TAKEOVER_ACTIVE="$(json_get "$DIAG_JSON" data.tunTakeoverActive)"
     TUN_TAKEOVER_MODE="$(json_get "$DIAG_JSON" data.tunTakeoverMode)"
+    TUN_DIRECT_BYPASS_RULE="$(json_get "$DIAG_JSON" data.tunDirectBypassRule)"
+    TUN_DIRECT_BYPASS_MARK="$(json_get "$DIAG_JSON" data.tunDirectBypassMark)"
     POLICY_ROUTE_TABLE="$(json_get "$DIAG_JSON" data.tunPolicyRouteTable)"
     POLICY_RULE_COUNT="$(json_array_len "$DIAG_JSON" data.tunPolicyRules)"
     DEFAULT_ROUTE_DEVICE="$(json_get "$DIAG_JSON" data.defaultRouteDevice)"
+    DIAG_WARNING="$(json_get "$DIAG_JSON" data.warning)"
+    IPV6_DEFAULT_ROUTE_PRESENT=0
+    if ip -6 route show default 2>/dev/null | grep -q .; then
+        IPV6_DEFAULT_ROUTE_PRESENT=1
+    fi
 }
 
 print_runtime_summary() {
@@ -258,9 +267,13 @@ print_runtime_summary() {
     echo "running: ${STATUS_RUNNING:-<empty>}"
     echo "currentProfileId: ${CURRENT_PROFILE_ID:-<empty>}"
     echo "takeover: ${TUN_TAKEOVER_ACTIVE:-<empty>} (${TUN_TAKEOVER_MODE:-inactive})"
+    echo "directBypassRule: ${TUN_DIRECT_BYPASS_RULE:-<empty>}"
+    echo "directBypassMark: ${TUN_DIRECT_BYPASS_MARK:-<empty>}"
     echo "policyTable: ${POLICY_ROUTE_TABLE:-<empty>}"
     echo "policyRules: ${POLICY_RULE_COUNT:-0}"
     echo "defaultRouteDevice: ${DEFAULT_ROUTE_DEVICE:-<empty>}"
+    echo "ipv6DefaultRoute: ${IPV6_DEFAULT_ROUTE_PRESENT}"
+    echo "warning: ${DIAG_WARNING:-<empty>}"
     echo "httpProxy: ${LISTEN_ADDR:-127.0.0.1}:${HTTP_PORT:-?}"
     echo "socksProxy: ${LISTEN_ADDR:-127.0.0.1}:${SOCKS_PORT:-?}"
 }
@@ -278,13 +291,16 @@ check_live_state() {
 
     expect_eq "$TUN_TAKEOVER_ACTIVE" "true" "tun takeover active"
     expect_eq "$TUN_TAKEOVER_MODE" "policy-routing" "tun takeover mode"
+    expect_eq "$TUN_DIRECT_BYPASS_RULE" "true" "tun direct bypass rule"
+    expect_gt_zero "$TUN_DIRECT_BYPASS_MARK" "tun direct bypass mark"
     expect_gt_zero "$POLICY_ROUTE_TABLE" "policy route table"
     expect_gt_zero "$POLICY_RULE_COUNT" "policy rule count"
 
-    local table_route catch_all_rule kernel_rule_count
+    local table_route catch_all_rule kernel_rule_count direct_bypass_rule
     table_route="$(ip -4 route show table "$POLICY_ROUTE_TABLE" 2>/dev/null | head -n 1 || true)"
-    catch_all_rule="$(ip -4 rule show | rg "lookup ${POLICY_ROUTE_TABLE}$" | head -n 1 || true)"
-    kernel_rule_count="$(ip -4 rule show | rg -c "lookup (main|${POLICY_ROUTE_TABLE})$" || true)"
+    catch_all_rule="$(ip -4 rule show | grep -E "lookup ${POLICY_ROUTE_TABLE}$" | head -n 1 || true)"
+    kernel_rule_count="$(ip -4 rule show | grep -E -c "lookup (main|${POLICY_ROUTE_TABLE})$" || true)"
+    direct_bypass_rule="$(ip -4 rule show | grep -E "fwmark (0x)?$(printf '%x' "$TUN_DIRECT_BYPASS_MARK") .*lookup main|fwmark ${TUN_DIRECT_BYPASS_MARK} .*lookup main" | head -n 1 || true)"
 
     if [[ "$table_route" == *"default dev ${TUN_NAME}"* ]]; then
         pass "policy route table default = $table_route"
@@ -302,6 +318,37 @@ check_live_state() {
         pass "kernel rule count >= diagnostics count (${kernel_rule_count} >= ${POLICY_RULE_COUNT})"
     else
         fail "kernel rule count is inconsistent with diagnostics (${kernel_rule_count:-0} < ${POLICY_RULE_COUNT:-0})"
+    fi
+
+    if [[ -n "$direct_bypass_rule" ]]; then
+        pass "direct-bypass fwmark rule = $direct_bypass_rule"
+    else
+        fail "missing IPv4 direct-bypass fwmark rule for mark ${TUN_DIRECT_BYPASS_MARK}"
+    fi
+
+    if [[ "$IPV6_DEFAULT_ROUTE_PRESENT" == "1" ]]; then
+        local table_route6 catch_all_rule6 direct_bypass_rule6
+        table_route6="$(ip -6 route show table "$POLICY_ROUTE_TABLE" default 2>/dev/null | head -n 1 || true)"
+        catch_all_rule6="$(ip -6 rule show | grep -E "lookup ${POLICY_ROUTE_TABLE}$" | head -n 1 || true)"
+        direct_bypass_rule6="$(ip -6 rule show | grep -E "fwmark (0x)?$(printf '%x' "$TUN_DIRECT_BYPASS_MARK") .*lookup main|fwmark ${TUN_DIRECT_BYPASS_MARK} .*lookup main" | head -n 1 || true)"
+
+        if [[ "$table_route6" == *"default dev ${TUN_NAME}"* ]]; then
+            pass "IPv6 policy route table default = $table_route6"
+        else
+            fail "IPv6 policy route table ${POLICY_ROUTE_TABLE} missing default dev ${TUN_NAME}"
+        fi
+
+        if [[ -n "$catch_all_rule6" ]]; then
+            pass "IPv6 catch-all policy rule = $catch_all_rule6"
+        else
+            fail "missing IPv6 catch-all ip rule for table ${POLICY_ROUTE_TABLE}"
+        fi
+
+        if [[ -n "$direct_bypass_rule6" ]]; then
+            pass "IPv6 direct-bypass fwmark rule = $direct_bypass_rule6"
+        else
+            fail "missing IPv6 direct-bypass fwmark rule for mark ${TUN_DIRECT_BYPASS_MARK}"
+        fi
     fi
 
     if probe_http_proxy "$LISTEN_ADDR" "$HTTP_PORT"; then
