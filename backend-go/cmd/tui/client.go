@@ -278,6 +278,12 @@ func (c *apiClient) ApplySystemProxy(ctx context.Context, mode, exceptions strin
 	return out, err
 }
 
+func (c *apiClient) ListSystemProxyUsers(ctx context.Context) ([]SystemProxyUserCandidate, error) {
+	var out []SystemProxyUserCandidate
+	err := c.request(ctx, http.MethodGet, "/api/system-proxy/users", nil, &out)
+	return out, err
+}
+
 func (c *apiClient) ExitCleanup(ctx context.Context, shutdown bool) (map[string]any, error) {
 	var out map[string]any
 	err := c.request(ctx, http.MethodPost, "/api/app/exit-cleanup", map[string]bool{"shutdownBackend": shutdown}, &out)

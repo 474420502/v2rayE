@@ -202,6 +202,16 @@ type SystemProxyApplyRequest struct {
 	Exceptions string `json:"exceptions"`
 }
 
+// SystemProxyUserCandidate represents one possible desktop user target for proxy settings.
+type SystemProxyUserCandidate struct {
+	Username      string `json:"username"`
+	UID           int    `json:"uid"`
+	Home          string `json:"home,omitempty"`
+	HasSessionBus bool   `json:"hasSessionBus"`
+	IsSystem      bool   `json:"isSystem"`
+	Priority      int    `json:"priority"`
+}
+
 // RoutingConfig represents the routing configuration.
 type RoutingConfig struct {
 	Mode               string        `json:"mode"`                         // global|bypass_cn|direct|custom

@@ -68,6 +68,9 @@ func parseSubscriptionContent(content, subID, subName string) ([]domain.ProfileI
 		}
 		profiles = append(profiles, p)
 	}
+	if len(profiles) == 0 {
+		return nil, fmt.Errorf("subscription parse yielded 0 valid profiles")
+	}
 	return profiles, nil
 }
 

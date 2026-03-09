@@ -64,6 +64,7 @@ func New(addr, token string, svc service.BackendService) *Server {
 
 	// Network & proxy
 	mux.HandleFunc("/api/network/availability", s.auth(s.handleNetworkAvailability))
+	mux.HandleFunc("/api/system-proxy/users", s.auth(s.handleSystemProxyUsers))
 	mux.HandleFunc("/api/system-proxy/apply", s.auth(s.handleSystemProxyApply))
 	mux.HandleFunc("/api/app/exit-cleanup", s.auth(s.handleExitCleanup))
 
@@ -483,6 +484,14 @@ func (s *Server) handleNetworkAvailability(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeOK(w, s.svc.NetworkAvailability())
+}
+
+func (s *Server) handleSystemProxyUsers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, 40501, "method not allowed", nil)
+		return
+	}
+	writeOK(w, s.svc.ListSystemProxyUsers())
 }
 
 func (s *Server) handleSystemProxyApply(w http.ResponseWriter, r *http.Request) {

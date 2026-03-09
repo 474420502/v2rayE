@@ -44,6 +44,7 @@ type BackendService interface {
 	// Network & system proxy
 	NetworkAvailability() domain.AvailabilityResult
 	ApplySystemProxy(mode, exceptions string) (map[string]interface{}, error)
+	ListSystemProxyUsers() []domain.SystemProxyUserCandidate
 
 	// App configuration
 	GetConfig() map[string]interface{}

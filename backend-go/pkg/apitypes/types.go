@@ -13,6 +13,7 @@ type SubscriptionItem = domain.SubscriptionItem
 type SubscriptionUpsertRequest = domain.SubscriptionUpsertRequest
 type AvailabilityResult = domain.AvailabilityResult
 type SystemProxyApplyRequest = domain.SystemProxyApplyRequest
+type SystemProxyUserCandidate = domain.SystemProxyUserCandidate
 type RoutingConfig = domain.RoutingConfig
 type RoutingRule = domain.RoutingRule
 type RoutingDiagnostics = domain.RoutingDiagnostics

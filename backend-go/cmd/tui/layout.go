@@ -84,6 +84,7 @@ func (a *tuiApp) build() tview.Primitive {
 	a.settingsTunStrict = newInputWidget("tunStrictRoute(true/false): ", a.settingsChanged)
 	a.settingsProxyMode = newInputWidget("proxyMode(forced_change|forced_clear|pac): ", a.settingsChanged)
 	a.settingsProxyExcept = newInputWidget("proxyExceptions: ", a.settingsChanged)
+	a.settingsProxyUsers = newInputWidget("proxyUsers(csv): ", a.settingsChanged)
 	a.settingsCoreEngine = newInputWidget("coreEngine(xray-core): ", a.settingsChanged)
 	a.settingsLogLevel = newInputWidget("logLevel(debug|info|warning|error): ", a.settingsChanged)
 	a.settingsSkipCert = newInputWidget("skipCertVerify(true/false): ", a.settingsChanged)

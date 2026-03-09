@@ -397,6 +397,32 @@ func TestRoutingTunRepairEndpoint(t *testing.T) {
 	}
 }
 
+func TestSystemProxyUsersEndpoint(t *testing.T) {
+	t.Parallel()
+
+	ts := newNativeTestServer(t)
+	defer ts.Close()
+
+	resp := doRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/system-proxy/users", "")
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/system-proxy/users expected 200, got %d", resp.StatusCode)
+	}
+
+	var env struct {
+		Code int `json:"code"`
+		Data []map[string]interface{} `json:"data"`
+	}
+	decodeJSON(t, resp.Body, &env)
+	if env.Code != 0 {
+		t.Fatalf("GET /api/system-proxy/users expected code=0, got %d", env.Code)
+	}
+	if env.Data == nil {
+		t.Fatalf("expected users list, got nil")
+	}
+}
+
 func TestProfilesBatchDelayEndpoint(t *testing.T) {
 	t.Parallel()
 

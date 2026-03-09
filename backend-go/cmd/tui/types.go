@@ -13,6 +13,7 @@ type SubscriptionItem = apitypes.SubscriptionItem
 type SubscriptionUpsertRequest = apitypes.SubscriptionUpsertRequest
 type AvailabilityResult = apitypes.AvailabilityResult
 type SystemProxyApplyRequest = apitypes.SystemProxyApplyRequest
+type SystemProxyUserCandidate = apitypes.SystemProxyUserCandidate
 type RoutingConfig = apitypes.RoutingConfig
 type RoutingRule = apitypes.RoutingRule
 type RoutingDiagnostics = apitypes.RoutingDiagnostics

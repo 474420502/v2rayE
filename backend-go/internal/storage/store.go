@@ -94,6 +94,7 @@ func DefaultConfig() map[string]interface{} {
 		"tunStrictRoute":        false,
 		"systemProxyMode":       "forced_change",
 		"systemProxyExceptions": "",
+		"systemProxyUsers":      []interface{}{},
 		"coreAutoRestart":       true,
 		"coreAutoRestartMaxRetries": 5,
 		"coreAutoRestartBackoffMs":  500,
@@ -177,6 +178,7 @@ func normalizeConfigMap(cfg map[string]interface{}) map[string]interface{} {
 		normalized["tunHijackDefaultRouteExplicit"] = false
 	}
 	normalized["systemProxyMode"] = normalizeSystemProxyMode(asString(normalized["systemProxyMode"]))
+	normalized["systemProxyUsers"] = normalizeStringSliceValue(normalized["systemProxyUsers"])
 	if tunMode == "off" {
 		if asString(normalized["tunStack"]) == "" {
 			normalized["tunStack"] = "mixed"
@@ -186,6 +188,40 @@ func normalizeConfigMap(cfg map[string]interface{}) map[string]interface{} {
 	}
 
 	return normalized
+}
+
+func normalizeStringSliceValue(value interface{}) []interface{} {
+	items := make([]interface{}, 0)
+	seen := map[string]struct{}{}
+
+	appendToken := func(token string) {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			return
+		}
+		if _, ok := seen[token]; ok {
+			return
+		}
+		seen[token] = struct{}{}
+		items = append(items, token)
+	}
+
+	switch v := value.(type) {
+	case string:
+		for _, part := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ';' || r == '\n' }) {
+			appendToken(part)
+		}
+	case []string:
+		for _, part := range v {
+			appendToken(part)
+		}
+	case []interface{}:
+		for _, part := range v {
+			appendToken(asString(part))
+		}
+	}
+
+	return items
 }
 
 func normalizeTunMode(value string) string {

@@ -57,6 +57,7 @@ func (a *tuiApp) refreshWidgets() {
 				a.settingsDNSList.SetText(strings.Join(toStringSlice(a.config["dnsList"]), ","), app)
 				a.settingsProxyMode.SetText(stringValue(a.config, "systemProxyMode"), app)
 				a.settingsProxyExcept.SetText(stringValue(a.config, "systemProxyExceptions"), app)
+				a.settingsProxyUsers.SetText(strings.Join(toStringSlice(a.config["systemProxyUsers"]), ","), app)
 				a.settingsFormLoaded = true
 			}
 		})

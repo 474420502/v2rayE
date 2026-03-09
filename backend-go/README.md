@@ -66,6 +66,7 @@ sudo ./scripts/tun-health-check.sh
 - `V2RAYN_SERVICELIB_BRIDGE_TIMEOUT_MS`：桥接调用超时（毫秒），默认 `3000`
 - `V2RAYN_SERVICELIB_BRIDGE_ALLOW_ACTIONS`：桥接动作白名单（逗号分隔，`*`/`all` 表示全量），默认最小维护集：`core.status,core.start,core.stop,core.restart,config.get,config.update`
 - `V2RAYN_SERVICELIB_BRIDGE_METRICS_LOG`：是否输出 bridge 成功调用耗时日志（`1/true/yes/on` 启用，默认关闭）
+- `V2RAYN_DESKTOP_USER`：当后端以 root/systemd 运行且需要执行 `gsettings` 时，指定要写入系统代理的桌面用户名（例如 `eson`）
 
 运行时配置新增（`/api/config` 可读写）：
 
@@ -74,6 +75,7 @@ sudo ./scripts/tun-health-check.sh
 - `coreAutoRestartBackoffMs`：自动拉起基础退避毫秒（默认 `500`，指数退避，最大 30 秒）
 - `tunAutoRoute`：传给 xray TUN inbound 的 `autoRoute`，默认 `true`
 - `tunHijackDefaultRoute`：是否额外由后端手动执行 `ip route replace default dev <tun>`，默认 `false`；这是高风险兼容开关，只有在确有需要时才应开启
+- `systemProxyUsers`：系统代理目标用户列表（数组）；支持多用户候选，后端会优先选择非系统用户 + 有会话总线的用户
 
 ## 目录分层
 
@@ -157,6 +159,7 @@ V2RAYN_BACKEND_MODE=servicelib-proxy V2RAYN_SERVICELIB_BRIDGE_CMD='node ./backen
 - `POST /api/subscriptions/update`
 - `POST /api/subscriptions/{id}/update`
 - `GET /api/network/availability`
+- `GET /api/system-proxy/users`（列出系统代理候选用户，非系统用户优先排序）
 - `POST /api/system-proxy/apply`
 - `POST /api/app/exit-cleanup`
 - `GET /api/config`

@@ -61,6 +61,14 @@ func (a *tuiApp) handler(event *tcell.EventKey) *tcell.EventKey {
 		return event
 	}
 
+	if a.proxyUserSelectVisible.Load() {
+		if event.Key() == tcell.KeyEsc {
+			a.closeProxyUserSelectDialog()
+			return nil
+		}
+		return event
+	}
+
 	switch event.Key() {
 	case tcell.KeyCtrlC:
 		a.cancel()

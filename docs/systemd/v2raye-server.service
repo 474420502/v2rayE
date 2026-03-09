@@ -12,6 +12,7 @@ Restart=always
 RestartSec=3
 Environment=V2RAYN_API_TOKEN=
 Environment=V2RAYN_XRAY_CMD=xray
+Environment=V2RAYN_DESKTOP_USER=
 
 [Install]
 WantedBy=multi-user.target

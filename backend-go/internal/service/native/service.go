@@ -1,6 +1,7 @@
 package native
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -730,6 +732,20 @@ func (s *Service) ApplySystemProxy(mode, exceptions string) (map[string]interfac
 	}, nil
 }
 
+func (s *Service) ListSystemProxyUsers() []domain.SystemProxyUserCandidate {
+	cfg := s.loadConfig()
+	preferred := preferredDesktopUsersFromConfig(cfg)
+	candidates := discoverSystemProxyUserCandidates(preferred)
+	for i := range candidates {
+		if i == 0 {
+			candidates[i].Priority = 1
+		} else {
+			candidates[i].Priority = i + 2
+		}
+	}
+	return candidates
+}
+
 func normalizeSystemProxyMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "forced_change", "change", "global", "manual", "on", "enable", "enabled":
@@ -776,7 +792,7 @@ func (s *Service) applyDesktopSystemProxy(cfg map[string]interface{}, mode, exce
 		return "kwriteconfig5", nil
 	case "forced_clear":
 		if hasGSettings {
-			if err := clearGSettingsProxy(); err != nil {
+			if err := clearGSettingsProxy(cfg); err != nil {
 				return "", err
 			}
 			return "gsettings", nil
@@ -821,7 +837,7 @@ func applyGSettingsProxy(cfg map[string]interface{}, exceptions string) error {
 	}
 
 	for _, args := range commands {
-		if out, err := runGSettings(args...); err != nil {
+		if out, err := runGSettings(cfg, args...); err != nil {
 			return fmt.Errorf("apply system proxy via gsettings failed: %w (%s)", err, strings.TrimSpace(string(out)))
 		}
 	}
@@ -861,14 +877,14 @@ func applyKDEProxy(cfg map[string]interface{}, exceptions, binary string) error 
 	return nil
 }
 
-func clearGSettingsProxy() error {
+func clearGSettingsProxy(cfg map[string]interface{}) error {
 	commands := [][]string{
 		{"set", "org.gnome.system.proxy", "mode", "none"},
 		{"set", "org.gnome.system.proxy", "ignore-hosts", "[]"},
 	}
 
 	for _, args := range commands {
-		if out, err := runGSettings(args...); err != nil {
+		if out, err := runGSettings(cfg, args...); err != nil {
 			return fmt.Errorf("clear system proxy via gsettings failed: %w (%s)", err, strings.TrimSpace(string(out)))
 		}
 	}
@@ -906,22 +922,271 @@ func notifyKDEProxyReload() error {
 	return err
 }
 
-func runGSettings(args ...string) ([]byte, error) {
+func runGSettings(cfg map[string]interface{}, args ...string) ([]byte, error) {
 	if os.Geteuid() == 0 {
-		sudoUser := strings.TrimSpace(os.Getenv("SUDO_USER"))
-		if sudoUser != "" {
-			if usr, err := user.Lookup(sudoUser); err == nil && strings.TrimSpace(usr.Uid) != "" {
-				runtimeDir := fmt.Sprintf("/run/user/%s", usr.Uid)
-				busAddr := fmt.Sprintf("unix:path=%s/bus", runtimeDir)
-				cmdArgs := []string{"-u", sudoUser, "env", "XDG_RUNTIME_DIR=" + runtimeDir, "DBUS_SESSION_BUS_ADDRESS=" + busAddr, "gsettings"}
-				cmdArgs = append(cmdArgs, args...)
-				if out, err := exec.Command("sudo", cmdArgs...).CombinedOutput(); err == nil { //nolint:gosec
-					return out, nil
-				}
+		desktopUser, err := resolveDesktopProxyUser(preferredDesktopUsersFromConfig(cfg))
+		if err != nil {
+			return nil, fmt.Errorf("gsettings requires active desktop user session: %w", err)
+		}
+		if !hasCommand("sudo") {
+			return nil, fmt.Errorf("gsettings requires sudo to switch to desktop user %q", desktopUser.Username)
+		}
+		runtimeDir := fmt.Sprintf("/run/user/%s", desktopUser.UID)
+		busAddr := fmt.Sprintf("unix:path=%s/bus", runtimeDir)
+		cmdArgs := []string{
+			"-u", desktopUser.Username,
+			"env",
+			"HOME=" + desktopUser.Home,
+			"XDG_RUNTIME_DIR=" + runtimeDir,
+			"DBUS_SESSION_BUS_ADDRESS=" + busAddr,
+			"gsettings",
+		}
+		cmdArgs = append(cmdArgs, args...)
+		out, err := exec.Command("sudo", cmdArgs...).CombinedOutput() //nolint:gosec
+		if err != nil {
+			return out, fmt.Errorf("gsettings via desktop user %q failed: %w", desktopUser.Username, err)
+		}
+		return out, nil
+	}
+	return exec.Command("gsettings", args...).CombinedOutput() //nolint:gosec
+}
+
+type desktopProxyUser struct {
+	Username string
+	UID      string
+	Home     string
+}
+
+func resolveDesktopProxyUser(preferred []string) (desktopProxyUser, error) {
+	candidates := orderedDesktopUserCandidates(preferred)
+	for _, username := range candidates {
+		if userInfo, ok := lookupDesktopProxyUser(username); ok {
+			return userInfo, nil
+		}
+	}
+
+	// Fallback for service context without SUDO_USER/loginctl hints.
+	if entries, err := os.ReadDir("/run/user"); err == nil {
+		for _, entry := range entries {
+			uid := strings.TrimSpace(entry.Name())
+			if uid == "" {
+				continue
+			}
+			if _, err := strconv.Atoi(uid); err != nil {
+				continue
+			}
+			if uid == "0" {
+				continue
+			}
+			usr, err := user.LookupId(uid)
+			if err != nil {
+				continue
+			}
+			if userInfo, ok := lookupDesktopProxyUser(usr.Username); ok {
+				return userInfo, nil
 			}
 		}
 	}
-	return exec.Command("gsettings", args...).CombinedOutput() //nolint:gosec
+
+	return desktopProxyUser{}, fmt.Errorf("no non-root user with reachable DBus session bus under /run/user/*/bus")
+}
+
+func orderedDesktopUserCandidates(preferred []string) []string {
+	seen := map[string]struct{}{}
+	ordered := make([]string, 0, 8)
+	add := func(values ...string) {
+		for _, value := range values {
+			name := strings.TrimSpace(value)
+			if name == "" {
+				continue
+			}
+			if _, exists := seen[name]; exists {
+				continue
+			}
+			seen[name] = struct{}{}
+			ordered = append(ordered, name)
+		}
+	}
+
+	add(preferred...)
+	add(os.Getenv("V2RAYN_DESKTOP_USER"))
+	add(os.Getenv("SUDO_USER"))
+
+	for _, name := range listLoginctlUsers() {
+		add(name)
+	}
+	return ordered
+}
+
+func preferredDesktopUsersFromConfig(cfg map[string]interface{}) []string {
+	if cfg == nil {
+		return nil
+	}
+	raw, ok := cfg["systemProxyUsers"]
+	if !ok {
+		return nil
+	}
+	return normalizeUserListValue(raw)
+}
+
+func discoverSystemProxyUserCandidates(preferred []string) []domain.SystemProxyUserCandidate {
+	users := listPasswdUsers()
+	preferredRank := map[string]int{}
+	for idx, name := range orderedDesktopUserCandidates(preferred) {
+		if _, exists := preferredRank[name]; !exists {
+			preferredRank[name] = idx + 1
+		}
+	}
+
+	candidates := make([]domain.SystemProxyUserCandidate, 0, len(users))
+	for _, entry := range users {
+		if entry.UID <= 0 {
+			continue
+		}
+		hasSession := false
+		busPath := filepath.Join("/run/user", strconv.Itoa(entry.UID), "bus")
+		if _, err := os.Stat(busPath); err == nil {
+			hasSession = true
+		}
+		isSystem := entry.UID < 1000 || entry.UID == 65534
+		priority := 10000
+		if rank, ok := preferredRank[entry.Username]; ok {
+			priority = rank
+		}
+		candidates = append(candidates, domain.SystemProxyUserCandidate{
+			Username:      entry.Username,
+			UID:           entry.UID,
+			Home:          entry.Home,
+			HasSessionBus: hasSession,
+			IsSystem:      isSystem,
+			Priority:      priority,
+		})
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].IsSystem != candidates[j].IsSystem {
+			return !candidates[i].IsSystem
+		}
+		if candidates[i].HasSessionBus != candidates[j].HasSessionBus {
+			return candidates[i].HasSessionBus
+		}
+		if candidates[i].Priority != candidates[j].Priority {
+			return candidates[i].Priority < candidates[j].Priority
+		}
+		if candidates[i].UID != candidates[j].UID {
+			return candidates[i].UID < candidates[j].UID
+		}
+		return candidates[i].Username < candidates[j].Username
+	})
+
+	return candidates
+}
+
+type passwdUserEntry struct {
+	Username string
+	UID      int
+	Home     string
+}
+
+func listPasswdUsers() []passwdUserEntry {
+	f, err := os.Open("/etc/passwd")
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	entries := make([]passwdUserEntry, 0, 32)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.Split(line, ":")
+		if len(parts) < 7 {
+			continue
+		}
+		uid, err := strconv.Atoi(parts[2])
+		if err != nil {
+			continue
+		}
+		entries = append(entries, passwdUserEntry{Username: parts[0], UID: uid, Home: parts[5]})
+	}
+	return entries
+}
+
+func listLoginctlUsers() []string {
+	if !hasCommand("loginctl") {
+		return nil
+	}
+	out, err := exec.Command("loginctl", "list-users", "--no-legend").CombinedOutput() //nolint:gosec
+	if err != nil {
+		return nil
+	}
+	users := make([]string, 0, 8)
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		users = append(users, fields[1])
+	}
+	return users
+}
+
+func normalizeUserListValue(value interface{}) []string {
+	seen := map[string]struct{}{}
+	users := make([]string, 0, 4)
+	appendName := func(raw string) {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			return
+		}
+		if _, exists := seen[name]; exists {
+			return
+		}
+		seen[name] = struct{}{}
+		users = append(users, name)
+	}
+
+	switch v := value.(type) {
+	case string:
+		for _, part := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ';' || r == '\n' }) {
+			appendName(part)
+		}
+	case []string:
+		for _, part := range v {
+			appendName(part)
+		}
+	case []interface{}:
+		for _, part := range v {
+			if s, ok := part.(string); ok {
+				appendName(s)
+			}
+		}
+	}
+	return users
+}
+
+func lookupDesktopProxyUser(username string) (desktopProxyUser, bool) {
+	usr, err := user.Lookup(username)
+	if err != nil {
+		return desktopProxyUser{}, false
+	}
+	uid := strings.TrimSpace(usr.Uid)
+	if uid == "" || uid == "0" {
+		return desktopProxyUser{}, false
+	}
+	runtimeDir := fmt.Sprintf("/run/user/%s", uid)
+	busPath := filepath.Join(runtimeDir, "bus")
+	if _, err := os.Stat(busPath); err != nil {
+		return desktopProxyUser{}, false
+	}
+	homeDir := strings.TrimSpace(usr.HomeDir)
+	if homeDir == "" {
+		homeDir = "/home/" + username
+	}
+	return desktopProxyUser{Username: username, UID: uid, Home: homeDir}, true
 }
 
 func portHostForDesktopProxy(cfg map[string]interface{}) string {
