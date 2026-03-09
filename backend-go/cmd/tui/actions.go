@@ -18,6 +18,16 @@ func (a *tuiApp) attachApp(app *tview.Application) {
 }
 
 func (a *tuiApp) handler(event *tcell.EventKey) *tcell.EventKey {
+	if a.commandPaletteVisible.Load() {
+		switch event.Key() {
+		case tcell.KeyEsc, tcell.KeyCtrlP:
+			a.closeCommandPalette()
+			return nil
+		default:
+			return event
+		}
+	}
+
 	switch event.Key() {
 	case tcell.KeyCtrlC:
 		a.cancel()
@@ -25,17 +35,20 @@ func (a *tuiApp) handler(event *tcell.EventKey) *tcell.EventKey {
 			a.app.Stop()
 		}
 		return nil
+	case tcell.KeyCtrlP:
+		a.openCommandPalette()
+		return nil
 	case tcell.KeyRight:
 		if a.focusHandlesDirectionalKeys() {
 			return event
 		}
-		a.shiftActivePage(1)
+		a.cycleFocus(false)
 		return nil
 	case tcell.KeyLeft:
 		if a.focusHandlesDirectionalKeys() {
 			return event
 		}
-		a.shiftActivePage(-1)
+		a.cycleFocus(true)
 		return nil
 	case tcell.KeyDown:
 		if a.focusHandlesDirectionalKeys() {
@@ -59,6 +72,11 @@ func (a *tuiApp) handler(event *tcell.EventKey) *tcell.EventKey {
 
 	if a.focusIsInput() {
 		return event
+	}
+
+	if event.Key() == tcell.KeyRune && event.Rune() == '?' {
+		a.openCommandPalette()
+		return nil
 	}
 
 	if strings.EqualFold(string(event.Rune()), "q") {

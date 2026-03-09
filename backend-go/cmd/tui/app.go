@@ -25,6 +25,11 @@ type tuiApp struct {
 	tabBar     *tview.Flex
 	focusables []tview.Primitive
 
+	commandPalette       *tview.List
+	commandPaletteInput  *tview.InputField
+	paletteActionsCache  []paletteAction
+	palettePreviousFocus tview.Primitive
+
 	status              CoreStatus
 	profiles            []ProfileItem
 	subscriptions       []SubscriptionItem
@@ -106,8 +111,9 @@ type tuiApp struct {
 	settingsDNSMode        *inputWidget
 	settingsDNSList        *inputWidget
 
-	suspendFieldTracking atomic.Bool
-	suspendListSelection atomic.Bool
+	suspendFieldTracking  atomic.Bool
+	suspendListSelection  atomic.Bool
+	commandPaletteVisible atomic.Bool
 }
 
 func newTUI(ctx context.Context, client *apiClient) *tuiApp {

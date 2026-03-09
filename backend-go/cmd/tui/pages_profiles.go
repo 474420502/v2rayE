@@ -48,7 +48,7 @@ func (a *tuiApp) buildProfilesPage() builtPage {
 		4,
 		5,
 	)
-	body := splitContent(
+	workspace := splitContent(
 		a.useStackedLayout(),
 		wrapPanel("Profiles", a.profilesList),
 		right,
@@ -56,27 +56,30 @@ func (a *tuiApp) buildProfilesPage() builtPage {
 		7,
 	)
 
+	controls := tview.NewFlex().SetDirection(tview.FlexRow)
+	controls.AddItem(newMutedText("Import / run tests / manage selected profile"), 1, 0, false)
+	controls.AddItem(verticalSpacer(1), 1, 0, false)
+	controls.AddItem(importRow, 3, 0, false)
+	controls.AddItem(verticalSpacer(1), 1, 0, false)
+	controls.AddItem(a.profileBatchStatus, 1, 0, false)
+	controls.AddItem(verticalSpacer(1), 1, 0, false)
+	controls.AddItem(actions, 3, 0, false)
+	controls.AddItem(verticalSpacer(1), 1, 0, false)
+	controls.AddItem(a.profileDeleteConfirm, 1, 0, false)
+	controls.AddItem(verticalSpacer(1), 1, 0, false)
+	controls.AddItem(editActions, 3, 0, false)
+
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
-	root.AddItem(newMutedText("Import URL then edit network params (network/ws/tls/sni/grpc) before saving"), 1, 0, false)
+	root.AddItem(wrapPanel("Controls", controls), 0, 3, false)
 	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(importRow, 3, 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(a.profileBatchStatus, 1, 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(actions, 3, 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(a.profileDeleteConfirm, 1, 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(editActions, 3, 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(body, 0, 1, false)
+	root.AddItem(workspace, 0, 7, false)
 
 	return builtPage{
 		root: root,
 		focusables: joinFocusables(
 			primitivesToFocusables(a.profileImport),
 			buttonsToFocusables(importBtn, importLoadBtn, activateBtn, batchBtn, delayBtn, deleteBtn, loadBtn, resetBtn, saveBtn),
-			primitivesToFocusables(a.profilesList, a.profileDeleteConfirm, a.profileEditName, a.profileEditAddress, a.profileEditPort, a.profileEditNetwork, a.profileEditTLS, a.profileEditSNI, a.profileEditFingerprint, a.profileEditALPN, a.profileEditRealityPK, a.profileEditRealitySID, a.profileEditWSPath, a.profileEditGRPCSvc, a.profileDetail),
+			primitivesToFocusables(a.profilesList, a.profileDeleteConfirm, a.profileEditName, a.profileEditAddress, a.profileEditPort, a.profileEditNetwork, a.profileEditTLS, a.profileEditSNI, a.profileEditFingerprint, a.profileEditALPN, a.profileEditRealityPK, a.profileEditRealitySID, a.profileEditWSPath, a.profileEditGRPCSvc),
 		),
 	}
 }

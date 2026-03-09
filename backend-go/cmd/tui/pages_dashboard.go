@@ -34,6 +34,6 @@ func (a *tuiApp) buildDashboardPage() builtPage {
 
 	return builtPage{
 		root:       root,
-		focusables: joinFocusables(buttonsToFocusables(start, stop, restart, refresh), primitivesToFocusables(a.dashboardSummary, a.dashboardEvents)),
+		focusables: buttonsToFocusables(start, stop, restart, refresh),
 	}
 }

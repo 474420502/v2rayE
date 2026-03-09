@@ -110,11 +110,12 @@ func buttonWidth(label string) int {
 func buttonRow(buttons ...*tview.Button) *tview.Flex {
 	row := tview.NewFlex().SetDirection(tview.FlexColumn)
 	for idx, btn := range buttons {
-		row.AddItem(btn, 0, 1, false)
+		row.AddItem(btn, buttonWidth(btn.GetLabel()), 0, false)
 		if idx != len(buttons)-1 {
 			row.AddItem(horizontalSpacer(1), 1, 0, false)
 		}
 	}
+	row.AddItem(horizontalSpacer(1), 0, 1, false)
 	return row
 }
 

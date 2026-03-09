@@ -27,34 +27,42 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 		modeActions = buttonColumn(selectGlobal, selectBypass, selectDirect, selectCustom)
 	}
 	testRow := inputRow(a.networkTestTarget, a.networkTestPort, a.useStackedLayout(), 4, 1)
+
+	controls := tview.NewFlex().SetDirection(tview.FlexRow)
+	controls.AddItem(newMutedText("Routing/Proxy controls (set fields then Save Routing)"), 1, 0, false)
+	controls.AddItem(verticalSpacer(1), 1, 0, false)
+	controls.AddItem(primaryActions, 3, 0, false)
+	controls.AddItem(verticalSpacer(1), 1, 0, false)
+	controls.AddItem(modeActions, 3, 0, false)
+	controls.AddItem(verticalSpacer(1), 1, 0, false)
+	controls.AddItem(a.networkRoutingMode, 1, 0, false)
+	controls.AddItem(a.networkDomainStrategy, 1, 0, false)
+	controls.AddItem(a.networkLocalBypass, 1, 0, false)
+	controls.AddItem(verticalSpacer(1), 1, 0, false)
+	controls.AddItem(secondaryActions, 3, 0, false)
+	controls.AddItem(verticalSpacer(1), 1, 0, false)
+	controls.AddItem(testRow, 3, 0, false)
+
+	results := tview.NewFlex().SetDirection(tview.FlexRow)
+	results.AddItem(wrapPanel("Routing Diagnostics", a.networkSummary), 0, 3, false)
+	results.AddItem(verticalSpacer(1), 1, 0, false)
+	results.AddItem(wrapPanel("Route Test Result", a.networkTestResult), 0, 2, false)
+
 	body := splitContent(
 		a.useStackedLayout(),
-		wrapPanel("Routing Diagnostics", a.networkSummary),
-		wrapPanel("Route Test Result", a.networkTestResult),
-		3,
-		2,
+		wrapPanel("Control Center", controls),
+		results,
+		4,
+		7,
 	)
+
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
-	root.AddItem(newMutedText("Select or type target routing policy fields, then Save Routing"), 1, 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(primaryActions, 3, 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(modeActions, 3, 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(a.networkRoutingMode, 1, 0, false)
-	root.AddItem(a.networkDomainStrategy, 1, 0, false)
-	root.AddItem(a.networkLocalBypass, 1, 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(secondaryActions, 3, 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(testRow, 3, 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
 	root.AddItem(body, 0, 1, false)
 	return builtPage{
 		root: root,
 		focusables: joinFocusables(
 			buttonsToFocusables(checkBtn, globalPreset, bypassPreset, directPreset, applyProxy, clearProxy, saveRouting, geoUpdate, repairTun, routeTest, selectGlobal, selectBypass, selectDirect, selectCustom),
-			primitivesToFocusables(a.networkRoutingMode, a.networkDomainStrategy, a.networkLocalBypass, a.networkTestTarget, a.networkTestPort, a.networkSummary, a.networkTestResult),
+			primitivesToFocusables(a.networkRoutingMode, a.networkDomainStrategy, a.networkLocalBypass, a.networkTestTarget, a.networkTestPort),
 		),
 	}
 }

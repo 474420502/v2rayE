@@ -63,17 +63,29 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 		3,
 		4,
 	)
+
+	quickActions := tview.NewFlex().SetDirection(tview.FlexRow)
+	quickActions.AddItem(newMutedText("Quick presets (then Save Config)"), 1, 0, false)
+	quickActions.AddItem(verticalSpacer(1), 1, 0, false)
+	quickActions.AddItem(controls, 3, 0, false)
+	quickActions.AddItem(verticalSpacer(1), 1, 0, false)
+	quickActions.AddItem(engineActions, 3, 0, false)
+	quickActions.AddItem(verticalSpacer(1), 1, 0, false)
+	quickActions.AddItem(logActions, 3, 0, false)
+	quickActions.AddItem(verticalSpacer(1), 1, 0, false)
+	quickActions.AddItem(tunActions, 3, 0, false)
+	quickActions.AddItem(verticalSpacer(1), 1, 0, false)
+	quickActions.AddItem(proxyActions, 3, 0, false)
+
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
-	root.AddItem(newMutedText("Edit fields on the left, then Save Config to apply and reload"), 1, 0, false)
+	root.AddItem(wrapPanel("Quick Actions", quickActions), 0, 3, false)
 	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(controls, 3, 0, false)
-	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(body, 0, 1, false)
+	root.AddItem(body, 0, 7, false)
 	return builtPage{
 		root: root,
 		focusables: joinFocusables(
 			buttonsToFocusables(saveBtn, clearErrBtn, exitCleanupBtn, proxyOn, proxyOff, proxyPac, tunOff, tunMixed, tunSystem, tunGvisor, logDebug, logInfo, logWarn, logError, engineXray),
-			primitivesToFocusables(a.settingsListenAddr, a.settingsSocksPort, a.settingsHTTPPort, a.settingsCoreEngine, a.settingsLogLevel, a.settingsSkipCert, a.settingsTunName, a.settingsTunMode, a.settingsTunMtu, a.settingsTunAutoRoute, a.settingsTunStrict, a.settingsDNSMode, a.settingsDNSList, a.settingsProxyMode, a.settingsProxyExcept, a.settingsSummary),
+			primitivesToFocusables(a.settingsListenAddr, a.settingsSocksPort, a.settingsHTTPPort, a.settingsCoreEngine, a.settingsLogLevel, a.settingsSkipCert, a.settingsTunName, a.settingsTunMode, a.settingsTunMtu, a.settingsTunAutoRoute, a.settingsTunStrict, a.settingsDNSMode, a.settingsDNSList, a.settingsProxyMode, a.settingsProxyExcept),
 		),
 	}
 }

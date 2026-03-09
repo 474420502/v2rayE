@@ -96,7 +96,7 @@ func footerText(page, status string) string {
 }
 
 func pageHint(page string) string {
-	base := "1-6/←→ pages | Tab/↑↓ focus | r refresh | q quit"
+	base := "1-6 pages | Tab/↑↓←→ focus | Ctrl+P/? actions | r refresh | q quit"
 	switch page {
 	case pageProfiles:
 		return "Profiles: select -> Activate/Delay | " + base

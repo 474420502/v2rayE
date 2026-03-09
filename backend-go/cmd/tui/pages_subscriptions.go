@@ -24,6 +24,6 @@ func (a *tuiApp) buildSubscriptionsPage() builtPage {
 	root.AddItem(body, 0, 1, false)
 	return builtPage{
 		root:       root,
-		focusables: joinFocusables(buttonsToFocusables(updateAll, updateSelected), primitivesToFocusables(a.subscriptionsList, a.subscriptionDetail)),
+		focusables: joinFocusables(buttonsToFocusables(updateAll, updateSelected), primitivesToFocusables(a.subscriptionsList)),
 	}
 }
