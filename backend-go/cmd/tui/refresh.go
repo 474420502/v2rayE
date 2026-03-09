@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 	"time"
@@ -21,16 +22,23 @@ func (a *tuiApp) pollOverview() {
 }
 
 func (a *tuiApp) reloadAll() error {
+	var errs []error
 	if err := a.reloadOverview(); err != nil {
-		return err
+		errs = append(errs, err)
 	}
 	if err := a.reloadProfiles(); err != nil {
-		return err
+		errs = append(errs, err)
 	}
 	if err := a.reloadSubscriptions(); err != nil {
-		return err
+		errs = append(errs, err)
 	}
-	return a.reloadNetwork()
+	if err := a.reloadNetwork(); err != nil {
+		errs = append(errs, err)
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	return errors.Join(errs...)
 }
 
 func (a *tuiApp) reloadOverview() error {
@@ -45,6 +53,7 @@ func (a *tuiApp) reloadOverview() error {
 	if err != nil {
 		return err
 	}
+	a.applyConfiguredUILanguage(config)
 	stats, err := a.client.GetStats(ctx)
 	if err != nil {
 		return err

@@ -29,6 +29,38 @@ func (a *tuiApp) handler(event *tcell.EventKey) *tcell.EventKey {
 		}
 	}
 
+	if a.profileActionsVisible.Load() {
+		if event.Key() == tcell.KeyEsc {
+			a.closeProfileActionsMenu()
+			return nil
+		}
+		return event
+	}
+
+	if a.profileDeleteVisible.Load() {
+		if event.Key() == tcell.KeyEsc {
+			a.closeProfileDeleteConfirmDialog()
+			return nil
+		}
+		return event
+	}
+
+	if a.profileImportVisible.Load() {
+		if event.Key() == tcell.KeyEsc {
+			a.closeProfileImportDialog()
+			return nil
+		}
+		return event
+	}
+
+	if a.profileEditVisible.Load() {
+		if event.Key() == tcell.KeyEsc {
+			a.closeProfileQuickEditDialog()
+			return nil
+		}
+		return event
+	}
+
 	switch event.Key() {
 	case tcell.KeyCtrlC:
 		a.cancel()
@@ -104,14 +136,14 @@ func isSettingsEditKey(key *tcell.EventKey) bool {
 }
 
 func (a *tuiApp) runAction(label string, action func(context.Context) error) {
-	a.setFooter("Running " + label + "...")
+	a.setFooter(a.tf("footer.running", label))
 	err := action(a.ctx)
 	if err != nil {
 		a.pushEvent(label + " failed: " + err.Error())
-		a.setFooter(label + " failed: " + err.Error())
+		a.setFooter(a.tf("footer.failed", label, err.Error()))
 		return
 	}
-	a.setFooter(label + " completed")
+	a.setFooter(a.tf("footer.completed", label))
 }
 
 func (a *tuiApp) actionButton(label string, action func(context.Context) error) *tview.Button {

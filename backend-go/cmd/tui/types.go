@@ -10,6 +10,7 @@ type BatchDelayTestRequest = apitypes.BatchDelayTestRequest
 type ProfileDelayResult = apitypes.ProfileDelayResult
 type BatchDelayTestResult = apitypes.BatchDelayTestResult
 type SubscriptionItem = apitypes.SubscriptionItem
+type SubscriptionUpsertRequest = apitypes.SubscriptionUpsertRequest
 type AvailabilityResult = apitypes.AvailabilityResult
 type SystemProxyApplyRequest = apitypes.SystemProxyApplyRequest
 type RoutingConfig = apitypes.RoutingConfig

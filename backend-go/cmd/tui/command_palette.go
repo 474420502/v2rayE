@@ -101,7 +101,7 @@ func (a *tuiApp) closeCommandPalette() {
 			app.SetFocus(a.focusables[0])
 		}
 		a.palettePreviousFocus = nil
-		a.footerStatus = "Page: " + pageDisplayName(a.page)
+		a.footerStatus = a.tf("status.page", pageDisplayName(a.page))
 		a.refreshFooter()
 	})
 }
@@ -159,6 +159,9 @@ func (a *tuiApp) paletteActions() []paletteAction {
 	switch a.page {
 	case pageProfiles:
 		actions = append(actions,
+			paletteAction{main: "Profiles: Import URL", secondary: "Open URL import dialog", run: runAction("import url", a.openImportProfileDialogAction)},
+			paletteAction{main: "Profiles: Import Clipboard", secondary: "Import profile from clipboard content", run: runAction("import clipboard", a.importProfileFromClipboardAction)},
+			paletteAction{main: "Profiles: Batch Delay", secondary: "Run delay test for all profiles", run: runAction("batch delay", a.batchDelayProfilesAction)},
 			paletteAction{main: "Profiles: Activate Selected", secondary: "Activate highlighted profile", run: runAction("activate", a.activateProfileAction)},
 			paletteAction{main: "Profiles: Delay Test", secondary: "Test selected profile delay", run: runAction("delay test", a.testSelectedProfileDelayAction)},
 			paletteAction{main: "Profiles: Save Edit", secondary: "Persist editor fields to backend", run: runAction("save edit", a.saveSelectedProfileEditAction)},
@@ -178,6 +181,8 @@ func (a *tuiApp) paletteActions() []paletteAction {
 		actions = append(actions,
 			paletteAction{main: "Settings: Save Config", secondary: "Apply config editor fields", run: runAction("save config", a.saveConfigAction)},
 			paletteAction{main: "Settings: Clear Core Error", secondary: "Clear backend core error state", run: runAction("clear core error", a.clearCoreErrorAction)},
+			paletteAction{main: "Settings: UI Language Chinese", secondary: "Switch interface to Chinese", run: runAction("lang zh", a.selectUILanguageChineseAction)},
+			paletteAction{main: "Settings: UI Language English", secondary: "Switch interface to English", run: runAction("lang en", a.selectUILanguageEnglishAction)},
 		)
 	case pageLogs:
 		actions = append(actions,

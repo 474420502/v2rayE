@@ -8,36 +8,36 @@ import (
 
 func (a *tuiApp) formatDashboardSummary() string {
 	selected := a.selectedProfile()
-	profileName := "none"
+	profileName := a.t("state.none")
 	if selected != nil {
 		profileName = selected.Name
 	}
 
 	return strings.Join([]string{
-		"Core",
-		fmt.Sprintf("  running: %t", a.status.Running),
-		fmt.Sprintf("  state: %s", emptyFallback(a.status.State, "unknown")),
-		fmt.Sprintf("  engine: %s", emptyFallback(a.status.EngineResolved, emptyFallback(a.status.EngineMode, "unknown"))),
-		fmt.Sprintf("  currentProfile: %s", emptyFallback(a.status.CurrentProfileID, profileName)),
-		fmt.Sprintf("  startedAt: %s", emptyFallback(a.status.StartedAt, "n/a")),
-		fmt.Sprintf("  uptime: %s", formatCoreUptime(a.status)),
-		fmt.Sprintf("  error: %s", emptyFallback(a.status.Error, "none")),
+		a.t("state.dashboard.core"),
+		fmt.Sprintf("  %s: %t", a.t("state.label.running"), a.status.Running),
+		fmt.Sprintf("  %s: %s", a.t("state.label.state"), emptyFallback(a.status.State, a.t("state.unknown"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.engine"), emptyFallback(a.status.EngineResolved, emptyFallback(a.status.EngineMode, a.t("state.unknown")))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.currentProfile"), emptyFallback(a.status.CurrentProfileID, profileName)),
+		fmt.Sprintf("  %s: %s", a.t("state.label.startedAt"), emptyFallback(a.status.StartedAt, a.t("state.na"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.uptime"), formatCoreUptime(a.status)),
+		fmt.Sprintf("  %s: %s", a.t("state.label.error"), emptyFallback(a.status.Error, a.t("state.none"))),
 		"",
-		"Telemetry",
-		fmt.Sprintf("  up: %s total | %s/s", humanBytes(a.stats.UpBytes), humanBytes(a.stats.UpSpeed)),
-		fmt.Sprintf("  down: %s total | %s/s", humanBytes(a.stats.DownBytes), humanBytes(a.stats.DownSpeed)),
-		fmt.Sprintf("  network: %t (%dms) %s", a.availability.Available, a.availability.ElapsedMs, a.availability.Message),
+		a.t("state.dashboard.telemetry"),
+		fmt.Sprintf("  %s: %s | %s/s", a.t("state.label.up"), humanBytes(a.stats.UpBytes), humanBytes(a.stats.UpSpeed)),
+		fmt.Sprintf("  %s: %s | %s/s", a.t("state.label.down"), humanBytes(a.stats.DownBytes), humanBytes(a.stats.DownSpeed)),
+		fmt.Sprintf("  %s: %t (%dms) %s", a.t("state.label.network"), a.availability.Available, a.availability.ElapsedMs, a.availability.Message),
 		"",
-		"Streams",
-		fmt.Sprintf("  logs: %s", emptyFallback(a.logsStreamState, "idle")),
-		fmt.Sprintf("  events: %s", emptyFallback(a.eventsStreamState, "idle")),
+		a.t("state.dashboard.streams"),
+		fmt.Sprintf("  %s: %s", a.t("state.label.logs"), emptyFallback(a.logsStreamState, a.t("state.idle"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.events"), emptyFallback(a.eventsStreamState, a.t("state.idle"))),
 		"",
-		"Config",
-		fmt.Sprintf("  socksPort: %d", intValue(a.config, "socksPort")),
-		fmt.Sprintf("  httpPort: %d", intValue(a.config, "httpPort")),
-		fmt.Sprintf("  tunName: %s", emptyFallback(stringValue(a.config, "tunName"), "unset")),
-		fmt.Sprintf("  proxyMode: %s", emptyFallback(stringValue(a.config, "systemProxyMode"), "unset")),
-		fmt.Sprintf("  profiles: %d | subscriptions: %d", len(a.profiles), len(a.subscriptions)),
+		a.t("state.dashboard.config"),
+		fmt.Sprintf("  %s: %d", a.t("state.label.socksPort"), intValue(a.config, "socksPort")),
+		fmt.Sprintf("  %s: %d", a.t("state.label.httpPort"), intValue(a.config, "httpPort")),
+		fmt.Sprintf("  %s: %s", a.t("state.label.tunName"), emptyFallback(stringValue(a.config, "tunName"), a.t("state.unset"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.proxyMode"), emptyFallback(stringValue(a.config, "systemProxyMode"), a.t("state.unset"))),
+		fmt.Sprintf("  %s: %d | %s: %d", a.t("state.label.profiles"), len(a.profiles), a.t("state.label.subscriptions"), len(a.subscriptions)),
 	}, "\n")
 }
 
@@ -45,26 +45,26 @@ func (a *tuiApp) formatSelectedProfile() string {
 	p := a.selectedProfile()
 	if p == nil {
 		if len(a.batchDelay.Results) == 0 {
-			return "No profile selected."
+			return a.t("state.profile.noSelection")
 		}
-		return strings.Join([]string{"No profile selected.", "", a.formatBatchDelayResults()}, "\n")
+		return strings.Join([]string{a.t("state.profile.noSelection"), "", a.formatBatchDelayResults()}, "\n")
 	}
 
 	lines := []string{
-		fmt.Sprintf("Name: %s", p.Name),
+		fmt.Sprintf("%s: %s", a.t("state.label.name"), p.Name),
 		fmt.Sprintf("ID: %s", p.ID),
-		fmt.Sprintf("Protocol: %s", p.Protocol),
-		fmt.Sprintf("Address: %s:%d", p.Address, p.Port),
-		fmt.Sprintf("Delay: %dms", p.DelayMs),
-		fmt.Sprintf("Subscription: %s (%s)", emptyFallback(p.SubName, "manual"), emptyFallback(p.SubID, "none")),
+		fmt.Sprintf("%s: %s", a.t("state.label.protocol"), p.Protocol),
+		fmt.Sprintf("%s: %s:%d", a.t("state.label.address"), p.Address, p.Port),
+		fmt.Sprintf("%s: %dms", a.t("state.label.delay"), p.DelayMs),
+		fmt.Sprintf("%s: %s (%s)", a.t("state.label.subscription"), emptyFallback(p.SubName, a.t("state.manual")), emptyFallback(p.SubID, a.t("state.none"))),
 	}
 	if p.Transport != nil {
 		lines = append(lines,
 			"",
-			"Transport",
-			fmt.Sprintf("  network: %s", p.Transport.Network),
+			a.t("state.profile.transport"),
+			fmt.Sprintf("  %s: %s", a.t("state.label.network"), p.Transport.Network),
 			fmt.Sprintf("  tls: %t", p.Transport.TLS),
-			fmt.Sprintf("  sni: %s", emptyFallback(p.Transport.SNI, "none")),
+			fmt.Sprintf("  sni: %s", emptyFallback(p.Transport.SNI, a.t("state.none"))),
 		)
 	}
 	if len(a.batchDelay.Results) > 0 || a.batchRunning {
@@ -75,12 +75,12 @@ func (a *tuiApp) formatSelectedProfile() string {
 
 func (a *tuiApp) formatBatchDelayStatus() string {
 	if a.batchRunning {
-		return "Batch delay test running for all profiles..."
+		return a.t("state.batch.running")
 	}
 	if a.batchDelay.Total == 0 {
-		return "Batch delay test idle. Use Batch Delay to measure all profiles."
+		return a.t("state.batch.idle")
 	}
-	return fmt.Sprintf("Batch delay completed: total=%d success=%d failed=%d", a.batchDelay.Total, a.batchDelay.Success, a.batchDelay.Failed)
+	return fmt.Sprintf(a.t("state.batch.completed"), a.batchDelay.Total, a.batchDelay.Success, a.batchDelay.Failed)
 }
 
 func (a *tuiApp) formatProfileEditStatus() string {
@@ -88,27 +88,27 @@ func (a *tuiApp) formatProfileEditStatus() string {
 		return a.profileEditMessage
 	}
 	if a.selectedProfileID == "" {
-		return "Profile editor: select a profile first."
+		return a.t("state.editor.selectFirst")
 	}
 	if !a.profileEditLoaded {
-		return "Profile editor: loading selected profile..."
+		return a.t("state.editor.loading")
 	}
 	if a.profileEditDirty {
-		return "Profile editor: staged changes (not saved)."
+		return a.t("state.editor.staged")
 	}
-	return "Profile editor: synced with selected profile."
+	return a.t("state.editor.synced")
 }
 
 func (a *tuiApp) formatBatchDelayResults() string {
 	if a.batchRunning {
-		return "Batch Delay\n  running..."
+		return a.t("state.batch.results.running")
 	}
 	if len(a.batchDelay.Results) == 0 {
-		return "Batch Delay\n  no results yet"
+		return a.t("state.batch.results.empty")
 	}
 
 	lines := []string{
-		"Batch Delay",
+		a.t("state.batch.title"),
 		fmt.Sprintf("  total=%d success=%d failed=%d", a.batchDelay.Total, a.batchDelay.Success, a.batchDelay.Failed),
 	}
 	limit := len(a.batchDelay.Results)
@@ -116,7 +116,7 @@ func (a *tuiApp) formatBatchDelayResults() string {
 		limit = 8
 	}
 	for _, result := range a.batchDelay.Results[:limit] {
-		status := "fail"
+		status := a.t("state.delay.fail")
 		delayText := result.Error
 		if result.Available {
 			status = delayBucket(result.DelayMs)
@@ -125,7 +125,7 @@ func (a *tuiApp) formatBatchDelayResults() string {
 		lines = append(lines, fmt.Sprintf("  %-6s %-20s %s", status, truncateRunes(result.Name, 20), delayText))
 	}
 	if len(a.batchDelay.Results) > limit {
-		lines = append(lines, fmt.Sprintf("  ... and %d more", len(a.batchDelay.Results)-limit))
+		lines = append(lines, fmt.Sprintf(a.t("state.batch.more"), len(a.batchDelay.Results)-limit))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -133,18 +133,18 @@ func (a *tuiApp) formatBatchDelayResults() string {
 func (a *tuiApp) formatSelectedSubscription() string {
 	sub := a.selectedSubscription()
 	if sub == nil {
-		return "No subscription selected."
+		return a.t("state.sub.noSelection")
 	}
 
 	return strings.Join([]string{
-		fmt.Sprintf("Remarks: %s", sub.Remarks),
+		fmt.Sprintf("%s: %s", a.t("state.label.remarks"), sub.Remarks),
 		fmt.Sprintf("ID: %s", sub.ID),
-		fmt.Sprintf("Enabled: %t", sub.Enabled),
-		fmt.Sprintf("Profiles: %d", sub.ProfileCount),
-		fmt.Sprintf("Auto Update: %d minutes", sub.AutoUpdateMinutes),
-		fmt.Sprintf("Filter: %s", emptyFallback(sub.Filter, "none")),
-		fmt.Sprintf("Convert Target: %s", emptyFallback(sub.ConvertTarget, "default")),
-		fmt.Sprintf("Updated At: %s", emptyFallback(sub.UpdatedAt, "never")),
+		fmt.Sprintf("%s: %t", a.t("state.label.enabled"), sub.Enabled),
+		fmt.Sprintf("%s: %d", a.t("state.label.profiles"), sub.ProfileCount),
+		fmt.Sprintf("%s: %d %s", a.t("state.label.autoUpdate"), sub.AutoUpdateMinutes, a.t("state.minutes")),
+		fmt.Sprintf("%s: %s", a.t("state.label.filter"), emptyFallback(sub.Filter, a.t("state.none"))),
+		fmt.Sprintf("%s: %s", a.t("state.label.convertTarget"), emptyFallback(sub.ConvertTarget, a.t("state.default"))),
+		fmt.Sprintf("%s: %s", a.t("state.label.updatedAt"), emptyFallback(sub.UpdatedAt, a.t("state.never"))),
 		"",
 		fmt.Sprintf("URL: %s", sub.URL),
 	}, "\n")
@@ -169,53 +169,55 @@ func (a *tuiApp) formatNetworkSummary() string {
 		targetLocalBypass = parseBoolText(localBypassText)
 	}
 	lines := []string{
-		"Availability",
-		fmt.Sprintf("  available: %t", a.availability.Available),
-		fmt.Sprintf("  elapsed: %dms", a.availability.ElapsedMs),
-		fmt.Sprintf("  message: %s", emptyFallback(a.availability.Message, "none")),
+		a.t("state.network.availability"),
+		fmt.Sprintf("  %s: %t", a.t("state.label.available"), a.availability.Available),
+		fmt.Sprintf("  %s: %dms", a.t("state.label.elapsed"), a.availability.ElapsedMs),
+		fmt.Sprintf("  %s: %s", a.t("state.label.message"), emptyFallback(a.availability.Message, a.t("state.none"))),
 		"",
-		"Routing",
-		fmt.Sprintf("  currentMode: %s", a.routing.Mode),
-		fmt.Sprintf("  targetMode: %s", targetMode),
-		fmt.Sprintf("  currentDomainStrategy: %s", a.routing.DomainStrategy),
-		fmt.Sprintf("  targetDomainStrategy: %s", targetStrategy),
-		fmt.Sprintf("  currentLocalBypass: %t", currentLocalBypass),
-		fmt.Sprintf("  targetLocalBypass: %t", targetLocalBypass),
-		fmt.Sprintf("  diagnostics ruleCount: %d", a.diagnostics.RuleCount),
-		fmt.Sprintf("  tunEnabled: %t", a.diagnostics.TunEnabled),
-		fmt.Sprintf("  tunTakeoverActive: %t", a.diagnostics.TunTakeoverActive),
-		fmt.Sprintf("  defaultRouteDevice: %s", emptyFallback(a.diagnostics.DefaultRouteDevice, "unknown")),
-		fmt.Sprintf("  hasGeoIP: %t", a.diagnostics.HasGeoIP),
-		fmt.Sprintf("  hasGeoSite: %t", a.diagnostics.HasGeoSite),
-		fmt.Sprintf("  geodataAvailable: %t", a.diagnostics.GeoDataAvailable),
+		a.t("state.network.routing"),
+		fmt.Sprintf("  %s: %s", a.t("state.label.currentMode"), a.routing.Mode),
+		fmt.Sprintf("  %s: %s", a.t("state.label.targetMode"), targetMode),
+		fmt.Sprintf("  %s: %s", a.t("state.label.currentDomainStrategy"), a.routing.DomainStrategy),
+		fmt.Sprintf("  %s: %s", a.t("state.label.targetDomainStrategy"), targetStrategy),
+		fmt.Sprintf("  %s: %t", a.t("state.label.currentLocalBypass"), currentLocalBypass),
+		fmt.Sprintf("  %s: %t", a.t("state.label.targetLocalBypass"), targetLocalBypass),
+		fmt.Sprintf("  %s: %d", a.t("state.label.diagnosticsRuleCount"), a.diagnostics.RuleCount),
+		fmt.Sprintf("  %s: %t", a.t("state.label.tunEnabled"), a.diagnostics.TunEnabled),
+		fmt.Sprintf("  %s: %t", a.t("state.label.tunTakeoverActive"), a.diagnostics.TunTakeoverActive),
+		fmt.Sprintf("  %s: %t", a.t("state.label.tunDirectBypassRule"), a.diagnostics.TunDirectBypassRule),
+		fmt.Sprintf("  %s: %d", a.t("state.label.tunDirectBypassMark"), a.diagnostics.TunDirectBypassMark),
+		fmt.Sprintf("  %s: %s", a.t("state.label.defaultRouteDevice"), emptyFallback(a.diagnostics.DefaultRouteDevice, a.t("state.unknown"))),
+		fmt.Sprintf("  %s: %t", a.t("state.label.hasGeoIP"), a.diagnostics.HasGeoIP),
+		fmt.Sprintf("  %s: %t", a.t("state.label.hasGeoSite"), a.diagnostics.HasGeoSite),
+		fmt.Sprintf("  %s: %t", a.t("state.label.geodataAvailable"), a.diagnostics.GeoDataAvailable),
 	}
 	if len(a.hits.Items) > 0 {
-		lines = append(lines, "", "Outbound Hits")
+		lines = append(lines, "", a.t("state.network.outboundHits"))
 		for _, item := range a.hits.Items {
 			lines = append(lines, fmt.Sprintf("  %s up=%s/s down=%s/s", item.Outbound, humanBytes(item.UpSpeed), humanBytes(item.DownSpeed)))
 		}
 	}
 	if a.diagnostics.Warning != "" {
-		lines = append(lines, "", "Warning", "  "+a.diagnostics.Warning)
+		lines = append(lines, "", a.t("state.warning"), "  "+a.diagnostics.Warning)
 	}
 	return strings.Join(lines, "\n")
 }
 
 func (a *tuiApp) formatRoutingTestResult() string {
 	if strings.TrimSpace(a.routingTest.Target) == "" {
-		return "Routing Test\n  No routing test executed."
+		return a.t("state.routingTest.empty")
 	}
 	return strings.Join([]string{
-		"Routing Test",
-		fmt.Sprintf("  target: %s", a.routingTest.Target),
-		fmt.Sprintf("  type: %s", emptyFallback(a.routingTest.Type, "unknown")),
-		fmt.Sprintf("  protocol: %s", emptyFallback(a.routingTest.Protocol, "tcp")),
-		fmt.Sprintf("  port: %d", a.routingTest.Port),
-		fmt.Sprintf("  matchedRule: %s", emptyFallback(a.routingTest.MatchedRule, "default")),
-		fmt.Sprintf("  matchedValue: %s", emptyFallback(a.routingTest.MatchedValue, "none")),
-		fmt.Sprintf("  outbound: %s", emptyFallback(a.routingTest.Outbound, "proxy")),
-		fmt.Sprintf("  action: %s", emptyFallback(a.routingTest.Action, "proxy")),
-		fmt.Sprintf("  note: %s", emptyFallback(a.routingTest.Note, "none")),
+		a.t("state.routingTest.title"),
+		fmt.Sprintf("  %s: %s", a.t("state.label.target"), a.routingTest.Target),
+		fmt.Sprintf("  %s: %s", a.t("state.label.type"), emptyFallback(a.routingTest.Type, a.t("state.unknown"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.protocol"), emptyFallback(a.routingTest.Protocol, "tcp")),
+		fmt.Sprintf("  %s: %d", a.t("state.label.port"), a.routingTest.Port),
+		fmt.Sprintf("  %s: %s", a.t("state.label.matchedRule"), emptyFallback(a.routingTest.MatchedRule, a.t("state.default"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.matchedValue"), emptyFallback(a.routingTest.MatchedValue, a.t("state.none"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.outbound"), emptyFallback(a.routingTest.Outbound, "proxy")),
+		fmt.Sprintf("  %s: %s", a.t("state.label.action"), emptyFallback(a.routingTest.Action, "proxy")),
+		fmt.Sprintf("  %s: %s", a.t("state.label.note"), emptyFallback(a.routingTest.Note, a.t("state.none"))),
 	}, "\n")
 }
 
@@ -234,15 +236,15 @@ func (a *tuiApp) formatLogsStatus() string {
 	}
 	search := a.logSearchQuery
 	if search == "" {
-		search = "none"
+		search = a.t("state.none")
 	}
-	return fmt.Sprintf("Logs total=%d shown=%d level=%s source=%s search=%s errors=%d warns=%d stream=%s", total, len(filtered), a.logLevelFilter, a.logSourceFilter, search, errorCount, warnCount, emptyFallback(a.logsStreamState, "idle"))
+	return fmt.Sprintf(a.t("state.logs.status"), total, len(filtered), a.logLevelFilter, a.logSourceFilter, search, errorCount, warnCount, emptyFallback(a.logsStreamState, a.t("state.idle")))
 }
 
 func (a *tuiApp) formatFilteredLogs() string {
 	filtered := a.filteredLogLines()
 	if len(filtered) == 0 {
-		return "No logs matched the current filter."
+		return a.t("state.logs.empty")
 	}
 	lines := make([]string, 0, len(filtered))
 	for _, line := range filtered {
@@ -314,33 +316,61 @@ func normalizeLogLevel(level string) string {
 
 func (a *tuiApp) formatSettingsSummary() string {
 	return strings.Join([]string{
-		"Current config snapshot",
-		fmt.Sprintf("  stagedChanges: %t", a.settingsDirty),
-		fmt.Sprintf("  listenAddr: %s", emptyFallback(stringValue(a.config, "listenAddr"), "127.0.0.1:8080")),
-		fmt.Sprintf("  socksPort: %d", intValue(a.config, "socksPort")),
-		fmt.Sprintf("  httpPort: %d", intValue(a.config, "httpPort")),
-		fmt.Sprintf("  coreEngine: %s", emptyFallback(stringValue(a.config, "coreEngine"), "xray-core")),
-		fmt.Sprintf("  logLevel: %s", emptyFallback(stringValue(a.config, "logLevel"), "warning")),
-		fmt.Sprintf("  skipCertVerify: %t", boolValue(a.config, "skipCertVerify")),
-		fmt.Sprintf("  enableTun: %t", boolValue(a.config, "enableTun")),
-		fmt.Sprintf("  tunMode: %s", emptyFallback(stringValue(a.config, "tunMode"), "off")),
-		fmt.Sprintf("  tunName: %s", emptyFallback(stringValue(a.config, "tunName"), "unset")),
-		fmt.Sprintf("  tunMtu: %d", intValue(a.config, "tunMtu")),
-		fmt.Sprintf("  tunAutoRoute: %t", boolValue(a.config, "tunAutoRoute")),
-		fmt.Sprintf("  tunStrictRoute: %t", boolValue(a.config, "tunStrictRoute")),
-		fmt.Sprintf("  dnsMode: %s", emptyFallback(stringValue(a.config, "dnsMode"), "UseSystemDNS")),
-		fmt.Sprintf("  dnsList: %s", emptyFallback(strings.Join(toStringSlice(a.config["dnsList"]), ","), "none")),
-		fmt.Sprintf("  systemProxyMode: %s", emptyFallback(stringValue(a.config, "systemProxyMode"), "unset")),
-		fmt.Sprintf("  systemProxyExceptions: %s", emptyFallback(stringValue(a.config, "systemProxyExceptions"), "none")),
-		fmt.Sprintf("  engineMode: %s", emptyFallback(a.status.EngineMode, "unknown")),
-		fmt.Sprintf("  coreResolved: %s", emptyFallback(a.status.EngineResolved, "unknown")),
-		fmt.Sprintf("  coreUptime: %s", formatCoreUptime(a.status)),
+		a.t("state.settings.title"),
+		fmt.Sprintf("  %s: %t", a.t("state.label.stagedChanges"), a.settingsDirty),
+		fmt.Sprintf("  %s: %s", a.t("state.label.listenAddr"), emptyFallback(stringValue(a.config, "listenAddr"), a.t("state.defaultListenAddr"))),
+		fmt.Sprintf("  %s: %d", a.t("state.label.socksPort"), intValue(a.config, "socksPort")),
+		fmt.Sprintf("  %s: %d", a.t("state.label.httpPort"), intValue(a.config, "httpPort")),
+		fmt.Sprintf("  %s: %s", a.t("state.label.coreEngine"), emptyFallback(stringValue(a.config, "coreEngine"), "xray-core")),
+		fmt.Sprintf("  %s: %s", a.t("state.label.logLevel"), emptyFallback(stringValue(a.config, "logLevel"), "warning")),
+		fmt.Sprintf("  %s: %t", a.t("state.label.skipCertVerify"), boolValue(a.config, "skipCertVerify")),
+		fmt.Sprintf("  %s: %t", a.t("state.label.enableTun"), boolValue(a.config, "enableTun")),
+		fmt.Sprintf("  %s: %s", a.t("state.label.tunMode"), emptyFallback(stringValue(a.config, "tunMode"), "off")),
+		fmt.Sprintf("  %s: %s", a.t("state.label.tunName"), emptyFallback(stringValue(a.config, "tunName"), a.t("state.unset"))),
+		fmt.Sprintf("  %s: %d", a.t("state.label.tunMtu"), intValue(a.config, "tunMtu")),
+		fmt.Sprintf("  %s: %t", a.t("state.label.tunAutoRoute"), boolValue(a.config, "tunAutoRoute")),
+		fmt.Sprintf("  %s: %t", a.t("state.label.tunStrictRoute"), boolValue(a.config, "tunStrictRoute")),
+		fmt.Sprintf("  %s: %s", a.t("state.label.dnsMode"), emptyFallback(stringValue(a.config, "dnsMode"), "UseSystemDNS")),
+		fmt.Sprintf("  %s: %s", a.t("state.label.dnsList"), emptyFallback(strings.Join(toStringSlice(a.config["dnsList"]), ","), a.t("state.none"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.systemProxyMode"), emptyFallback(stringValue(a.config, "systemProxyMode"), a.t("state.unset"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.systemProxyExceptions"), emptyFallback(stringValue(a.config, "systemProxyExceptions"), a.t("state.none"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.systemProxyUsers"), emptyFallback(strings.Join(toStringSlice(a.config["systemProxyUsers"]), ","), a.t("state.autoDetect"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.proxyUserCandidates"), emptyFallback(a.proxyUsersStatus, a.t("state.notLoaded"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.proxyUserPreview"), emptyFallback(a.proxyUserCandidatesPreview(), a.t("state.none"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.engineMode"), emptyFallback(a.status.EngineMode, a.t("state.unknown"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.coreResolved"), emptyFallback(a.status.EngineResolved, a.t("state.unknown"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.coreUptime"), formatCoreUptime(a.status)),
 	}, "\n")
+}
+
+func (a *tuiApp) proxyUserCandidatesPreview() string {
+	if len(a.systemProxyUsers) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, 4)
+	limit := 4
+	if len(a.systemProxyUsers) < limit {
+		limit = len(a.systemProxyUsers)
+	}
+	for _, candidate := range a.systemProxyUsers[:limit] {
+		tag := candidate.Username
+		if candidate.HasSessionBus {
+			tag += "(bus)"
+		}
+		if candidate.IsSystem {
+			tag += "(sys)"
+		}
+		parts = append(parts, tag)
+	}
+	if len(a.systemProxyUsers) > limit {
+		parts = append(parts, fmt.Sprintf("+%d", len(a.systemProxyUsers)-limit))
+	}
+	return strings.Join(parts, ",")
 }
 
 func formatCoreUptime(status CoreStatus) string {
 	if !status.Running || status.UptimeSec <= 0 {
-		return "stopped"
+		return tr(currentGlobalUILanguage(), "state.stopped")
 	}
 	return humanDurationSeconds(status.UptimeSec)
 }
@@ -419,11 +449,11 @@ func (a *tuiApp) sortedProfilesForDisplay() []ProfileItem {
 func delayBucket(delayMs int) string {
 	switch {
 	case delayMs < 100:
-		return "fast"
+		return tr(currentGlobalUILanguage(), "state.delay.fast")
 	case delayMs < 300:
-		return "mid"
+		return tr(currentGlobalUILanguage(), "state.delay.mid")
 	default:
-		return "slow"
+		return tr(currentGlobalUILanguage(), "state.delay.slow")
 	}
 }
 

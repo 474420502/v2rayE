@@ -260,6 +260,12 @@ func (c *apiClient) UpdateSubscription(ctx context.Context, id string) error {
 	return c.request(ctx, http.MethodPost, "/api/subscriptions/"+url.PathEscape(id)+"/update", map[string]any{}, nil)
 }
 
+func (c *apiClient) CreateSubscription(ctx context.Context, req SubscriptionUpsertRequest) (SubscriptionItem, error) {
+	var out SubscriptionItem
+	err := c.request(ctx, http.MethodPost, "/api/subscriptions", req, &out)
+	return out, err
+}
+
 func (c *apiClient) GetAvailability(ctx context.Context) (AvailabilityResult, error) {
 	var out AvailabilityResult
 	err := c.request(ctx, http.MethodGet, "/api/network/availability", nil, &out)

@@ -73,19 +73,20 @@ func parseSubscriptionContent(content, subID, subName string) ([]domain.ProfileI
 
 // ParseProfileURI parses a single URI string into a ProfileItem.
 func ParseProfileURI(uri, subID, subName string) (domain.ProfileItem, error) {
+	lowerURI := strings.ToLower(uri)
 	switch {
-	case strings.HasPrefix(uri, "vmess://"):
+	case strings.HasPrefix(lowerURI, "vmess://"):
 		return parseVMess(uri, subID, subName)
-	case strings.HasPrefix(uri, "vless://"):
+	case strings.HasPrefix(lowerURI, "vless://"):
 		return parseVLESS(uri, subID, subName)
-	case strings.HasPrefix(uri, "ss://"):
+	case strings.HasPrefix(lowerURI, "ss://"):
 		return parseShadowsocks(uri, subID, subName)
-	case strings.HasPrefix(uri, "trojan://"):
+	case strings.HasPrefix(lowerURI, "trojan://"):
 		return parseTrojan(uri, subID, subName)
-	case strings.HasPrefix(uri, "hysteria2://"),
-		strings.HasPrefix(uri, "hy2://"):
+	case strings.HasPrefix(lowerURI, "hysteria2://"),
+		strings.HasPrefix(lowerURI, "hy2://"):
 		return parseHysteria2(uri, subID, subName)
-	case strings.HasPrefix(uri, "tuic://"):
+	case strings.HasPrefix(lowerURI, "tuic://"):
 		return parseTUIC(uri, subID, subName)
 	default:
 		preview := uri

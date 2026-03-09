@@ -14,6 +14,12 @@ import (
 const narrowLayoutBreakpoint = 130
 
 const (
+	profileEditSectionBasic     = "basic"
+	profileEditSectionProtocol  = "protocol"
+	profileEditSectionTransport = "transport"
+)
+
+const (
 	editableValueColor = tcell.ColorLightCyan
 	editableLabelColor = tcell.ColorMediumTurquoise
 )
@@ -110,7 +116,8 @@ func wrapPanel(title string, primitive tview.Primitive) *tview.Flex {
 }
 
 func buttonWidth(label string) int {
-	return len([]rune(label)) + 4
+	// Use terminal display width so CJK wide runes are not truncated.
+	return tview.TaggedStringWidth(label) + 2
 }
 
 func buttonRow(buttons ...*tview.Button) *tview.Flex {
@@ -465,26 +472,10 @@ func emphasizeKeyword(message, keyword string) string {
 }
 
 func (a *tuiApp) useStackedLayout() bool {
-	widthBreakpoint := narrowLayoutBreakpoint
-	heightBreakpoint := 38
-	if a.compactMode {
-		widthBreakpoint -= 8
-		heightBreakpoint -= 2
-	} else {
-		widthBreakpoint += 8
-		heightBreakpoint += 2
-	}
-	if a.viewportCols > 0 && a.viewportCols < widthBreakpoint {
+	if a.viewportCols > 0 && a.viewportCols < narrowLayoutBreakpoint {
 		return true
 	}
-	return a.viewportRows > 0 && a.viewportRows < heightBreakpoint
-}
-
-func (a *tuiApp) compactModeLabel() string {
-	if a.compactMode {
-		return "compact"
-	}
-	return "comfortable"
+	return a.viewportRows > 0 && a.viewportRows < 38
 }
 
 func (a *tuiApp) viewportWarning() string {
@@ -531,6 +522,23 @@ func splitCommaStrings(value string) []string {
 		items = append(items, trimmed)
 	}
 	return items
+}
+
+func (a *tuiApp) profileEditorSection() string {
+	switch a.profileEditSection {
+	case profileEditSectionBasic, profileEditSectionProtocol, profileEditSectionTransport:
+		return a.profileEditSection
+	default:
+		return profileEditSectionBasic
+	}
+}
+
+func (a *tuiApp) setProfileEditorSection(section string) {
+	a.mu.Lock()
+	a.profileEditSection = section
+	a.mu.Unlock()
+	a.syncPages()
+	a.setFooter(a.tf("footer.profileEditorSection", section))
 }
 
 func toStringSlice(value any) []string {

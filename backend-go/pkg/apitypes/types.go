@@ -10,6 +10,7 @@ type BatchDelayTestRequest = domain.BatchDelayTestRequest
 type ProfileDelayResult = domain.ProfileDelayResult
 type BatchDelayTestResult = domain.BatchDelayTestResult
 type SubscriptionItem = domain.SubscriptionItem
+type SubscriptionUpsertRequest = domain.SubscriptionUpsertRequest
 type AvailabilityResult = domain.AvailabilityResult
 type SystemProxyApplyRequest = domain.SystemProxyApplyRequest
 type RoutingConfig = domain.RoutingConfig

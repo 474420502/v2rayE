@@ -3,10 +3,10 @@ package tui
 import "github.com/rivo/tview"
 
 func (a *tuiApp) buildDashboardPage() builtPage {
-	start := a.actionButton("Start", a.startCoreAction)
-	stop := a.actionButton("Stop", a.stopCoreAction)
-	restart := a.actionButton("Restart", a.restartCoreAction)
-	refresh := a.actionButton("Refresh", a.refreshAllAction)
+	start := a.actionButton(a.t("dashboard.btn.start"), a.startCoreAction)
+	stop := a.actionButton(a.t("dashboard.btn.stop"), a.stopCoreAction)
+	restart := a.actionButton(a.t("dashboard.btn.restart"), a.restartCoreAction)
+	refresh := a.actionButton(a.t("dashboard.btn.refresh"), a.refreshAllAction)
 
 	actions := buttonRow(start, stop, restart, refresh)
 	if a.useStackedLayout() {
@@ -15,8 +15,8 @@ func (a *tuiApp) buildDashboardPage() builtPage {
 
 	mainContent := splitContent(
 		a.useStackedLayout(),
-		wrapPanel("Runtime Summary", a.dashboardSummary),
-		wrapPanel("Recent Events", a.dashboardEvents),
+		wrapPanel(a.t("dashboard.panel.summary"), a.dashboardSummary),
+		wrapPanel(a.t("dashboard.panel.events"), a.dashboardEvents),
 		3,
 		2,
 	)
@@ -24,10 +24,10 @@ func (a *tuiApp) buildDashboardPage() builtPage {
 	actionsHeight := actionBlockHeight(a.useStackedLayout(), 4)
 	actionsContentHeight := 1 + 1 + actionsHeight
 	actionsPanel := tview.NewFlex().SetDirection(tview.FlexRow)
-	actionsPanel.AddItem(newMutedText("Core lifecycle and runtime telemetry overview"), 1, 0, false)
+	actionsPanel.AddItem(newMutedText(a.t("dashboard.desc")), 1, 0, false)
 	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
 	actionsPanel.AddItem(actions, actionsHeight, 0, false)
-	root := buildPageLayout("Actions", actionsPanel, actionsContentHeight, mainContent)
+	root := buildPageLayout(a.t("common.actions"), actionsPanel, actionsContentHeight, mainContent)
 
 	return builtPage{
 		root:       root,

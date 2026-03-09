@@ -19,18 +19,17 @@ const (
 
 type pageTab struct {
 	key      string
-	label    string
 	shortcut rune
 }
 
 func tuiPageTabs() []pageTab {
 	return []pageTab{
-		{key: pageDashboard, label: "1 Dashboard", shortcut: '1'},
-		{key: pageProfiles, label: "2 Profiles", shortcut: '2'},
-		{key: pageSubscriptions, label: "3 Subs", shortcut: '3'},
-		{key: pageNetwork, label: "4 Network", shortcut: '4'},
-		{key: pageSettings, label: "5 Settings", shortcut: '5'},
-		{key: pageLogs, label: "6 Logs", shortcut: '6'},
+		{key: pageDashboard, shortcut: '1'},
+		{key: pageProfiles, shortcut: '2'},
+		{key: pageSubscriptions, shortcut: '3'},
+		{key: pageNetwork, shortcut: '4'},
+		{key: pageSettings, shortcut: '5'},
+		{key: pageLogs, shortcut: '6'},
 	}
 }
 
@@ -42,26 +41,28 @@ func (a *tuiApp) handleShortcut(key *tcell.EventKey) bool {
 
 	switch key.Rune() {
 	case 'r', 'R':
-		go a.runAction("refresh", func(context.Context) error {
+		go a.runAction(a.t("action.refresh"), func(context.Context) error {
 			return a.reloadAll()
 		})
 		return true
-	case 'z', 'Z':
-		a.toggleCompactMode()
+	case 'l', 'L':
+		go a.runAction(a.t("action.toggleLanguage"), a.toggleUILanguageAction)
 		return true
+	case 'a', 'A':
+		if a.page == pageProfiles {
+			go a.runAction(a.t("action.activateProfile"), a.activateProfileAction)
+			return true
+		}
+		return false
+	case 'e', 'E':
+		if a.page == pageProfiles {
+			a.openProfileQuickEditDialog()
+			return true
+		}
+		return false
 	default:
 		return false
 	}
-}
-
-func (a *tuiApp) toggleCompactMode() {
-	a.compactMode = !a.compactMode
-	mode := "Compact"
-	if !a.compactMode {
-		mode = "Comfortable"
-	}
-	a.syncPages()
-	a.setFooter("Layout mode: " + mode)
 }
 
 func isProfileEditKey(key *tcell.EventKey) bool {
@@ -80,7 +81,7 @@ func pageForShortcut(shortcut rune) string {
 func (a *tuiApp) setActivePage(page string) {
 	a.page = page
 	a.syncPages()
-	a.footerStatus = fmt.Sprintf("Page: %s", pageDisplayName(page))
+	a.footerStatus = fmt.Sprintf(a.t("status.page"), pageDisplayName(page))
 	a.setFooter(a.footerStatus)
 }
 
@@ -103,44 +104,46 @@ func (a *tuiApp) shiftActivePage(delta int) {
 func footerText(page, status string) string {
 	trimmed := strings.TrimSpace(status)
 	if trimmed == "" {
-		trimmed = "Ready"
+		trimmed = tr(currentGlobalUILanguage(), "status.ready")
 	}
 	return fmt.Sprintf("%s | %s", trimmed, pageHint(page))
 }
 
 func pageHint(page string) string {
-	base := "1-6 pages | Tab/↑↓←→ focus | Ctrl+P/? actions | r refresh | z density | q quit"
+	lang := currentGlobalUILanguage()
+	base := tr(lang, "hint.base")
 	switch page {
 	case pageProfiles:
-		return "Profiles: select -> Activate/Delay | " + base
+		return fmt.Sprintf(tr(lang, "hint.profiles"), base)
 	case pageSubscriptions:
-		return "Subscriptions: select -> Update Selected | " + base
+		return fmt.Sprintf(tr(lang, "hint.subscriptions"), base)
 	case pageNetwork:
-		return "Network: set target/port -> Route Test | " + base
+		return fmt.Sprintf(tr(lang, "hint.network"), base)
 	case pageSettings:
-		return "Settings: edit fields -> Save Config | " + base
+		return fmt.Sprintf(tr(lang, "hint.settings"), base)
 	case pageLogs:
-		return "Logs: level/source/search filters | " + base
+		return fmt.Sprintf(tr(lang, "hint.logs"), base)
 	default:
-		return "Dashboard: Start/Stop/Restart core | " + base
+		return fmt.Sprintf(tr(lang, "hint.dashboard"), base)
 	}
 }
 
 func pageDisplayName(page string) string {
+	lang := currentGlobalUILanguage()
 	switch page {
 	case pageDashboard:
-		return "Dashboard"
+		return tr(lang, "page.dashboard")
 	case pageProfiles:
-		return "Profiles"
+		return tr(lang, "page.profiles")
 	case pageSubscriptions:
-		return "Subscriptions"
+		return tr(lang, "page.subscriptions")
 	case pageNetwork:
-		return "Network"
+		return tr(lang, "page.network")
 	case pageSettings:
-		return "Settings"
+		return tr(lang, "page.settings")
 	case pageLogs:
-		return "Logs"
+		return tr(lang, "page.logs")
 	default:
-		return "Dashboard"
+		return tr(lang, "page.dashboard")
 	}
 }

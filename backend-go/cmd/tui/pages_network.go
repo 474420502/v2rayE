@@ -3,20 +3,20 @@ package tui
 import "github.com/rivo/tview"
 
 func (a *tuiApp) buildNetworkPage() builtPage {
-	checkBtn := a.actionButton("Check Network", a.reloadOverviewAction)
-	globalPreset := a.actionButton("Preset Global", a.presetGlobalProxyAction)
-	bypassPreset := a.actionButton("Preset BypassCN", a.presetBypassCNProxyAction)
-	directPreset := a.actionButton("Preset Direct", a.presetDirectNoProxyAction)
-	applyProxy := a.actionButton("Apply Proxy", a.applySystemProxyAction)
-	clearProxy := a.actionButton("Clear Proxy", a.clearSystemProxyAction)
-	saveRouting := a.actionButton("Save Routing", a.saveRoutingModeAction)
-	geoUpdate := a.actionButton("Geo Update", a.updateGeoDataAction)
-	repairTun := a.actionButton("Repair TUN", a.repairTunAction)
-	routeTest := a.actionButton("Route Test", a.routeTestAction)
-	selectGlobal := a.actionButton("Global", a.selectRoutingGlobalAction)
-	selectBypass := a.actionButton("Bypass CN", a.selectRoutingBypassCNAction)
-	selectDirect := a.actionButton("Direct", a.selectRoutingDirectAction)
-	selectCustom := a.actionButton("Custom", a.selectRoutingCustomAction)
+	checkBtn := a.actionButton(a.t("network.btn.check"), a.reloadOverviewAction)
+	globalPreset := a.actionButton(a.t("network.btn.presetGlobal"), a.presetGlobalProxyAction)
+	bypassPreset := a.actionButton(a.t("network.btn.presetBypass"), a.presetBypassCNProxyAction)
+	directPreset := a.actionButton(a.t("network.btn.presetDirect"), a.presetDirectNoProxyAction)
+	applyProxy := a.actionButton(a.t("network.btn.applyProxy"), a.applySystemProxyAction)
+	clearProxy := a.actionButton(a.t("network.btn.clearProxy"), a.clearSystemProxyAction)
+	saveRouting := a.actionButton(a.t("network.btn.saveRouting"), a.saveRoutingModeAction)
+	geoUpdate := a.actionButton(a.t("network.btn.geoUpdate"), a.updateGeoDataAction)
+	repairTun := a.actionButton(a.t("network.btn.repairTun"), a.repairTunAction)
+	routeTest := a.actionButton(a.t("network.btn.routeTest"), a.routeTestAction)
+	selectGlobal := a.actionButton(a.t("network.btn.global"), a.selectRoutingGlobalAction)
+	selectBypass := a.actionButton(a.t("network.btn.bypassCN"), a.selectRoutingBypassCNAction)
+	selectDirect := a.actionButton(a.t("network.btn.direct"), a.selectRoutingDirectAction)
+	selectCustom := a.actionButton(a.t("network.btn.custom"), a.selectRoutingCustomAction)
 
 	primaryActions := buttonRow(checkBtn, globalPreset, bypassPreset, directPreset, applyProxy, clearProxy)
 	secondaryActions := buttonRow(saveRouting, geoUpdate, repairTun, routeTest)
@@ -35,11 +35,11 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	testRowHeight := dualItemRowHeight(a.useStackedLayout())
 	actionsPanel := tview.NewFlex().SetDirection(tview.FlexRow)
 	actionsPanelHeight := 1 + 1 + primaryActionsHeight + 1 + modeActionsHeight + 1 + 1 + 1
-	actionsPanel.AddItem(newMutedText("Routing/Proxy presets"), 1, 0, false)
+	actionsPanel.AddItem(newMutedText(a.t("network.desc")), 1, 0, false)
 	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
 	actionsPanel.AddItem(primaryActions, primaryActionsHeight, 0, false)
 	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
-	actionsPanel.AddItem(newMutedText("Target Mode"), 1, 0, false)
+	actionsPanel.AddItem(newMutedText(a.t("network.targetMode")), 1, 0, false)
 	actionsPanel.AddItem(a.networkRoutingMode, 1, 0, false)
 	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
 	actionsPanel.AddItem(modeActions, modeActionsHeight, 0, false)
@@ -52,9 +52,9 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	controls.AddItem(testRow, testRowHeight, 0, false)
 
 	results := tview.NewFlex().SetDirection(tview.FlexRow)
-	results.AddItem(wrapPanel("Routing Diagnostics", a.networkSummary), 0, 3, false)
+	results.AddItem(wrapPanel(a.t("network.panel.diagnostics"), a.networkSummary), 0, 3, false)
 	results.AddItem(verticalSpacer(1), 1, 0, false)
-	results.AddItem(wrapPanel("Route Test Result", a.networkTestResult), 0, 2, false)
+	results.AddItem(wrapPanel(a.t("network.panel.testResult"), a.networkTestResult), 0, 2, false)
 
 	leftWeight := 4
 	rightWeight := 7
@@ -64,12 +64,12 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	}
 	body := splitContent(
 		a.useStackedLayout(),
-		wrapPanel("Routing Form", controls),
+		wrapPanel(a.t("network.panel.form"), controls),
 		results,
 		leftWeight,
 		rightWeight,
 	)
-	root := buildPageLayout("Actions", actionsPanel, actionsPanelHeight, body)
+	root := buildPageLayout(a.t("common.actions"), actionsPanel, actionsPanelHeight, body)
 	return builtPage{
 		root: root,
 		focusables: joinFocusables(
