@@ -21,6 +21,7 @@ type tuiApp struct {
 	footerStatus string
 	viewportCols int
 	viewportRows int
+	compactMode  bool
 
 	pageHolder *tview.Pages
 	tabBar     *tview.Flex
@@ -133,5 +134,6 @@ func newTUI(ctx context.Context, client *apiClient) *tuiApp {
 		eventsStreamState: "idle",
 		footerStatus:      "Ready",
 		viewportCols:      0,
+		compactMode:       true,
 	}
 }

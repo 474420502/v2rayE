@@ -66,14 +66,15 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 
 	quickActions := tview.NewFlex().SetDirection(tview.FlexRow)
 	controlsHeight := actionBlockHeight(a.useStackedLayout(), 3)
+	quickActionsContentHeight := 1 + 1 + controlsHeight
 	quickActions.AddItem(newMutedText("Quick actions (presets are available in Config Editor)"), 1, 0, false)
 	quickActions.AddItem(verticalSpacer(1), 1, 0, false)
 	quickActions.AddItem(controls, controlsHeight, 0, false)
 
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
-	root.AddItem(wrapPanel("Quick Actions", quickActions), 0, 3, false)
+	root.AddItem(wrapPanel("Quick Actions", quickActions), panelHeight(quickActionsContentHeight), 0, false)
 	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(body, 0, 7, false)
+	root.AddItem(body, 0, 1, false)
 	return builtPage{
 		root: root,
 		focusables: joinFocusables(

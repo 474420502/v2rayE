@@ -451,10 +451,36 @@ func emphasizeKeyword(message, keyword string) string {
 }
 
 func (a *tuiApp) useStackedLayout() bool {
-	if a.viewportCols > 0 && a.viewportCols < narrowLayoutBreakpoint {
+	widthBreakpoint := narrowLayoutBreakpoint
+	heightBreakpoint := 38
+	if a.compactMode {
+		widthBreakpoint -= 8
+		heightBreakpoint -= 2
+	} else {
+		widthBreakpoint += 8
+		heightBreakpoint += 2
+	}
+	if a.viewportCols > 0 && a.viewportCols < widthBreakpoint {
 		return true
 	}
-	return a.viewportRows > 0 && a.viewportRows < 38
+	return a.viewportRows > 0 && a.viewportRows < heightBreakpoint
+}
+
+func (a *tuiApp) compactModeLabel() string {
+	if a.compactMode {
+		return "compact"
+	}
+	return "comfortable"
+}
+
+func (a *tuiApp) viewportWarning() string {
+	if a.viewportCols > 0 && a.viewportCols < 90 {
+		return "viewport narrow"
+	}
+	if a.viewportRows > 0 && a.viewportRows < 26 {
+		return "viewport short"
+	}
+	return ""
 }
 
 func parseBoolText(value string) bool {

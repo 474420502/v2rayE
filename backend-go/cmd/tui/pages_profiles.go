@@ -60,6 +60,7 @@ func (a *tuiApp) buildProfilesPage() builtPage {
 	importRowHeight := dualItemRowHeight(a.useStackedLayout())
 	actionsHeight := actionBlockHeight(a.useStackedLayout(), 4)
 	editActionsHeight := actionBlockHeight(a.useStackedLayout(), 3)
+	controlsContentHeight := 1 + 1 + importRowHeight + 1 + 1 + 1 + actionsHeight + 1 + 1 + 1 + editActionsHeight
 	controls.AddItem(newMutedText("Import / run tests / manage selected profile"), 1, 0, false)
 	controls.AddItem(verticalSpacer(1), 1, 0, false)
 	controls.AddItem(importRow, importRowHeight, 0, false)
@@ -73,9 +74,9 @@ func (a *tuiApp) buildProfilesPage() builtPage {
 	controls.AddItem(editActions, editActionsHeight, 0, false)
 
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
-	root.AddItem(wrapPanel("Controls", controls), 0, 3, false)
+	root.AddItem(wrapPanel("Controls", controls), panelHeight(controlsContentHeight), 0, false)
 	root.AddItem(verticalSpacer(1), 1, 0, false)
-	root.AddItem(workspace, 0, 7, false)
+	root.AddItem(workspace, 0, 1, false)
 
 	return builtPage{
 		root: root,

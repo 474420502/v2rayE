@@ -33,11 +33,15 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	modeActionsHeight := actionBlockHeight(a.useStackedLayout(), 4)
 	secondaryActionsHeight := actionBlockHeight(a.useStackedLayout(), 4)
 	testRowHeight := dualItemRowHeight(a.useStackedLayout())
-	controls.AddItem(newMutedText("Routing/Proxy controls (set fields then Save Routing)"), 1, 0, false)
-	controls.AddItem(verticalSpacer(1), 1, 0, false)
-	controls.AddItem(primaryActions, primaryActionsHeight, 0, false)
-	controls.AddItem(verticalSpacer(1), 1, 0, false)
-	controls.AddItem(modeActions, modeActionsHeight, 0, false)
+	actionsPanel := tview.NewFlex().SetDirection(tview.FlexRow)
+	actionsPanelHeight := 1 + 1 + primaryActionsHeight + 1 + modeActionsHeight
+	actionsPanel.AddItem(newMutedText("Routing/Proxy presets"), 1, 0, false)
+	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
+	actionsPanel.AddItem(primaryActions, primaryActionsHeight, 0, false)
+	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
+	actionsPanel.AddItem(modeActions, modeActionsHeight, 0, false)
+
+	controls.AddItem(newMutedText("Edit routing fields then save/apply test"), 1, 0, false)
 	controls.AddItem(verticalSpacer(1), 1, 0, false)
 	controls.AddItem(a.networkRoutingMode, 1, 0, false)
 	controls.AddItem(a.networkDomainStrategy, 1, 0, false)
@@ -61,6 +65,8 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	)
 
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
+	root.AddItem(wrapPanel("Actions", actionsPanel), panelHeight(actionsPanelHeight), 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
 	root.AddItem(body, 0, 1, false)
 	return builtPage{
 		root: root,

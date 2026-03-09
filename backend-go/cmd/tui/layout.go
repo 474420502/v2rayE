@@ -73,7 +73,7 @@ func (a *tuiApp) build() tview.Primitive {
 	title.SetTextColor(tcell.ColorBlack)
 	title.SetBackgroundColor(tcell.ColorTeal)
 
-	help := newMutedText("Shortcuts: 1-6 switch page | Tab cycle focus | r refresh | q quit")
+	help := newMutedText("Shortcuts: 1-6 switch page | Tab cycle focus | r refresh | z density | q quit")
 
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
 	root.AddItem(title, 1, 0, false)

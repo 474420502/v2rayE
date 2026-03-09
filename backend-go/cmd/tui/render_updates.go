@@ -249,6 +249,10 @@ func (a *tuiApp) refreshFooter() {
 		return
 	}
 	footer := footerText(a.page, a.footerStatus)
+	footer += " | mode=" + a.compactModeLabel()
+	if warning := a.viewportWarning(); warning != "" {
+		footer += " | " + warning
+	}
 	if a.viewportCols > 0 {
 		footer = fitSingleLineToWidth(footer, a.viewportCols)
 	}

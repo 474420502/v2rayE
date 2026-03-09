@@ -46,9 +46,22 @@ func (a *tuiApp) handleShortcut(key *tcell.EventKey) bool {
 			return a.reloadAll()
 		})
 		return true
+	case 'z', 'Z':
+		a.toggleCompactMode()
+		return true
 	default:
 		return false
 	}
+}
+
+func (a *tuiApp) toggleCompactMode() {
+	a.compactMode = !a.compactMode
+	mode := "Compact"
+	if !a.compactMode {
+		mode = "Comfortable"
+	}
+	a.syncPages()
+	a.setFooter("Layout mode: " + mode)
 }
 
 func isProfileEditKey(key *tcell.EventKey) bool {
@@ -96,7 +109,7 @@ func footerText(page, status string) string {
 }
 
 func pageHint(page string) string {
-	base := "1-6 pages | Tab/↑↓←→ focus | Ctrl+P/? actions | r refresh | q quit"
+	base := "1-6 pages | Tab/↑↓←→ focus | Ctrl+P/? actions | r refresh | z density | q quit"
 	switch page {
 	case pageProfiles:
 		return "Profiles: select -> Activate/Delay | " + base
