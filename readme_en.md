@@ -2,6 +2,9 @@
 
 [中文说明](./README.md)
 
+[![ui](image/README/ui.webp)
+](./readme_en.md)
+
 v2rayE is a Linux-first local proxy control plane that unifies profile management, TUN VPN routing, desktop proxy integration, subscriptions, and terminal interaction into one executable.
 
 The first release baseline is now centered on:
