@@ -83,6 +83,22 @@ func (a *tuiApp) formatBatchDelayStatus() string {
 	return fmt.Sprintf("Batch delay completed: total=%d success=%d failed=%d", a.batchDelay.Total, a.batchDelay.Success, a.batchDelay.Failed)
 }
 
+func (a *tuiApp) formatProfileEditStatus() string {
+	if strings.TrimSpace(a.profileEditMessage) != "" {
+		return a.profileEditMessage
+	}
+	if a.selectedProfileID == "" {
+		return "Profile editor: select a profile first."
+	}
+	if !a.profileEditLoaded {
+		return "Profile editor: loading selected profile..."
+	}
+	if a.profileEditDirty {
+		return "Profile editor: staged changes (not saved)."
+	}
+	return "Profile editor: synced with selected profile."
+}
+
 func (a *tuiApp) formatBatchDelayResults() string {
 	if a.batchRunning {
 		return "Batch Delay\n  running..."
@@ -135,6 +151,23 @@ func (a *tuiApp) formatSelectedSubscription() string {
 }
 
 func (a *tuiApp) formatNetworkSummary() string {
+	targetMode := strings.ToLower(strings.TrimSpace(a.networkRoutingMode.Text()))
+	if targetMode == "" {
+		targetMode = a.routing.Mode
+	}
+	targetStrategy := strings.TrimSpace(a.networkDomainStrategy.Text())
+	if targetStrategy == "" {
+		targetStrategy = a.routing.DomainStrategy
+	}
+	currentLocalBypass := true
+	if a.routing.LocalBypassEnabled != nil {
+		currentLocalBypass = *a.routing.LocalBypassEnabled
+	}
+	targetLocalBypass := currentLocalBypass
+	localBypassText := strings.TrimSpace(a.networkLocalBypass.Text())
+	if localBypassText != "" {
+		targetLocalBypass = parseBoolText(localBypassText)
+	}
 	lines := []string{
 		"Availability",
 		fmt.Sprintf("  available: %t", a.availability.Available),
@@ -142,8 +175,12 @@ func (a *tuiApp) formatNetworkSummary() string {
 		fmt.Sprintf("  message: %s", emptyFallback(a.availability.Message, "none")),
 		"",
 		"Routing",
-		fmt.Sprintf("  mode: %s", a.routing.Mode),
-		fmt.Sprintf("  domainStrategy: %s", a.routing.DomainStrategy),
+		fmt.Sprintf("  currentMode: %s", a.routing.Mode),
+		fmt.Sprintf("  targetMode: %s", targetMode),
+		fmt.Sprintf("  currentDomainStrategy: %s", a.routing.DomainStrategy),
+		fmt.Sprintf("  targetDomainStrategy: %s", targetStrategy),
+		fmt.Sprintf("  currentLocalBypass: %t", currentLocalBypass),
+		fmt.Sprintf("  targetLocalBypass: %t", targetLocalBypass),
 		fmt.Sprintf("  diagnostics ruleCount: %d", a.diagnostics.RuleCount),
 		fmt.Sprintf("  tunEnabled: %t", a.diagnostics.TunEnabled),
 		fmt.Sprintf("  tunTakeoverActive: %t", a.diagnostics.TunTakeoverActive),
@@ -282,8 +319,17 @@ func (a *tuiApp) formatSettingsSummary() string {
 		fmt.Sprintf("  listenAddr: %s", emptyFallback(stringValue(a.config, "listenAddr"), "127.0.0.1:8080")),
 		fmt.Sprintf("  socksPort: %d", intValue(a.config, "socksPort")),
 		fmt.Sprintf("  httpPort: %d", intValue(a.config, "httpPort")),
+		fmt.Sprintf("  coreEngine: %s", emptyFallback(stringValue(a.config, "coreEngine"), "xray-core")),
+		fmt.Sprintf("  logLevel: %s", emptyFallback(stringValue(a.config, "logLevel"), "warning")),
+		fmt.Sprintf("  skipCertVerify: %t", boolValue(a.config, "skipCertVerify")),
 		fmt.Sprintf("  enableTun: %t", boolValue(a.config, "enableTun")),
+		fmt.Sprintf("  tunMode: %s", emptyFallback(stringValue(a.config, "tunMode"), "off")),
 		fmt.Sprintf("  tunName: %s", emptyFallback(stringValue(a.config, "tunName"), "unset")),
+		fmt.Sprintf("  tunMtu: %d", intValue(a.config, "tunMtu")),
+		fmt.Sprintf("  tunAutoRoute: %t", boolValue(a.config, "tunAutoRoute")),
+		fmt.Sprintf("  tunStrictRoute: %t", boolValue(a.config, "tunStrictRoute")),
+		fmt.Sprintf("  dnsMode: %s", emptyFallback(stringValue(a.config, "dnsMode"), "UseSystemDNS")),
+		fmt.Sprintf("  dnsList: %s", emptyFallback(strings.Join(toStringSlice(a.config["dnsList"]), ","), "none")),
 		fmt.Sprintf("  systemProxyMode: %s", emptyFallback(stringValue(a.config, "systemProxyMode"), "unset")),
 		fmt.Sprintf("  systemProxyExceptions: %s", emptyFallback(stringValue(a.config, "systemProxyExceptions"), "none")),
 		fmt.Sprintf("  engineMode: %s", emptyFallback(a.status.EngineMode, "unknown")),
@@ -400,4 +446,18 @@ func (a *tuiApp) copyConfig() map[string]any {
 		clone[key] = value
 	}
 	return clone
+}
+
+func (a *tuiApp) copyRouting() RoutingConfig {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	routing := a.routing
+	rules := make([]RoutingRule, len(a.routing.Rules))
+	for i, rule := range a.routing.Rules {
+		rules[i] = rule
+		rules[i].Values = append([]string(nil), rule.Values...)
+	}
+	routing.Rules = rules
+	return routing
 }

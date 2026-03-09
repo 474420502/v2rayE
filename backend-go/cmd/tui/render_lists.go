@@ -1,66 +1,53 @@
 package tui
 
 import (
-	"github.com/gcla/gowid"
-	"github.com/gcla/gowid/widgets/button"
-	"github.com/gcla/gowid/widgets/list"
-	"github.com/gcla/gowid/widgets/styled"
-	"github.com/gcla/gowid/widgets/text"
+	"fmt"
 )
 
-func (a *tuiApp) makeProfilesList() gowid.IWidget {
-	if len(a.profiles) == 0 {
-		return text.New("No profiles available")
-	}
+func (a *tuiApp) refreshProfilesList() {
+	a.suspendListSelection.Store(true)
+	defer a.suspendListSelection.Store(false)
 
-	profiles := a.sortedProfilesForDisplay()
-	widgets := make([]gowid.IWidget, 0, len(profiles))
-	for _, profile := range profiles {
-		profile := profile
-		label := a.profileLabel(profile)
-		btn := button.NewBare(text.New(label))
-		btn.OnClick(gowid.MakeWidgetCallback("profile-"+profile.ID, func(app gowid.IApp, _ gowid.IWidget) {
-			a.mu.Lock()
-			a.selectedProfileID = profile.ID
-			a.mu.Unlock()
-			a.refreshWidgets()
-		}))
-		style := "panel"
-		if profile.ID == a.selectedProfileID {
-			style = "button-selected"
-		}
-		widgets = append(widgets, styled.NewExt(btn, gowid.MakePaletteRef(style), gowid.MakePaletteRef("button-focus")))
+	a.profilesList.Clear()
+	if len(a.profiles) == 0 {
+		a.profilesList.AddItem("No profiles available", "", 0, nil)
+		return
 	}
-	return list.New(list.NewSimpleListWalker(widgets))
+	profiles := a.sortedProfilesForDisplay()
+	selectedIndex := 0
+	for idx, profile := range profiles {
+		label := fmt.Sprintf("%2d. %s", idx+1, a.profileLabel(profile))
+		if profile.ID == a.selectedProfileID {
+			selectedIndex = idx
+		}
+		a.profilesList.AddItem(label, "", 0, nil)
+	}
+	a.profilesList.SetCurrentItem(selectedIndex)
 }
 
-func (a *tuiApp) makeSubscriptionsList() gowid.IWidget {
-	if len(a.subscriptions) == 0 {
-		return text.New("No subscriptions available")
-	}
+func (a *tuiApp) refreshSubscriptionsList() {
+	a.suspendListSelection.Store(true)
+	defer a.suspendListSelection.Store(false)
 
-	widgets := make([]gowid.IWidget, 0, len(a.subscriptions))
-	for _, sub := range a.subscriptions {
-		sub := sub
+	a.subscriptionsList.Clear()
+	if len(a.subscriptions) == 0 {
+		a.subscriptionsList.AddItem("No subscriptions available", "", 0, nil)
+		return
+	}
+	selectedIndex := 0
+	for idx, sub := range a.subscriptions {
 		label := sub.Remarks
 		if label == "" {
 			label = sub.URL
 		}
+		label = fmt.Sprintf("%2d. %s", idx+1, label)
 		if !sub.Enabled {
 			label = "[off] " + label
 		}
-		btn := button.NewBare(text.New(label))
-		btn.OnClick(gowid.MakeWidgetCallback("sub-"+sub.ID, func(app gowid.IApp, _ gowid.IWidget) {
-			a.mu.Lock()
-			a.selectedSubID = sub.ID
-			a.mu.Unlock()
-			a.refreshWidgets()
-		}))
-		style := "panel"
 		if sub.ID == a.selectedSubID {
-			style = "button-selected"
+			selectedIndex = idx
 		}
-		widgets = append(widgets, styled.NewExt(btn, gowid.MakePaletteRef(style), gowid.MakePaletteRef("button-focus")))
+		a.subscriptionsList.AddItem(label, "", 0, nil)
 	}
-	return list.New(list.NewSimpleListWalker(widgets))
+	a.subscriptionsList.SetCurrentItem(selectedIndex)
 }

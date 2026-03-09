@@ -1,43 +1,79 @@
 package tui
 
-import (
-	"github.com/gcla/gowid"
-	"github.com/gcla/gowid/widgets/columns"
-	"github.com/gcla/gowid/widgets/divider"
-	"github.com/gcla/gowid/widgets/fill"
-	"github.com/gcla/gowid/widgets/framed"
-	"github.com/gcla/gowid/widgets/pile"
-)
+import "github.com/rivo/tview"
 
-func (a *tuiApp) buildSettingsPage() gowid.IWidget {
-	saveButton := a.actionButton("Save Config", a.saveConfigAction)
+func (a *tuiApp) buildSettingsPage() builtPage {
+	saveBtn := a.actionButton("Save Config", a.saveConfigAction)
+	clearErrBtn := a.actionButton("Clear Core Error", a.clearCoreErrorAction)
+	exitCleanupBtn := a.actionButton("Exit Cleanup", a.exitCleanupAction)
+	proxyOn := a.actionButton("Proxy On", a.selectProxyModeForcedChangeAction)
+	proxyOff := a.actionButton("Proxy Off", a.selectProxyModeForcedClearAction)
+	proxyPac := a.actionButton("Proxy PAC", a.selectProxyModePacAction)
+	tunOff := a.actionButton("TUN Off", a.selectTunModeOffAction)
+	tunMixed := a.actionButton("TUN Mixed", a.selectTunModeMixedAction)
+	tunSystem := a.actionButton("TUN System", a.selectTunModeSystemAction)
+	tunGvisor := a.actionButton("TUN gVisor", a.selectTunModeGvisorAction)
+	logDebug := a.actionButton("Log Debug", a.selectLogLevelDebugAction)
+	logInfo := a.actionButton("Log Info", a.selectLogLevelInfoAction)
+	logWarn := a.actionButton("Log Warn", a.selectLogLevelWarningAction)
+	logError := a.actionButton("Log Error", a.selectLogLevelErrorAction)
+	engineXray := a.actionButton("Engine xray-core", a.selectCoreEngineXrayAction)
 
-	controls := columns.New([]gowid.IContainerWidget{
-		buttonCell(saveButton),
-		spacerCell(),
-		buttonCell(a.actionButton("Clear Core Error", a.clearCoreErrorAction)),
-		spacerCell(),
-		buttonCell(a.actionButton("Exit Cleanup", a.exitCleanupAction)),
-	})
+	controls := buttonRow(saveBtn, clearErrBtn, exitCleanupBtn)
+	proxyActions := buttonRow(proxyOn, proxyOff, proxyPac)
+	tunActions := buttonRow(tunOff, tunMixed, tunSystem, tunGvisor)
+	logActions := buttonRow(logDebug, logInfo, logWarn, logError)
+	engineActions := buttonRow(engineXray)
+	if a.useStackedLayout() {
+		controls = buttonColumn(saveBtn, clearErrBtn, exitCleanupBtn)
+		proxyActions = buttonColumn(proxyOn, proxyOff, proxyPac)
+		tunActions = buttonColumn(tunOff, tunMixed, tunSystem, tunGvisor)
+		logActions = buttonColumn(logDebug, logInfo, logWarn, logError)
+		engineActions = buttonColumn(engineXray)
+	}
 
-	form := pile.New([]gowid.IContainerWidget{
-		&gowid.ContainerWidget{IWidget: a.settingsListenAddr, D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: a.settingsSocksPort, D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: a.settingsHTTPPort, D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: a.settingsTunName, D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: a.settingsProxyMode, D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: a.settingsProxyExcept, D: gowid.RenderFlow{}},
-	})
-
-	body := columns.New([]gowid.IContainerWidget{
-		&gowid.ContainerWidget{IWidget: framed.NewUnicode(form), D: gowid.RenderWithWeight{W: 2}},
-		&gowid.ContainerWidget{IWidget: fill.New(' '), D: gowid.RenderWithUnits{U: 1}},
-		&gowid.ContainerWidget{IWidget: framed.NewUnicode(a.settingsSummary), D: gowid.RenderWithWeight{W: 3}},
-	})
-
-	return pile.New([]gowid.IContainerWidget{
-		&gowid.ContainerWidget{IWidget: controls, D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: divider.NewBlank(), D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: body, D: gowid.RenderWithWeight{W: 1}},
-	})
+	form := tview.NewFlex().SetDirection(tview.FlexRow)
+	for _, primitive := range []tview.Primitive{
+		a.settingsListenAddr,
+		a.settingsSocksPort,
+		a.settingsHTTPPort,
+		engineActions,
+		a.settingsCoreEngine,
+		logActions,
+		a.settingsLogLevel,
+		a.settingsSkipCert,
+		a.settingsTunName,
+		tunActions,
+		a.settingsTunMode,
+		a.settingsTunMtu,
+		a.settingsTunAutoRoute,
+		a.settingsTunStrict,
+		a.settingsDNSMode,
+		a.settingsDNSList,
+		proxyActions,
+		a.settingsProxyMode,
+		a.settingsProxyExcept,
+	} {
+		form.AddItem(primitive, 1, 0, false)
+	}
+	body := splitContent(
+		a.useStackedLayout(),
+		wrapPanel("Config Editor", form),
+		wrapPanel("Config Summary", a.settingsSummary),
+		3,
+		4,
+	)
+	root := tview.NewFlex().SetDirection(tview.FlexRow)
+	root.AddItem(newMutedText("Edit fields on the left, then Save Config to apply and reload"), 1, 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
+	root.AddItem(controls, 3, 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
+	root.AddItem(body, 0, 1, false)
+	return builtPage{
+		root: root,
+		focusables: joinFocusables(
+			buttonsToFocusables(saveBtn, clearErrBtn, exitCleanupBtn, proxyOn, proxyOff, proxyPac, tunOff, tunMixed, tunSystem, tunGvisor, logDebug, logInfo, logWarn, logError, engineXray),
+			primitivesToFocusables(a.settingsListenAddr, a.settingsSocksPort, a.settingsHTTPPort, a.settingsCoreEngine, a.settingsLogLevel, a.settingsSkipCert, a.settingsTunName, a.settingsTunMode, a.settingsTunMtu, a.settingsTunAutoRoute, a.settingsTunStrict, a.settingsDNSMode, a.settingsDNSList, a.settingsProxyMode, a.settingsProxyExcept, a.settingsSummary),
+		),
+	}
 }

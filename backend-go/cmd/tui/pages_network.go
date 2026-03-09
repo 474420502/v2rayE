@@ -1,46 +1,60 @@
 package tui
 
-import (
-	"github.com/gcla/gowid"
-	"github.com/gcla/gowid/widgets/columns"
-	"github.com/gcla/gowid/widgets/divider"
-	"github.com/gcla/gowid/widgets/fill"
-	"github.com/gcla/gowid/widgets/framed"
-	"github.com/gcla/gowid/widgets/pile"
-)
+import "github.com/rivo/tview"
 
-func (a *tuiApp) buildNetworkPage() gowid.IWidget {
-	actions := columns.New([]gowid.IContainerWidget{
-		buttonCell(a.actionButton("Check Network", a.reloadOverviewAction)),
-		spacerCell(),
-		buttonCell(a.actionButton("Apply Proxy", a.applySystemProxyAction)),
-		spacerCell(),
-		buttonCell(a.actionButton("Clear Proxy", a.clearSystemProxyAction)),
-		spacerCell(),
-		buttonCell(a.actionButton("Geo Update", a.updateGeoDataAction)),
-		spacerCell(),
-		buttonCell(a.actionButton("Repair TUN", a.repairTunAction)),
-		spacerCell(),
-		buttonCell(a.actionButton("Route Test", a.routeTestAction)),
-	})
+func (a *tuiApp) buildNetworkPage() builtPage {
+	checkBtn := a.actionButton("Check Network", a.reloadOverviewAction)
+	globalPreset := a.actionButton("Preset Global", a.presetGlobalProxyAction)
+	bypassPreset := a.actionButton("Preset BypassCN", a.presetBypassCNProxyAction)
+	directPreset := a.actionButton("Preset Direct", a.presetDirectNoProxyAction)
+	applyProxy := a.actionButton("Apply Proxy", a.applySystemProxyAction)
+	clearProxy := a.actionButton("Clear Proxy", a.clearSystemProxyAction)
+	saveRouting := a.actionButton("Save Routing", a.saveRoutingModeAction)
+	geoUpdate := a.actionButton("Geo Update", a.updateGeoDataAction)
+	repairTun := a.actionButton("Repair TUN", a.repairTunAction)
+	routeTest := a.actionButton("Route Test", a.routeTestAction)
+	selectGlobal := a.actionButton("Global", a.selectRoutingGlobalAction)
+	selectBypass := a.actionButton("Bypass CN", a.selectRoutingBypassCNAction)
+	selectDirect := a.actionButton("Direct", a.selectRoutingDirectAction)
+	selectCustom := a.actionButton("Custom", a.selectRoutingCustomAction)
 
-	testRow := columns.New([]gowid.IContainerWidget{
-		&gowid.ContainerWidget{IWidget: a.networkTestTarget, D: gowid.RenderWithWeight{W: 4}},
-		&gowid.ContainerWidget{IWidget: fill.New(' '), D: gowid.RenderWithUnits{U: 1}},
-		&gowid.ContainerWidget{IWidget: a.networkTestPort, D: gowid.RenderWithWeight{W: 1}},
-	})
-
-	body := columns.New([]gowid.IContainerWidget{
-		&gowid.ContainerWidget{IWidget: framed.NewUnicode(a.networkSummary), D: gowid.RenderWithWeight{W: 3}},
-		&gowid.ContainerWidget{IWidget: fill.New(' '), D: gowid.RenderWithUnits{U: 1}},
-		&gowid.ContainerWidget{IWidget: framed.NewUnicode(a.networkTestResult), D: gowid.RenderWithWeight{W: 2}},
-	})
-
-	return pile.New([]gowid.IContainerWidget{
-		&gowid.ContainerWidget{IWidget: actions, D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: divider.NewBlank(), D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: testRow, D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: divider.NewBlank(), D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: body, D: gowid.RenderWithWeight{W: 1}},
-	})
+	primaryActions := buttonRow(checkBtn, globalPreset, bypassPreset, directPreset, applyProxy, clearProxy)
+	secondaryActions := buttonRow(saveRouting, geoUpdate, repairTun, routeTest)
+	modeActions := buttonRow(selectGlobal, selectBypass, selectDirect, selectCustom)
+	if a.useStackedLayout() {
+		primaryActions = buttonColumn(checkBtn, globalPreset, bypassPreset, directPreset, applyProxy, clearProxy)
+		secondaryActions = buttonColumn(saveRouting, geoUpdate, repairTun, routeTest)
+		modeActions = buttonColumn(selectGlobal, selectBypass, selectDirect, selectCustom)
+	}
+	testRow := inputRow(a.networkTestTarget, a.networkTestPort, a.useStackedLayout(), 4, 1)
+	body := splitContent(
+		a.useStackedLayout(),
+		wrapPanel("Routing Diagnostics", a.networkSummary),
+		wrapPanel("Route Test Result", a.networkTestResult),
+		3,
+		2,
+	)
+	root := tview.NewFlex().SetDirection(tview.FlexRow)
+	root.AddItem(newMutedText("Select or type target routing policy fields, then Save Routing"), 1, 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
+	root.AddItem(primaryActions, 3, 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
+	root.AddItem(modeActions, 3, 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
+	root.AddItem(a.networkRoutingMode, 1, 0, false)
+	root.AddItem(a.networkDomainStrategy, 1, 0, false)
+	root.AddItem(a.networkLocalBypass, 1, 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
+	root.AddItem(secondaryActions, 3, 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
+	root.AddItem(testRow, 3, 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
+	root.AddItem(body, 0, 1, false)
+	return builtPage{
+		root: root,
+		focusables: joinFocusables(
+			buttonsToFocusables(checkBtn, globalPreset, bypassPreset, directPreset, applyProxy, clearProxy, saveRouting, geoUpdate, repairTun, routeTest, selectGlobal, selectBypass, selectDirect, selectCustom),
+			primitivesToFocusables(a.networkRoutingMode, a.networkDomainStrategy, a.networkLocalBypass, a.networkTestTarget, a.networkTestPort, a.networkSummary, a.networkTestResult),
+		),
+	}
 }

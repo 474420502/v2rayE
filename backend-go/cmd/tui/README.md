@@ -1,6 +1,6 @@
 # v2rayE TUI
 
-当前默认交互界面为终端 TUI，技术栈与 termshark 同源：`gowid + tcell`。
+当前默认交互界面为终端 TUI，技术栈为 `tview + tcell`。
 
 ## 启动
 

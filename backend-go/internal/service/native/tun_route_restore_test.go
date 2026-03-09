@@ -1,6 +1,7 @@
 package native
 
 import (
+	"net"
 	"path/filepath"
 	"testing"
 
@@ -208,5 +209,47 @@ func TestBuildTunPolicyBypassRules(t *testing.T) {
 		if !want[rule] {
 			t.Fatalf("unexpected bypass rule %q in %#v", rule, rules)
 		}
+	}
+}
+
+func TestBuildTunPolicyBypassRulesResolvesProfileDomain(t *testing.T) {
+	originalLookup := lookupIPForTunBypass
+	lookupIPForTunBypass = func(host string) ([]net.IP, error) {
+		if host != "edge.example.com" {
+			t.Fatalf("unexpected lookup host: %s", host)
+		}
+		return []net.IP{
+			net.ParseIP("203.0.113.10"),
+			net.ParseIP("203.0.113.10"),
+			net.ParseIP("2001:db8::10"),
+		}, nil
+	}
+	defer func() {
+		lookupIPForTunBypass = originalLookup
+	}()
+
+	rules := buildTunPolicyBypassRules([]string{
+		"default via 192.168.124.1 dev enp9s0 proto dhcp src 192.168.124.8 metric 100",
+		"192.168.124.0/24 dev enp9s0 proto kernel scope link src 192.168.124.8 metric 100",
+	}, map[string]interface{}{}, &domain.ProfileItem{Address: "edge.example.com"})
+
+	if !containsString(rules, "203.0.113.10/32") {
+		t.Fatalf("expected resolved profile IP bypass rule, got %#v", rules)
+	}
+	count := 0
+	for _, rule := range rules {
+		if rule == "203.0.113.10/32" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected deduplicated resolved profile IP bypass rule, got %#v", rules)
+	}
+}
+
+func TestResolveProfileBypassPrefixesDirectIPv4(t *testing.T) {
+	prefixes := resolveProfileBypassPrefixes(&domain.ProfileItem{Address: "45.63.82.225"})
+	if len(prefixes) != 1 || prefixes[0] != "45.63.82.225/32" {
+		t.Fatalf("resolveProfileBypassPrefixes() = %#v", prefixes)
 	}
 }

@@ -56,7 +56,6 @@ sudo ./scripts/tun-health-check.sh
 ## 环境变量
 
 - `V2RAYN_API_ADDR`：监听地址，默认 `127.0.0.1:18000`
-- `V2RAYN_API_TOKEN`：可选，设置后启用 `Authorization: Bearer <token>` 鉴权（`/api/health` 公开）
 - `V2RAYN_BACKEND_MODE`：`native`（默认，推荐）、`memory`（联调保底）或 `servicelib-proxy`（兼容过渡）
 - `V2RAYN_DATA_DIR`：统一数据目录，默认 `/opt/v2rayE`
 - `V2RAYN_MEMORY_STATE_PATH`：`memory` 共享状态基准路径（默认 `${V2RAYN_DATA_DIR}/memory-state.json`），会派生出 `*.runtime.json`、`*.subscriptions.json`、`*.config.json` 三类文件，并保留整体快照兼容读取

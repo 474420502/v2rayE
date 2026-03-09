@@ -2,8 +2,9 @@ package tui
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
-	"github.com/gcla/gowid"
 	tcell "github.com/gdamore/tcell/v2"
 )
 
@@ -33,13 +34,9 @@ func tuiPageTabs() []pageTab {
 	}
 }
 
-func (a *tuiApp) handleShortcut(app gowid.IApp, key *tcell.EventKey) bool {
-	if a.page == pageSettings && isSettingsEditKey(key) {
-		a.markSettingsDirty()
-	}
-
+func (a *tuiApp) handleShortcut(key *tcell.EventKey) bool {
 	if page := pageForShortcut(key.Rune()); page != "" {
-		a.setActivePage(page, app)
+		a.setActivePage(page)
 		return true
 	}
 
@@ -54,6 +51,10 @@ func (a *tuiApp) handleShortcut(app gowid.IApp, key *tcell.EventKey) bool {
 	}
 }
 
+func isProfileEditKey(key *tcell.EventKey) bool {
+	return isSettingsEditKey(key)
+}
+
 func pageForShortcut(shortcut rune) string {
 	for _, tab := range tuiPageTabs() {
 		if tab.shortcut == shortcut {
@@ -63,14 +64,70 @@ func pageForShortcut(shortcut rune) string {
 	return ""
 }
 
-func (a *tuiApp) setActivePage(page string, app gowid.IApp) {
+func (a *tuiApp) setActivePage(page string) {
 	a.page = page
-	a.syncPages(app)
-	if app != nil && a.footer != nil {
-		a.footer.SetText(footerText(page), app)
+	a.syncPages()
+	a.footerStatus = fmt.Sprintf("Page: %s", pageDisplayName(page))
+	a.setFooter(a.footerStatus)
+}
+
+func (a *tuiApp) shiftActivePage(delta int) {
+	tabs := tuiPageTabs()
+	if len(tabs) == 0 {
+		return
+	}
+	index := 0
+	for i, tab := range tabs {
+		if tab.key == a.page {
+			index = i
+			break
+		}
+	}
+	next := (index + delta + len(tabs)) % len(tabs)
+	a.setActivePage(tabs[next].key)
+}
+
+func footerText(page, status string) string {
+	trimmed := strings.TrimSpace(status)
+	if trimmed == "" {
+		trimmed = "Ready"
+	}
+	return fmt.Sprintf("%s | %s", trimmed, pageHint(page))
+}
+
+func pageHint(page string) string {
+	base := "1-6/←→ pages | Tab/↑↓ focus | r refresh | q quit"
+	switch page {
+	case pageProfiles:
+		return "Profiles: select -> Activate/Delay | " + base
+	case pageSubscriptions:
+		return "Subscriptions: select -> Update Selected | " + base
+	case pageNetwork:
+		return "Network: set target/port -> Route Test | " + base
+	case pageSettings:
+		return "Settings: edit fields -> Save Config | " + base
+	case pageLogs:
+		return "Logs: level/source/search filters | " + base
+	default:
+		return "Dashboard: Start/Stop/Restart core | " + base
 	}
 }
 
-func footerText(page string) string {
-	return "Page: " + page + " | r refresh | q quit"
+func pageDisplayName(page string) string {
+	switch page {
+	case pageDashboard:
+		return "Dashboard"
+	case pageProfiles:
+		return "Profiles"
+	case pageSubscriptions:
+		return "Subscriptions"
+	case pageNetwork:
+		return "Network"
+	case pageSettings:
+		return "Settings"
+	case pageLogs:
+		return "Logs"
+	default:
+		return "Dashboard"
+	}
 }

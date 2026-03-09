@@ -1,43 +1,82 @@
 package tui
 
-import (
-	"github.com/gcla/gowid"
-	"github.com/gcla/gowid/widgets/columns"
-	"github.com/gcla/gowid/widgets/divider"
-	"github.com/gcla/gowid/widgets/fill"
-	"github.com/gcla/gowid/widgets/framed"
-	"github.com/gcla/gowid/widgets/pile"
-	"github.com/gcla/gowid/widgets/styled"
-)
+import "github.com/rivo/tview"
 
-func (a *tuiApp) buildProfilesPage() gowid.IWidget {
-	importRow := columns.New([]gowid.IContainerWidget{
-		&gowid.ContainerWidget{IWidget: a.profileImport, D: gowid.RenderWithWeight{W: 1}},
-		spacerCell(),
-		buttonCell(a.actionButton("Import URI", a.importProfileAction)),
-	})
+func (a *tuiApp) buildProfilesPage() builtPage {
+	importBtn := a.actionButton("Import URI", a.importProfileAction)
+	importLoadBtn := a.actionButton("Import+Load", a.importAndLoadProfileAction)
+	activateBtn := a.actionButton("Activate", a.activateProfileAction)
+	batchBtn := a.actionButton("Batch Delay", a.batchDelayProfilesAction)
+	delayBtn := a.actionButton("Delay Test", a.testSelectedProfileDelayAction)
+	deleteBtn := a.actionButton("Delete Selected", a.deleteSelectedProfileAction)
+	loadBtn := a.actionButton("Load Selected", a.loadSelectedProfileEditorAction)
+	resetBtn := a.actionButton("Reset Edit", a.resetProfileEditAction)
+	saveBtn := a.actionButton("Save Edit", a.saveSelectedProfileEditAction)
 
-	actions := columns.New([]gowid.IContainerWidget{
-		buttonCell(a.actionButton("Activate", a.activateProfileAction)),
-		spacerCell(),
-		buttonCell(a.actionButton("Batch Delay", a.batchDelayProfilesAction)),
-		spacerCell(),
-		buttonCell(a.actionButton("Delay Test", a.testSelectedProfileDelayAction)),
-	})
+	importRow := inputRow(a.profileImport, buttonRow(importBtn, importLoadBtn), a.useStackedLayout(), 5, 4)
+	actions := buttonRow(activateBtn, batchBtn, delayBtn, deleteBtn)
+	editActions := buttonRow(loadBtn, resetBtn, saveBtn)
+	if a.useStackedLayout() {
+		actions = buttonColumn(activateBtn, batchBtn, delayBtn, deleteBtn)
+		editActions = buttonColumn(loadBtn, resetBtn, saveBtn)
+	}
 
-	body := columns.New([]gowid.IContainerWidget{
-		&gowid.ContainerWidget{IWidget: framed.NewUnicode(a.profilesListHolder), D: gowid.RenderWithWeight{W: 2}},
-		&gowid.ContainerWidget{IWidget: fill.New(' '), D: gowid.RenderWithUnits{U: 1}},
-		&gowid.ContainerWidget{IWidget: framed.NewUnicode(a.profileDetail), D: gowid.RenderWithWeight{W: 3}},
-	})
+	editorForm := tview.NewFlex().SetDirection(tview.FlexRow)
+	editorForm.AddItem(a.profileEditStatus, 1, 0, false)
+	editorForm.AddItem(verticalSpacer(1), 1, 0, false)
+	for _, field := range []*inputWidget{
+		a.profileEditName,
+		a.profileEditAddress,
+		a.profileEditPort,
+		a.profileEditNetwork,
+		a.profileEditTLS,
+		a.profileEditSNI,
+		a.profileEditFingerprint,
+		a.profileEditALPN,
+		a.profileEditRealityPK,
+		a.profileEditRealitySID,
+		a.profileEditWSPath,
+		a.profileEditGRPCSvc,
+	} {
+		editorForm.AddItem(field, 1, 0, false)
+	}
 
-	return pile.New([]gowid.IContainerWidget{
-		&gowid.ContainerWidget{IWidget: importRow, D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: divider.NewBlank(), D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: styled.New(a.profileBatchStatus, gowid.MakePaletteRef("muted")), D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: divider.NewBlank(), D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: actions, D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: divider.NewBlank(), D: gowid.RenderFlow{}},
-		&gowid.ContainerWidget{IWidget: body, D: gowid.RenderWithWeight{W: 1}},
-	})
+	right := splitContent(
+		a.useStackedLayout(),
+		wrapPanel("Selected Profile", a.profileDetail),
+		wrapPanel("Profile Editor", editorForm),
+		4,
+		5,
+	)
+	body := splitContent(
+		a.useStackedLayout(),
+		wrapPanel("Profiles", a.profilesList),
+		right,
+		4,
+		7,
+	)
+
+	root := tview.NewFlex().SetDirection(tview.FlexRow)
+	root.AddItem(newMutedText("Import URL then edit network params (network/ws/tls/sni/grpc) before saving"), 1, 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
+	root.AddItem(importRow, 3, 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
+	root.AddItem(a.profileBatchStatus, 1, 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
+	root.AddItem(actions, 3, 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
+	root.AddItem(a.profileDeleteConfirm, 1, 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
+	root.AddItem(editActions, 3, 0, false)
+	root.AddItem(verticalSpacer(1), 1, 0, false)
+	root.AddItem(body, 0, 1, false)
+
+	return builtPage{
+		root: root,
+		focusables: joinFocusables(
+			primitivesToFocusables(a.profileImport),
+			buttonsToFocusables(importBtn, importLoadBtn, activateBtn, batchBtn, delayBtn, deleteBtn, loadBtn, resetBtn, saveBtn),
+			primitivesToFocusables(a.profilesList, a.profileDeleteConfirm, a.profileEditName, a.profileEditAddress, a.profileEditPort, a.profileEditNetwork, a.profileEditTLS, a.profileEditSNI, a.profileEditFingerprint, a.profileEditALPN, a.profileEditRealityPK, a.profileEditRealitySID, a.profileEditWSPath, a.profileEditGRPCSvc, a.profileDetail),
+		),
+	}
 }

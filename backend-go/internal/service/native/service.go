@@ -15,7 +15,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"v2raye/backend-go/internal/domain"
@@ -28,6 +27,8 @@ const (
 	tunPolicyRulePriorityMin = 10000
 	tunPolicyRulePriorityMax = 10199
 )
+
+var lookupIPForTunBypass = net.LookupIP
 
 // Service implements service.BackendService by managing a real Xray process.
 type Service struct {
@@ -107,12 +108,7 @@ func (s *Service) StartCore() domain.CoreStatus {
 			log.Printf("[native] StartCore: persist selected profile failed: %v", err)
 		}
 	}
-	useEmbedded, mode, resolved := selectCoreEngine(cfg, routing, selectedProfile)
-	_ = useEmbedded
-
-	if mode == "auto" && selectedProfile != nil {
-		log.Printf("[native] StartCore: auto mode selected xray-core engine for profile protocol=%s", selectedProfile.Protocol)
-	}
+	_, _, resolved := selectCoreEngine(cfg, routing, selectedProfile)
 
 	profile, err := s.findProfile(state.CurrentProfileID)
 	if err != nil {
@@ -162,9 +158,7 @@ func (s *Service) StartCore() domain.CoreStatus {
 		return s.buildStatus()
 	}
 
-	s.proc = nil
 	s.xrayCore = xrayCore
-	s.trackedPID = 0
 	s.running = true
 	s.watchdogRestartAttempts = 0
 	s.watchdogRestartScheduled = false
@@ -207,12 +201,9 @@ func (s *Service) StartCore() domain.CoreStatus {
 
 func (s *Service) StopCore() domain.CoreStatus {
 	s.mu.Lock()
-	proc := s.proc
 	xrayCore := s.xrayCore
-	s.proc = nil
 	s.xrayCore = nil
 	s.running = false
-	s.trackedPID = 0
 	s.watchdogRestartAttempts = 0
 	s.watchdogRestartScheduled = false
 	s.watchdogRestarting = false
@@ -224,9 +215,6 @@ func (s *Service) StopCore() domain.CoreStatus {
 	}
 	s.mu.Unlock()
 
-	if proc != nil && proc.Process != nil {
-		killGraceful(proc)
-	}
 	if xrayCore != nil {
 		_ = xrayCore.Close()
 	}
@@ -1264,22 +1252,8 @@ func (s *Service) checkProcExited() {
 	if s.xrayCore != nil && !s.xrayCore.IsRunning() {
 		s.xrayCore = nil
 		s.running = false
-		s.trackedPID = 0
 		s.coreStartedAt = time.Time{}
 		s.setCoreError("xray-core instance exited")
-		s.clearTunRouting()
-		s.clearSystemProxyOnCoreStop()
-		if s.stats != nil {
-			s.stats.shutdown()
-			s.stats = nil
-		}
-	}
-	if s.proc != nil && s.proc.ProcessState != nil && s.proc.ProcessState.Exited() {
-		s.proc = nil
-		s.running = false
-		s.trackedPID = 0
-		s.coreStartedAt = time.Time{}
-		s.setCoreError("core process exited")
 		s.clearTunRouting()
 		s.clearSystemProxyOnCoreStop()
 		if s.stats != nil {
@@ -1460,21 +1434,6 @@ func (s *Service) findProfile(id string) (domain.ProfileItem, error) {
 	return profiles[0], nil
 }
 
-func (s *Service) resolveXrayCmd(cfg map[string]interface{}) string {
-	if s.xrayCmd != "" {
-		return s.xrayCmd
-	}
-	return strCfg(cfg, "xrayCmd", "xray")
-}
-
-func useEmbeddedCore(cfg map[string]interface{}) bool {
-	mode := strings.ToLower(strings.TrimSpace(strCfg(cfg, "coreEngine", "embedded")))
-	if mode == "" {
-		mode = "embedded"
-	}
-	return mode == "embedded" || mode == "builtin" || mode == "internal"
-}
-
 func selectCoreEngine(cfg map[string]interface{}, routing domain.RoutingConfig, profile *domain.ProfileItem) (bool, string, string) {
 	mode := strings.ToLower(strings.TrimSpace(strCfg(cfg, "coreEngine", "xray-core")))
 	switch mode {
@@ -1501,27 +1460,6 @@ func (s *Service) pickSelectedProfile(currentID string) *domain.ProfileItem {
 	}
 	p := profiles[0]
 	return &p
-}
-
-func (s *Service) waitProc(cmd *exec.Cmd) {
-	_ = cmd.Wait()
-	s.mu.Lock()
-	if s.proc == cmd {
-		s.proc = nil
-		s.running = false
-		s.trackedPID = 0
-		s.coreStartedAt = time.Time{}
-		s.setCoreError("core process exited")
-		s.clearTunRouting()
-		s.clearSystemProxyOnCoreStop()
-		if s.stats != nil {
-			s.stats.shutdown()
-			s.stats = nil
-		}
-	}
-	s.mu.Unlock()
-	log.Printf("[native] core process exited")
-	_ = s.saveState(true)
 }
 
 func (s *Service) setCoreError(message string) {
@@ -1721,9 +1659,6 @@ func (s *Service) setupTunRouting(cfg map[string]interface{}) error {
 	if out, err := exec.Command("ip", "route", "replace", "default", "dev", tunName).CombinedOutput(); err != nil {
 		return fmt.Errorf("replace default route with %s failed: %w (%s)", tunName, err, strings.TrimSpace(string(out)))
 	}
-	if err := s.setupTunDnsRouting(cfg, tunName); err != nil {
-		log.Printf("[native] setupTunDnsRouting: %v", err)
-	}
 	s.tunRestoreRoutes = append([]string(nil), restoreRoutes...)
 	s.persistTunRestoreRoutes(s.tunRestoreRoutes, tunName)
 	return nil
@@ -1778,45 +1713,6 @@ func (s *Service) setupTunPolicyRouting(cfg map[string]interface{}, profile *dom
 	return nil
 }
 
-func (s *Service) setupTunDnsRouting(cfg map[string]interface{}, tunName string) error {
-	if runtime.GOOS != "linux" || !hasCommand("ip") {
-		return nil
-	}
-	dnsServers := []string{"1.1.1.1", "8.8.8.8"}
-	if dnsList, ok := cfg["dnsList"].([]interface{}); ok {
-		for _, item := range dnsList {
-			if s, ok := item.(string); ok && s != "" {
-				dnsServers = append(dnsServers, s)
-			}
-		}
-	}
-	for _, dns := range dnsServers {
-		if out, err := exec.Command("ip", "route", "add", dns, "via", "0.0.0.0", "dev", tunName).CombinedOutput(); err != nil {
-			log.Printf("[native] setupTunDnsRouting: add route for %s failed (may already exist): %v", dns, strings.TrimSpace(string(out)))
-		}
-	}
-	return nil
-}
-
-func (s *Service) clearTunDnsRouting(cfg map[string]interface{}, tunName string) {
-	if runtime.GOOS != "linux" || !hasCommand("ip") {
-		return
-	}
-	dnsServers := []string{"1.1.1.1", "8.8.8.8"}
-	if dnsList, ok := cfg["dnsList"].([]interface{}); ok {
-		for _, item := range dnsList {
-			if s, ok := item.(string); ok && s != "" {
-				dnsServers = append(dnsServers, s)
-			}
-		}
-	}
-	for _, dns := range dnsServers {
-		if out, err := exec.Command("ip", "route", "del", dns, "dev", tunName).CombinedOutput(); err != nil {
-			log.Printf("[native] clearTunDnsRouting: remove route for %s failed: %v", dns, strings.TrimSpace(string(out)))
-		}
-	}
-}
-
 func (s *Service) clearTunRouting() {
 	if runtime.GOOS != "linux" || !hasCommand("ip") {
 		s.tunRestoreRoutes = nil
@@ -1828,7 +1724,6 @@ func (s *Service) clearTunRouting() {
 	if err := s.clearManagedTunPolicyRouting(cfg, &tunName); err != nil {
 		log.Printf("[native] clear managed TUN policy routing failed: %v", err)
 	}
-	s.clearTunDnsRouting(cfg, tunName)
 	routes := sanitizeTunRestoreRoutes(s.tunRestoreRoutes, tunName)
 	if len(routes) == 0 {
 		routes = sanitizeTunRestoreRoutes(s.loadPersistedTunRestoreRoutes(), tunName)
@@ -2033,7 +1928,7 @@ func buildTunPolicyBypassRules(mainRoutes []string, cfg map[string]interface{}, 
 		add(fields[0])
 	}
 	if profile != nil {
-		if prefix, ok := parseIPv4Prefix(profile.Address); ok {
+		for _, prefix := range resolveProfileBypassPrefixes(profile) {
 			add(prefix)
 		}
 	}
@@ -2048,6 +1943,40 @@ func buildTunPolicyBypassRules(mainRoutes []string, cfg map[string]interface{}, 
 		}
 	}
 	return rules
+}
+
+func resolveProfileBypassPrefixes(profile *domain.ProfileItem) []string {
+	if profile == nil {
+		return nil
+	}
+	if prefix, ok := parseIPv4Prefix(profile.Address); ok {
+		return []string{prefix}
+	}
+	host := strings.TrimSpace(profile.Address)
+	if host == "" {
+		return nil
+	}
+	addrs, err := lookupIPForTunBypass(host)
+	if err != nil {
+		log.Printf("[native] resolveProfileBypassPrefixes: lookup %s failed: %v", host, err)
+		return nil
+	}
+	seen := make(map[string]struct{}, len(addrs))
+	prefixes := make([]string, 0, len(addrs))
+	for _, addr := range addrs {
+		if addr == nil {
+			continue
+		}
+		if ip4 := addr.To4(); ip4 != nil {
+			prefix := ip4.String() + "/32"
+			if _, ok := seen[prefix]; ok {
+				continue
+			}
+			seen[prefix] = struct{}{}
+			prefixes = append(prefixes, prefix)
+		}
+	}
+	return prefixes
 }
 
 func parseIPv4Prefix(raw string) (string, bool) {
@@ -2181,23 +2110,6 @@ func waitForNetworkInterface(name string, timeout time.Duration) error {
 	return fmt.Errorf("timed out waiting for TUN interface %s", name)
 }
 
-func killGraceful(cmd *exec.Cmd) {
-	if cmd.Process == nil {
-		return
-	}
-	_ = cmd.Process.Signal(syscall.SIGTERM)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		_, _ = cmd.Process.Wait()
-	}()
-	select {
-	case <-done:
-	case <-time.After(800 * time.Millisecond):
-		_ = cmd.Process.Signal(syscall.SIGKILL)
-	}
-}
-
 func validateProfile(p domain.ProfileItem) error {
 	if strings.TrimSpace(p.Name) == "" || strings.TrimSpace(p.Address) == "" || p.Port <= 0 {
 		return service.ErrInvalidMode
@@ -2210,14 +2122,6 @@ func validateProfile(p domain.ProfileItem) error {
 		return service.ErrInvalidMode
 	}
 	return nil
-}
-
-func processExists(pid int) bool {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	return proc.Signal(syscall.Signal(0)) == nil
 }
 
 func annotateTunStartError(err error, cfg map[string]interface{}) string {

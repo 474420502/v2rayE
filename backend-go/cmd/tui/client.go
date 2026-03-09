@@ -230,6 +230,22 @@ func (c *apiClient) ImportProfile(ctx context.Context, uri string) (ProfileItem,
 	return out, err
 }
 
+func (c *apiClient) GetProfile(ctx context.Context, id string) (ProfileItem, error) {
+	var out ProfileItem
+	err := c.request(ctx, http.MethodGet, "/api/profiles/"+url.PathEscape(id), nil, &out)
+	return out, err
+}
+
+func (c *apiClient) UpdateProfile(ctx context.Context, id string, profile ProfileItem) (ProfileItem, error) {
+	var out ProfileItem
+	err := c.request(ctx, http.MethodPut, "/api/profiles/"+url.PathEscape(id), profile, &out)
+	return out, err
+}
+
+func (c *apiClient) DeleteProfile(ctx context.Context, id string) error {
+	return c.request(ctx, http.MethodDelete, "/api/profiles/"+url.PathEscape(id), nil, nil)
+}
+
 func (c *apiClient) GetSubscriptions(ctx context.Context) ([]SubscriptionItem, error) {
 	var out []SubscriptionItem
 	err := c.request(ctx, http.MethodGet, "/api/subscriptions", nil, &out)
@@ -277,6 +293,12 @@ func (c *apiClient) UpdateConfig(ctx context.Context, cfg map[string]any) (map[s
 func (c *apiClient) GetRouting(ctx context.Context) (RoutingConfig, error) {
 	var out RoutingConfig
 	err := c.request(ctx, http.MethodGet, "/api/routing", nil, &out)
+	return out, err
+}
+
+func (c *apiClient) UpdateRouting(ctx context.Context, routing RoutingConfig) (RoutingConfig, error) {
+	var out RoutingConfig
+	err := c.request(ctx, http.MethodPut, "/api/routing", routing, &out)
 	return out, err
 }
 

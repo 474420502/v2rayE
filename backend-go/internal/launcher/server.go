@@ -28,7 +28,7 @@ func RunServer(ctx context.Context, opts ServerOptions) error {
 	}
 
 	svc := native.New(opts.DataDir, opts.XrayCmd, store)
-	server := httpapi.New(opts.Addr, strings.TrimSpace(opts.Token), svc)
+	server := httpapi.New(opts.Addr, opts.Token, svc)
 
 	restoreOnBoot := opts.RestoreOnBoot
 	if !restoreOnBoot {

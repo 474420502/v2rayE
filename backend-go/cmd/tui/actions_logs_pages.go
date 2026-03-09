@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/gcla/gowid"
+	"github.com/rivo/tview"
 )
 
 func (a *tuiApp) logLevelAction(level string) func(context.Context) error {
@@ -31,7 +31,7 @@ func (a *tuiApp) applyLogSearchAction(context.Context) error {
 
 func (a *tuiApp) clearLogSearchAction(context.Context) error {
 	a.storeLogSearchQuery("")
-	a.runUI(func(app gowid.IApp) {
+	a.runUI(func(app *tview.Application) {
 		a.logsSearchInput.SetText("", app)
 	})
 	a.refreshLogsWidget()
