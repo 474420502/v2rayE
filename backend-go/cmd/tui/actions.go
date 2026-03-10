@@ -19,6 +19,73 @@ func (a *tuiApp) attachApp(app *tview.Application) {
 }
 
 func (a *tuiApp) handler(event *tcell.EventKey) *tcell.EventKey {
+	if a.app != nil {
+		// 将 DropDown 当作按钮：仅 Enter 打开覆盖层选择菜单。
+		if dropdown, ok := focusedDropDownFromPrimitive(a.app.GetFocus()); ok {
+			a.lastDropdownFocus = dropdown
+			if event.Key() == tcell.KeyEnter {
+				a.dropdownCancelValue = a.dropdownCurrentValue(dropdown)
+				a.dropdownCancelArmed = true
+				if widget, ok := focusedDropdownWidgetFromPrimitive(a.app.GetFocus()); ok {
+					a.openDropdownSelectDialog(widget)
+					return nil
+				}
+			}
+		}
+
+		// 检查焦点是否在 DropDown 的内部 List 上
+		// tview 的 DropDown 在打开选择列表时会将焦点切换到内部的 List
+		if list, ok := a.app.GetFocus().(*tview.List); ok && !a.isStandaloneListWidget(list) {
+			// 这是一个下拉菜单的内部列表
+			switch event.Key() {
+			case tcell.KeyEsc:
+				// 用户按 ESC 关闭选择列表
+				if a.lastDropdownFocus != nil {
+					// 如果之前按下了 Enter（armed），则恢复原始值
+					if a.dropdownCancelArmed {
+						a.restoreDropdownValue(a.lastDropdownFocus, a.dropdownCancelValue)
+					}
+					a.dropdownCancelArmed = false
+				}
+				// 交给 tview 继续处理 ESC，确保下拉内部状态被正确关闭。
+				return event
+			case tcell.KeyEnter:
+				// 用户在列表中按 Enter 选择选项
+				// 焦点会自动回到 DropDown，不需要额外处理
+				a.dropdownCancelArmed = false
+			case tcell.KeyTAB:
+				// Tab 切换到下一个焦点项
+				if a.lastDropdownFocus != nil {
+					a.dropdownCancelArmed = false
+					a.app.SetFocus(a.lastDropdownFocus)
+					a.cycleFocus(false)
+					return nil
+				}
+			case tcell.KeyBacktab:
+				// Backtab 切换到上一个焦点项
+				if a.lastDropdownFocus != nil {
+					a.dropdownCancelArmed = false
+					a.app.SetFocus(a.lastDropdownFocus)
+					a.cycleFocus(true)
+					return nil
+				}
+			case tcell.KeyLeft, tcell.KeyRight:
+				// 下拉列表仅接受上下导航，忽略左右键。
+				return nil
+			}
+		}
+	}
+
+	if a.dropdownSelectVisible.Load() {
+		if event.Key() == tcell.KeyEsc {
+			a.closeDropdownSelectDialog(true)
+			return nil
+		}
+		return event
+	}
+
+	// Esc handling must be layered from top-most overlays to base layout.
+	// Keep this ordering: close visible dialogs first, then fallback to sidebar back.
 	if a.commandPaletteVisible.Load() {
 		switch event.Key() {
 		case tcell.KeyEsc, tcell.KeyCtrlP:
@@ -70,6 +137,11 @@ func (a *tuiApp) handler(event *tcell.EventKey) *tcell.EventKey {
 	}
 
 	switch event.Key() {
+	case tcell.KeyEsc:
+		if !a.focusIsSidebar() {
+			a.focusSidebarSelected()
+		}
+		return nil
 	case tcell.KeyCtrlC:
 		a.cancel()
 		if a.app != nil {
@@ -132,6 +204,87 @@ func (a *tuiApp) handler(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 	return event
+}
+
+func (a *tuiApp) isStandaloneListWidget(list *tview.List) bool {
+	switch list {
+	case a.profilesList, a.subscriptionsList, a.commandPalette, a.profileActionsMenu, a.proxyUserSelectMenu, a.dropdownSelectMenu:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *tuiApp) dropdownCurrentValue(dropdown *tview.DropDown) string {
+	if dropdown == nil {
+		return ""
+	}
+	for _, widget := range []*dropdownWidget{
+		a.logsLevelSelect,
+		a.logsSourceSelect,
+		a.profileEditNetwork,
+		a.profileEditTLS,
+		a.profileEditSkipCert,
+		a.profileEditGRPCMode,
+		a.profileEditVMessSec,
+		a.profileEditVLESSEnc,
+		a.profileEditHy2Insecure,
+		a.profileEditTuicCC,
+		a.profileEditTuicInsec,
+		a.networkRoutingMode,
+		a.networkDomainStrategy,
+		a.networkLocalBypass,
+		a.settingsLanguage,
+		a.settingsTunMode,
+		a.settingsTunAutoRoute,
+		a.settingsTunStrict,
+		a.settingsProxyMode,
+		a.settingsCoreEngine,
+		a.settingsLogLevel,
+		a.settingsSkipCert,
+		a.settingsDNSMode,
+	} {
+		if widget != nil && widget.DropDown == dropdown {
+			return widget.Text()
+		}
+	}
+	return ""
+}
+
+func (a *tuiApp) restoreDropdownValue(dropdown *tview.DropDown, value string) {
+	if dropdown == nil {
+		return
+	}
+	for _, widget := range []*dropdownWidget{
+		a.logsLevelSelect,
+		a.logsSourceSelect,
+		a.profileEditNetwork,
+		a.profileEditTLS,
+		a.profileEditSkipCert,
+		a.profileEditGRPCMode,
+		a.profileEditVMessSec,
+		a.profileEditVLESSEnc,
+		a.profileEditHy2Insecure,
+		a.profileEditTuicCC,
+		a.profileEditTuicInsec,
+		a.networkRoutingMode,
+		a.networkDomainStrategy,
+		a.networkLocalBypass,
+		a.settingsLanguage,
+		a.settingsTunMode,
+		a.settingsTunAutoRoute,
+		a.settingsTunStrict,
+		a.settingsProxyMode,
+		a.settingsCoreEngine,
+		a.settingsLogLevel,
+		a.settingsSkipCert,
+		a.settingsDNSMode,
+	} {
+		if widget != nil && widget.DropDown == dropdown {
+			widget.SetText(value, a.app)
+			return
+		}
+	}
 }
 
 func isSettingsEditKey(key *tcell.EventKey) bool {
@@ -239,4 +392,58 @@ func (a *tuiApp) focusHandlesDirectionalKeys() bool {
 	default:
 		return false
 	}
+}
+
+func (a *tuiApp) focusIsSidebar() bool {
+	if a.app == nil || a.sidebar == nil {
+		return false
+	}
+	current := a.app.GetFocus()
+	for _, primitive := range a.sidebar.GetFocusables() {
+		if primitive == current {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *tuiApp) focusSidebarSelected() bool {
+	if a.app == nil || a.sidebar == nil {
+		return false
+	}
+	buttons := a.sidebar.GetAllButtons()
+	if len(buttons) == 0 {
+		return false
+	}
+	index := a.sidebar.GetSelectedIndex()
+	if index < 0 || index >= len(buttons) {
+		index = 0
+	}
+	if buttons[index] == nil {
+		return false
+	}
+	a.app.SetFocus(buttons[index])
+	return true
+}
+
+func focusedDropDownFromPrimitive(primitive tview.Primitive) (*tview.DropDown, bool) {
+	switch widget := primitive.(type) {
+	case *tview.DropDown:
+		return widget, true
+	case *dropdownWidget:
+		if widget.DropDown == nil {
+			return nil, false
+		}
+		return widget.DropDown, true
+	default:
+		return nil, false
+	}
+}
+
+func focusedDropdownWidgetFromPrimitive(primitive tview.Primitive) (*dropdownWidget, bool) {
+	widget, ok := primitive.(*dropdownWidget)
+	if !ok || widget == nil {
+		return nil, false
+	}
+	return widget, true
 }

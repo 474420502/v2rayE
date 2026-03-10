@@ -26,7 +26,7 @@ func (a *tuiApp) openCommandPalette() {
 		a.paletteActionsCache = a.paletteActions()
 
 		a.commandPaletteInput = tview.NewInputField()
-		a.commandPaletteInput.SetLabel("Search: ")
+		a.commandPaletteInput.SetLabel(a.t("palette.search"))
 		a.commandPaletteInput.SetFieldWidth(0)
 		a.commandPaletteInput.SetFieldTextColor(editableValueColor)
 		a.commandPaletteInput.SetLabelColor(editableLabelColor)
@@ -47,7 +47,7 @@ func (a *tuiApp) openCommandPalette() {
 		a.commandPalette = tview.NewList()
 		a.commandPalette.ShowSecondaryText(true)
 		a.commandPalette.SetBorder(true)
-		a.commandPalette.SetTitle(" Actions ")
+		a.commandPalette.SetTitle(" " + a.t("palette.title.actions") + " ")
 		a.commandPalette.SetMainTextColor(editableValueColor)
 		a.commandPalette.SetSecondaryTextColor(tcell.ColorLightGray)
 		a.commandPalette.SetSelectedTextColor(tcell.ColorBlack)
@@ -71,7 +71,7 @@ func (a *tuiApp) openCommandPalette() {
 
 		container := tview.NewFlex().SetDirection(tview.FlexRow)
 		container.SetBorder(true)
-		container.SetTitle(" Command Palette ")
+		container.SetTitle(" " + a.t("palette.title.command") + " ")
 		container.AddItem(a.commandPaletteInput, 1, 0, true)
 		container.AddItem(verticalSpacer(1), 1, 0, false)
 		container.AddItem(a.commandPalette, 0, 1, false)
@@ -80,7 +80,7 @@ func (a *tuiApp) openCommandPalette() {
 		a.pageHolder.AddPage(commandPalettePage, overlay, true, true)
 		a.commandPaletteVisible.Store(true)
 		app.SetFocus(a.commandPaletteInput)
-		a.footerStatus = "Command palette: type to filter, Enter run, Esc close"
+		a.footerStatus = a.t("palette.footer.hint")
 		a.refreshFooter()
 	})
 }
@@ -132,7 +132,7 @@ func (a *tuiApp) refreshCommandPaletteItems(filter string) {
 	}
 
 	if count == 0 {
-		a.commandPalette.AddItem("No matching actions", "Try another keyword", 0, nil)
+		a.commandPalette.AddItem(a.t("palette.empty.main"), a.t("palette.empty.secondary"), 0, nil)
 	}
 }
 
@@ -144,50 +144,50 @@ func (a *tuiApp) paletteActions() []paletteAction {
 	}
 
 	actions := []paletteAction{
-		{main: "Go Dashboard", secondary: "Switch to page 1", run: func() { a.setActivePage(pageDashboard) }},
-		{main: "Go Profiles", secondary: "Switch to page 2", run: func() { a.setActivePage(pageProfiles) }},
-		{main: "Go Subscriptions", secondary: "Switch to page 3", run: func() { a.setActivePage(pageSubscriptions) }},
-		{main: "Go Network", secondary: "Switch to page 4", run: func() { a.setActivePage(pageNetwork) }},
-		{main: "Go Settings", secondary: "Switch to page 5", run: func() { a.setActivePage(pageSettings) }},
-		{main: "Go Logs", secondary: "Switch to page 6", run: func() { a.setActivePage(pageLogs) }},
-		{main: "Refresh All", secondary: "Reload overview/profiles/subscriptions/network", run: runAction("refresh", a.refreshAllAction)},
-		{main: "Core Start", secondary: "Start service core", run: runAction("start", a.startCoreAction)},
-		{main: "Core Stop", secondary: "Stop service core", run: runAction("stop", a.stopCoreAction)},
-		{main: "Core Restart", secondary: "Restart service core", run: runAction("restart", a.restartCoreAction)},
+		{main: a.tf("palette.main.goPage", a.t("page.dashboard")), secondary: a.tf("palette.secondary.switchPage", 1), run: func() { a.setActivePage(pageDashboard) }},
+		{main: a.tf("palette.main.goPage", a.t("page.profiles")), secondary: a.tf("palette.secondary.switchPage", 2), run: func() { a.setActivePage(pageProfiles) }},
+		{main: a.tf("palette.main.goPage", a.t("page.subscriptions")), secondary: a.tf("palette.secondary.switchPage", 3), run: func() { a.setActivePage(pageSubscriptions) }},
+		{main: a.tf("palette.main.goPage", a.t("page.network")), secondary: a.tf("palette.secondary.switchPage", 4), run: func() { a.setActivePage(pageNetwork) }},
+		{main: a.tf("palette.main.goPage", a.t("page.settings")), secondary: a.tf("palette.secondary.switchPage", 5), run: func() { a.setActivePage(pageSettings) }},
+		{main: a.tf("palette.main.goPage", a.t("page.logs")), secondary: a.tf("palette.secondary.switchPage", 6), run: func() { a.setActivePage(pageLogs) }},
+		{main: a.t("palette.main.refreshAll"), secondary: a.t("palette.secondary.refreshAll"), run: runAction(a.t("action.refresh"), a.refreshAllAction)},
+		{main: a.t("palette.main.coreStart"), secondary: a.t("palette.secondary.coreStart"), run: runAction(a.t("dashboard.btn.start"), a.startCoreAction)},
+		{main: a.t("palette.main.coreStop"), secondary: a.t("palette.secondary.coreStop"), run: runAction(a.t("dashboard.btn.stop"), a.stopCoreAction)},
+		{main: a.t("palette.main.coreRestart"), secondary: a.t("palette.secondary.coreRestart"), run: runAction(a.t("dashboard.btn.restart"), a.restartCoreAction)},
 	}
 
 	switch a.page {
 	case pageProfiles:
 		actions = append(actions,
-			paletteAction{main: "Profiles: Import URL", secondary: "Open URL import dialog", run: runAction("import url", a.openImportProfileDialogAction)},
-			paletteAction{main: "Profiles: Import Clipboard", secondary: "Import profile from clipboard content", run: runAction("import clipboard", a.importProfileFromClipboardAction)},
-			paletteAction{main: "Profiles: Batch Delay", secondary: "Run delay test for all profiles", run: runAction("batch delay", a.batchDelayProfilesAction)},
-			paletteAction{main: "Profiles: Activate Selected", secondary: "Activate highlighted profile", run: runAction("activate", a.activateProfileAction)},
-			paletteAction{main: "Profiles: Delay Test", secondary: "Test selected profile delay", run: runAction("delay test", a.testSelectedProfileDelayAction)},
-			paletteAction{main: "Profiles: Save Edit", secondary: "Persist editor fields to backend", run: runAction("save edit", a.saveSelectedProfileEditAction)},
+			paletteAction{main: a.t("palette.main.profiles.importURL"), secondary: a.t("palette.secondary.profiles.importURL"), run: runAction(a.t("profiles.btn.importURL"), a.openImportProfileDialogAction)},
+			paletteAction{main: a.t("palette.main.profiles.importClipboard"), secondary: a.t("palette.secondary.profiles.importClipboard"), run: runAction(a.t("profiles.btn.importClipboard"), a.importProfileFromClipboardAction)},
+			paletteAction{main: a.t("palette.main.profiles.batchDelay"), secondary: a.t("palette.secondary.profiles.batchDelay"), run: runAction(a.t("profiles.btn.batchDelay"), a.batchDelayProfilesAction)},
+			paletteAction{main: a.t("palette.main.profiles.activate"), secondary: a.t("palette.secondary.profiles.activate"), run: runAction(a.t("action.activateProfile"), a.activateProfileAction)},
+			paletteAction{main: a.t("palette.main.profiles.delayTest"), secondary: a.t("palette.secondary.profiles.delayTest"), run: runAction(a.t("menu.profile.delay"), a.testSelectedProfileDelayAction)},
+			paletteAction{main: a.t("palette.main.profiles.saveEdit"), secondary: a.t("palette.secondary.profiles.saveEdit"), run: runAction(a.t("dialog.common.save"), a.saveSelectedProfileEditAction)},
 		)
 	case pageSubscriptions:
 		actions = append(actions,
-			paletteAction{main: "Subscriptions: Update Selected", secondary: "Pull selected subscription source", run: runAction("update selected", a.updateSelectedSubscriptionAction)},
-			paletteAction{main: "Subscriptions: Update All", secondary: "Pull all subscription sources", run: runAction("update all", a.updateAllSubscriptionsAction)},
+			paletteAction{main: a.t("palette.main.subs.updateSelected"), secondary: a.t("palette.secondary.subs.updateSelected"), run: runAction(a.t("subs.btn.updateSelected"), a.updateSelectedSubscriptionAction)},
+			paletteAction{main: a.t("palette.main.subs.updateAll"), secondary: a.t("palette.secondary.subs.updateAll"), run: runAction(a.t("subs.btn.updateAll"), a.updateAllSubscriptionsAction)},
 		)
 	case pageNetwork:
 		actions = append(actions,
-			paletteAction{main: "Network: Save Routing", secondary: "Apply current routing target fields", run: runAction("save routing", a.saveRoutingModeAction)},
-			paletteAction{main: "Network: Route Test", secondary: "Run routing diagnosis for target", run: runAction("route test", a.routeTestAction)},
-			paletteAction{main: "Network: Repair TUN", secondary: "Run TUN repair command", run: runAction("repair tun", a.repairTunAction)},
+			paletteAction{main: a.t("palette.main.network.saveRouting"), secondary: a.t("palette.secondary.network.saveRouting"), run: runAction(a.t("network.btn.saveRouting"), a.saveRoutingModeAction)},
+			paletteAction{main: a.t("palette.main.network.routeTest"), secondary: a.t("palette.secondary.network.routeTest"), run: runAction(a.t("network.btn.routeTest"), a.routeTestAction)},
+			paletteAction{main: a.t("palette.main.network.repairTun"), secondary: a.t("palette.secondary.network.repairTun"), run: runAction(a.t("network.btn.repairTun"), a.repairTunAction)},
 		)
 	case pageSettings:
 		actions = append(actions,
-			paletteAction{main: "Settings: Save Config", secondary: "Apply config editor fields", run: runAction("save config", a.saveConfigAction)},
-			paletteAction{main: "Settings: Clear Core Error", secondary: "Clear backend core error state", run: runAction("clear core error", a.clearCoreErrorAction)},
-			paletteAction{main: "Settings: UI Language Chinese", secondary: "Switch interface to Chinese", run: runAction("lang zh", a.selectUILanguageChineseAction)},
-			paletteAction{main: "Settings: UI Language English", secondary: "Switch interface to English", run: runAction("lang en", a.selectUILanguageEnglishAction)},
+			paletteAction{main: a.t("palette.main.settings.saveConfig"), secondary: a.t("palette.secondary.settings.saveConfig"), run: runAction(a.t("settings.btn.saveConfig"), a.saveConfigAction)},
+			paletteAction{main: a.t("palette.main.settings.clearCoreError"), secondary: a.t("palette.secondary.settings.clearCoreError"), run: runAction(a.t("settings.btn.clearCoreError"), a.clearCoreErrorAction)},
+			paletteAction{main: a.t("palette.main.settings.langZH"), secondary: a.t("palette.secondary.settings.langZH"), run: runAction(a.t("settings.lang.chinese"), a.selectUILanguageChineseAction)},
+			paletteAction{main: a.t("palette.main.settings.langEN"), secondary: a.t("palette.secondary.settings.langEN"), run: runAction(a.t("settings.lang.english"), a.selectUILanguageEnglishAction)},
 		)
 	case pageLogs:
 		actions = append(actions,
-			paletteAction{main: "Logs: Apply Search", secondary: "Apply current search text", run: runAction("apply search", a.applyLogSearchAction)},
-			paletteAction{main: "Logs: Clear Search", secondary: "Reset search filter", run: runAction("clear search", a.clearLogSearchAction)},
+			paletteAction{main: a.t("palette.main.logs.applySearch"), secondary: a.t("palette.secondary.logs.applySearch"), run: runAction(a.t("logs.btn.applySearch"), a.applyLogSearchAction)},
+			paletteAction{main: a.t("palette.main.logs.clearSearch"), secondary: a.t("palette.secondary.logs.clearSearch"), run: runAction(a.t("logs.btn.clearSearch"), a.clearLogSearchAction)},
 		)
 	}
 

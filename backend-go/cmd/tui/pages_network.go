@@ -3,6 +3,20 @@ package tui
 import "github.com/rivo/tview"
 
 func (a *tuiApp) buildNetworkPage() builtPage {
+	buildGroupPanel := func(title string, rows ...struct {
+		primitive tview.Primitive
+		height    int
+	}) tview.Primitive {
+		content := tview.NewFlex().SetDirection(tview.FlexRow)
+		for idx, row := range rows {
+			content.AddItem(row.primitive, row.height, 0, false)
+			if idx != len(rows)-1 {
+				content.AddItem(verticalSpacer(1), 1, 0, false)
+			}
+		}
+		return wrapPanel(title, content)
+	}
+
 	checkBtn := a.actionButton(a.t("network.btn.check"), a.reloadOverviewAction)
 	globalPreset := a.actionButton(a.t("network.btn.presetGlobal"), a.presetGlobalProxyAction)
 	bypassPreset := a.actionButton(a.t("network.btn.presetBypass"), a.presetBypassCNProxyAction)
@@ -13,93 +27,125 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	geoUpdate := a.actionButton(a.t("network.btn.geoUpdate"), a.updateGeoDataAction)
 	repairTun := a.actionButton(a.t("network.btn.repairTun"), a.repairTunAction)
 	routeTest := a.actionButton(a.t("network.btn.routeTest"), a.routeTestAction)
-	selectGlobal := a.actionButton(a.t("network.btn.global"), a.selectRoutingGlobalAction)
-	selectBypass := a.actionButton(a.t("network.btn.bypassCN"), a.selectRoutingBypassCNAction)
-	selectDirect := a.actionButton(a.t("network.btn.direct"), a.selectRoutingDirectAction)
-	selectCustom := a.actionButton(a.t("network.btn.custom"), a.selectRoutingCustomAction)
 
-	// 分组布局：网络检查和预设放一行，代理设置单独一行
-	networkCheckRow := buttonRow(checkBtn, globalPreset, bypassPreset, directPreset)
+	presetActionsRow := buttonRow(globalPreset, bypassPreset, directPreset)
 	proxyActionsRow := buttonRow(applyProxy, clearProxy)
-	modeActions := buttonRow(selectGlobal, selectBypass, selectDirect, selectCustom)
-	secondaryActions := buttonRow(saveRouting, geoUpdate, repairTun, routeTest)
+	operationsRow1 := buttonRow(saveRouting, geoUpdate)
+	operationsRow2 := buttonRow(repairTun, routeTest)
 
 	if a.useStackedLayout() {
-		networkCheckRow = buttonColumn(checkBtn, globalPreset, bypassPreset, directPreset)
+		presetActionsRow = buttonColumn(globalPreset, bypassPreset, directPreset)
 		proxyActionsRow = buttonColumn(applyProxy, clearProxy)
-		modeActions = buttonColumn(selectGlobal, selectBypass, selectDirect, selectCustom)
-		secondaryActions = buttonColumn(saveRouting, geoUpdate, repairTun, routeTest)
+		operationsRow1 = buttonColumn(saveRouting, geoUpdate)
+		operationsRow2 = buttonColumn(repairTun, routeTest)
 	}
 	testRow := inputRow(a.networkTestTarget, a.networkTestPort, a.useStackedLayout(), 4, 1)
-
-	controls := tview.NewFlex().SetDirection(tview.FlexRow)
-	networkCheckHeight := actionBlockHeight(a.useStackedLayout(), 4)
+	presetActionsHeight := actionBlockHeight(a.useStackedLayout(), 3)
 	proxyActionsHeight := actionBlockHeight(a.useStackedLayout(), 2)
-	modeActionsHeight := actionBlockHeight(a.useStackedLayout(), 4)
-	secondaryActionsHeight := actionBlockHeight(a.useStackedLayout(), 4)
+	operationsHeight := actionBlockHeight(a.useStackedLayout(), 2)
 	testRowHeight := dualItemRowHeight(a.useStackedLayout())
 
-	// 优化控制面板高度计算
 	actionsPanel := tview.NewFlex().SetDirection(tview.FlexRow)
-	actionsPanelHeight := 1 + 1 + networkCheckHeight + 1 + proxyActionsHeight + 1 + modeActionsHeight + 1 + 1 + 1
+	actionsPanelHeight := 1 + 1 + 1
 	actionsPanel.AddItem(newMutedText(a.t("network.desc")), 1, 0, false)
 	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
-	actionsPanel.AddItem(networkCheckRow, networkCheckHeight, 0, false)
-	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
-	// 添加代理应用按钮行
-	actionsPanel.AddItem(proxyActionsRow, proxyActionsHeight, 0, false)
-	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
-	actionsPanel.AddItem(newMutedText(a.t("network.targetMode")), 1, 0, false)
-	actionsPanel.AddItem(a.networkRoutingMode, 1, 0, false)
-	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
-	actionsPanel.AddItem(modeActions, modeActionsHeight, 0, false)
+	actionsPanel.AddItem(buttonRow(checkBtn), 1, 0, false)
 
-	controls.AddItem(a.networkDomainStrategy, 1, 0, false)
-	controls.AddItem(a.networkLocalBypass, 1, 0, false)
-	controls.AddItem(verticalSpacer(1), 1, 0, false)
-	controls.AddItem(secondaryActions, secondaryActionsHeight, 0, false)
-	controls.AddItem(verticalSpacer(1), 1, 0, false)
-	controls.AddItem(testRow, testRowHeight, 0, false)
-
-	results := tview.NewFlex().SetDirection(tview.FlexRow)
-	results.AddItem(wrapPanel(a.t("network.panel.diagnostics"), a.networkSummary), 0, 3, false)
-	results.AddItem(verticalSpacer(1), 1, 0, false)
-	results.AddItem(wrapPanel(a.t("network.panel.testResult"), a.networkTestResult), 0, 2, false)
-
-	leftWeight := 4
-	rightWeight := 7
-	if !a.useStackedLayout() {
-		leftWeight = 5
-		rightWeight = 6
-	}
-	body := splitContent(
-		a.useStackedLayout(),
-		wrapPanel(a.t("network.panel.form"), controls),
-		results,
-		leftWeight,
-		rightWeight,
+	presetsPanel := buildGroupPanel(
+		a.t("network.group.presets"),
+		struct {
+			primitive tview.Primitive
+			height    int
+		}{primitive: presetActionsRow, height: presetActionsHeight},
+		struct {
+			primitive tview.Primitive
+			height    int
+		}{primitive: proxyActionsRow, height: proxyActionsHeight},
 	)
+
+	routingPanel := buildGroupPanel(
+		a.t("network.group.routing"),
+		struct {
+			primitive tview.Primitive
+			height    int
+		}{primitive: a.networkRoutingMode, height: 1},
+		struct {
+			primitive tview.Primitive
+			height    int
+		}{primitive: a.networkDomainStrategy, height: 1},
+		struct {
+			primitive tview.Primitive
+			height    int
+		}{primitive: a.networkLocalBypass, height: 1},
+	)
+
+	toolsPanel := buildGroupPanel(
+		a.t("network.group.tools"),
+		struct {
+			primitive tview.Primitive
+			height    int
+		}{primitive: operationsRow1, height: operationsHeight},
+		struct {
+			primitive tview.Primitive
+			height    int
+		}{primitive: operationsRow2, height: operationsHeight},
+		struct {
+			primitive tview.Primitive
+			height    int
+		}{primitive: testRow, height: testRowHeight},
+	)
+
+	diagnosticsPanel := wrapPanel(a.t("network.panel.diagnostics"), a.networkSummary)
+	testResultPanel := wrapPanel(a.t("network.panel.testResult"), a.networkTestResult)
+
+	var body tview.Primitive
+	if a.useStackedLayout() {
+		stack := tview.NewFlex().SetDirection(tview.FlexRow)
+		stack.AddItem(presetsPanel, 0, 3, false)
+		stack.AddItem(verticalSpacer(1), 1, 0, false)
+		stack.AddItem(routingPanel, 0, 4, false)
+		stack.AddItem(verticalSpacer(1), 1, 0, false)
+		stack.AddItem(toolsPanel, 0, 3, false)
+		stack.AddItem(verticalSpacer(1), 1, 0, false)
+		stack.AddItem(diagnosticsPanel, 0, 6, false)
+		stack.AddItem(verticalSpacer(1), 1, 0, false)
+		stack.AddItem(testResultPanel, 0, 3, false)
+		body = stack
+	} else {
+		leftColumn := tview.NewFlex().SetDirection(tview.FlexRow)
+		leftColumn.AddItem(presetsPanel, 0, 3, false)
+		leftColumn.AddItem(verticalSpacer(1), 1, 0, false)
+		leftColumn.AddItem(routingPanel, 0, 4, false)
+		leftColumn.AddItem(verticalSpacer(1), 1, 0, false)
+		leftColumn.AddItem(toolsPanel, 0, 3, false)
+
+		rightColumn := tview.NewFlex().SetDirection(tview.FlexRow)
+		rightColumn.AddItem(diagnosticsPanel, 0, 7, false)
+		rightColumn.AddItem(verticalSpacer(1), 1, 0, false)
+		rightColumn.AddItem(testResultPanel, 0, 3, false)
+
+		body = splitContent(false, leftColumn, rightColumn, 5, 6)
+	}
 	root := buildPageLayout(a.t("common.actions"), actionsPanel, actionsPanelHeight, body)
 
-	// 优化焦点组，按功能分组
 	return builtPage{
 		root: root,
 		focusables: joinFocusables(
-			buttonsToFocusables(checkBtn, globalPreset, bypassPreset, directPreset),
+			buttonsToFocusables(checkBtn),
+			buttonsToFocusables(globalPreset, bypassPreset, directPreset),
 			buttonsToFocusables(applyProxy, clearProxy),
-			primitivesToFocusables(a.networkRoutingMode),
-			buttonsToFocusables(selectGlobal, selectBypass, selectDirect, selectCustom),
-			primitivesToFocusables(a.networkDomainStrategy, a.networkLocalBypass),
-			buttonsToFocusables(saveRouting, geoUpdate, repairTun, routeTest),
+			primitivesToFocusables(a.networkRoutingMode, a.networkDomainStrategy, a.networkLocalBypass),
+			buttonsToFocusables(saveRouting, geoUpdate),
+			buttonsToFocusables(repairTun, routeTest),
 			primitivesToFocusables(a.networkTestTarget, a.networkTestPort),
 		),
 		focusGroups: [][]tview.Primitive{
-			buttonsToFocusables(checkBtn, globalPreset, bypassPreset, directPreset),
+			buttonsToFocusables(checkBtn),
+			buttonsToFocusables(globalPreset, bypassPreset, directPreset),
 			buttonsToFocusables(applyProxy, clearProxy),
-			primitivesToFocusables(a.networkRoutingMode),
-			buttonsToFocusables(selectGlobal, selectBypass, selectDirect, selectCustom),
-			primitivesToFocusables(a.networkDomainStrategy, a.networkLocalBypass),
-			buttonsToFocusables(saveRouting, geoUpdate, repairTun, routeTest),
+			primitivesToFocusables(a.networkRoutingMode, a.networkDomainStrategy, a.networkLocalBypass),
+			buttonsToFocusables(saveRouting, geoUpdate),
+			buttonsToFocusables(repairTun, routeTest),
 			primitivesToFocusables(a.networkTestTarget, a.networkTestPort),
 		},
 	}

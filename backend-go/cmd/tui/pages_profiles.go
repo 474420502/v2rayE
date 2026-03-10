@@ -12,32 +12,42 @@ func (a *tuiApp) buildProfilesPage() builtPage {
 		controlsActions = buttonColumn(importURLBtn, importClipboardBtn, batchDelayBtn)
 	}
 
-	editorHint := tview.NewFlex().SetDirection(tview.FlexRow)
-	editorHint.AddItem(a.profileEditStatus, 1, 0, false)
-	editorHint.AddItem(verticalSpacer(1), 1, 0, false)
-	editorHint.AddItem(newMutedText(a.t("profiles.editor.hint1")), 1, 0, false)
-	editorHint.AddItem(newMutedText(a.t("profiles.editor.hint2")), 1, 0, false)
+	workflowPanel := tview.NewFlex().SetDirection(tview.FlexRow)
+	workflowPanel.AddItem(a.profileEditStatus, 1, 0, false)
+	workflowPanel.AddItem(verticalSpacer(1), 1, 0, false)
+	workflowPanel.AddItem(newMutedText(a.t("profiles.editor.hint1")), 1, 0, false)
+	workflowPanel.AddItem(newMutedText(a.t("profiles.editor.hint2")), 1, 0, false)
+	workflowPanel.AddItem(verticalSpacer(1), 1, 0, false)
+	workflowPanel.AddItem(a.profileBatchStatus, 1, 0, false)
 
-	right := tview.NewFlex().SetDirection(tview.FlexRow)
-	right.AddItem(wrapPanel(a.t("profiles.panel.selected"), a.profileDetail), 0, 4, false)
-	right.AddItem(verticalSpacer(1), 1, 0, false)
-	right.AddItem(wrapPanel(a.t("profiles.panel.editor"), editorHint), 0, 1, false)
-	workspace := splitContent(
-		a.useStackedLayout(),
-		wrapPanel(a.t("profiles.panel.list"), a.profilesList),
-		right,
-		4,
-		7,
-	)
+	profilesPanel := wrapPanel(a.t("profiles.panel.list"), a.profilesList)
+	selectedPanel := wrapPanel(a.t("profiles.panel.selected"), a.profileDetail)
+	workflowCard := wrapPanel(a.t("profiles.panel.workflow"), workflowPanel)
+
+	var workspace tview.Primitive
+	if a.useStackedLayout() {
+		stack := tview.NewFlex().SetDirection(tview.FlexRow)
+		stack.AddItem(profilesPanel, 0, 5, false)
+		stack.AddItem(verticalSpacer(1), 1, 0, false)
+		stack.AddItem(selectedPanel, 0, 4, false)
+		stack.AddItem(verticalSpacer(1), 1, 0, false)
+		stack.AddItem(workflowCard, 0, 2, false)
+		workspace = stack
+	} else {
+		grid := tview.NewGrid().SetBorders(false).SetGap(1, 1)
+		grid.SetRows(0, 0).SetColumns(0, 0)
+		grid.AddItem(profilesPanel, 0, 0, 2, 1, 0, 0, false)
+		grid.AddItem(selectedPanel, 0, 1, 1, 1, 0, 0, false)
+		grid.AddItem(workflowCard, 1, 1, 1, 1, 0, 0, false)
+		workspace = grid
+	}
 
 	controls := tview.NewFlex().SetDirection(tview.FlexRow)
 	controlsHeight := actionBlockHeight(a.useStackedLayout(), 3)
-	controlsContentHeight := 1 + 1 + controlsHeight + 1 + 1 + 1
+	controlsContentHeight := 1 + 1 + controlsHeight
 	controls.AddItem(newMutedText(a.t("profiles.controls.desc")), 1, 0, false)
 	controls.AddItem(verticalSpacer(1), 1, 0, false)
 	controls.AddItem(controlsActions, controlsHeight, 0, false)
-	controls.AddItem(verticalSpacer(1), 1, 0, false)
-	controls.AddItem(a.profileBatchStatus, 1, 0, false)
 
 	root := buildPageLayout(a.t("profiles.panel.controls"), controls, controlsContentHeight, workspace)
 

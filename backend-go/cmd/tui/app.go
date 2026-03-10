@@ -5,6 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"v2raye/backend-go/cmd/tui/components"
+
 	"github.com/rivo/tview"
 )
 
@@ -25,6 +27,7 @@ type tuiApp struct {
 
 	pageHolder  *tview.Pages
 	tabBar      *tview.Flex
+	sidebar     *components.Sidebar
 	focusables  []tview.Primitive
 	focusGroups [][]tview.Primitive
 	focusGroup  int
@@ -41,6 +44,12 @@ type tuiApp struct {
 	profileEditPrev      tview.Primitive
 	proxyUserSelectMenu  *tview.List
 	proxyUserSelectPrev  tview.Primitive
+	dropdownSelectMenu   *tview.List
+	dropdownSelectPrev   tview.Primitive
+	dropdownSelectTarget *dropdownWidget
+	lastDropdownFocus    *tview.DropDown
+	dropdownCancelValue  string
+	dropdownCancelArmed  bool
 
 	status              CoreStatus
 	profiles            []ProfileItem
@@ -77,10 +86,14 @@ type tuiApp struct {
 	selectedSubID     string
 
 	footer                 *textWidget
-	dashboardSummary       *textWidget
+	dashboardStatus        *textWidget
+	dashboardTelemetry     *textWidget
+	dashboardConfig        *textWidget
 	dashboardEvents        *textWidget
 	logsStatus             *textWidget
 	logsView               *textWidget
+	logsLevelSelect        *dropdownWidget
+	logsSourceSelect       *dropdownWidget
 	logsSearchInput        *inputWidget
 	profilesList           *tview.List
 	profileBatchStatus     *textWidget
@@ -89,25 +102,25 @@ type tuiApp struct {
 	profileEditName        *inputWidget
 	profileEditAddress     *inputWidget
 	profileEditPort        *inputWidget
-	profileEditNetwork     *inputWidget
-	profileEditTLS         *inputWidget
+	profileEditNetwork     *dropdownWidget
+	profileEditTLS         *dropdownWidget
 	profileEditSNI         *inputWidget
 	profileEditFingerprint *inputWidget
 	profileEditALPN        *inputWidget
-	profileEditSkipCert    *inputWidget
+	profileEditSkipCert    *dropdownWidget
 	profileEditRealityPK   *inputWidget
 	profileEditRealitySID  *inputWidget
 	profileEditWSPath      *inputWidget
 	profileEditH2Path      *inputWidget
 	profileEditH2Host      *inputWidget
 	profileEditGRPCSvc     *inputWidget
-	profileEditGRPCMode    *inputWidget
+	profileEditGRPCMode    *dropdownWidget
 	profileEditVMessUUID   *inputWidget
 	profileEditVMessAlter  *inputWidget
-	profileEditVMessSec    *inputWidget
+	profileEditVMessSec    *dropdownWidget
 	profileEditVLESSUUID   *inputWidget
 	profileEditVLESSFlow   *inputWidget
-	profileEditVLESSEnc    *inputWidget
+	profileEditVLESSEnc    *dropdownWidget
 	profileEditSSMethod    *inputWidget
 	profileEditSSPassword  *inputWidget
 	profileEditSSPlugin    *inputWidget
@@ -115,24 +128,24 @@ type tuiApp struct {
 	profileEditTrojanPwd   *inputWidget
 	profileEditHy2Pwd      *inputWidget
 	profileEditHy2SNI      *inputWidget
-	profileEditHy2Insecure *inputWidget
+	profileEditHy2Insecure *dropdownWidget
 	profileEditHy2UpMbps   *inputWidget
 	profileEditHy2DownMbps *inputWidget
 	profileEditHy2Obfs     *inputWidget
 	profileEditHy2ObfsPwd  *inputWidget
 	profileEditTuicUUID    *inputWidget
 	profileEditTuicPwd     *inputWidget
-	profileEditTuicCC      *inputWidget
+	profileEditTuicCC      *dropdownWidget
 	profileEditTuicSNI     *inputWidget
-	profileEditTuicInsec   *inputWidget
+	profileEditTuicInsec   *dropdownWidget
 	profileEditTuicALPN    *inputWidget
 	profileDeleteConfirm   *inputWidget
 	subscriptionsList      *tview.List
 	subscriptionDetail     *textWidget
 	networkSummary         *textWidget
-	networkRoutingMode     *inputWidget
-	networkDomainStrategy  *inputWidget
-	networkLocalBypass     *inputWidget
+	networkRoutingMode     *dropdownWidget
+	networkDomainStrategy  *dropdownWidget
+	networkLocalBypass     *dropdownWidget
 	networkTestTarget      *inputWidget
 	networkTestPort        *inputWidget
 	networkTestResult      *textWidget
@@ -140,18 +153,19 @@ type tuiApp struct {
 	settingsListenAddr     *inputWidget
 	settingsSocksPort      *inputWidget
 	settingsHTTPPort       *inputWidget
+	settingsLanguage       *dropdownWidget
 	settingsTunName        *inputWidget
-	settingsTunMode        *inputWidget
+	settingsTunMode        *dropdownWidget
 	settingsTunMtu         *inputWidget
-	settingsTunAutoRoute   *inputWidget
-	settingsTunStrict      *inputWidget
-	settingsProxyMode      *inputWidget
+	settingsTunAutoRoute   *dropdownWidget
+	settingsTunStrict      *dropdownWidget
+	settingsProxyMode      *dropdownWidget
 	settingsProxyExcept    *inputWidget
 	settingsProxyUsers     *inputWidget
-	settingsCoreEngine     *inputWidget
-	settingsLogLevel       *inputWidget
-	settingsSkipCert       *inputWidget
-	settingsDNSMode        *inputWidget
+	settingsCoreEngine     *dropdownWidget
+	settingsLogLevel       *dropdownWidget
+	settingsSkipCert       *dropdownWidget
+	settingsDNSMode        *dropdownWidget
 	settingsDNSList        *inputWidget
 
 	suspendFieldTracking   atomic.Bool
@@ -162,6 +176,7 @@ type tuiApp struct {
 	profileImportVisible   atomic.Bool
 	profileEditVisible     atomic.Bool
 	proxyUserSelectVisible atomic.Bool
+	dropdownSelectVisible  atomic.Bool
 }
 
 func newTUI(ctx context.Context, client *apiClient) *tuiApp {
@@ -179,9 +194,9 @@ func newTUI(ctx context.Context, client *apiClient) *tuiApp {
 		events:            make([]string, 0, 256),
 		logLevelFilter:    "all",
 		logSourceFilter:   "all",
-		logsStreamState:   "idle",
-		eventsStreamState: "idle",
-		proxyUsersStatus:  "not loaded",
+		logsStreamState:   tr(lang, "state.idle"),
+		eventsStreamState: tr(lang, "state.idle"),
+		proxyUsersStatus:  tr(lang, "state.notLoaded"),
 		footerStatus:      tr(lang, "status.ready"),
 		viewportCols:      0,
 	}

@@ -81,7 +81,7 @@ func (a *tuiApp) reloadProfiles() error {
 	}
 
 	a.storeProfiles(profiles)
-	a.refreshWidgets()
+	a.refreshWidgetsWithLists(true, false)
 	return nil
 }
 
@@ -98,7 +98,7 @@ func (a *tuiApp) reloadSubscriptions() error {
 	})
 
 	a.storeSubscriptions(subs)
-	a.refreshWidgets()
+	a.refreshWidgetsWithLists(false, true)
 	return nil
 }
 

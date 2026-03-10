@@ -20,7 +20,7 @@ func (a *tuiApp) storeCoreStatus(status CoreStatus) {
 func (a *tuiApp) storeSystemProxyUsers(users []SystemProxyUserCandidate) {
 	a.mu.Lock()
 	a.systemProxyUsers = users
-	a.proxyUsersStatus = fmt.Sprintf("loaded %d candidates", len(users))
+	a.proxyUsersStatus = fmt.Sprintf(a.t("state.proxyUsers.loaded"), len(users))
 	a.mu.Unlock()
 }
 

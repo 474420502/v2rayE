@@ -7,6 +7,16 @@ import (
 )
 
 func (a *tuiApp) formatDashboardSummary() string {
+	return strings.Join([]string{
+		a.formatDashboardStatus(),
+		"",
+		a.formatDashboardTelemetry(),
+		"",
+		a.formatDashboardConfig(),
+	}, "\n")
+}
+
+func (a *tuiApp) formatDashboardStatus() string {
 	selected := a.selectedProfile()
 	profileName := a.t("state.none")
 	if selected != nil {
@@ -14,7 +24,6 @@ func (a *tuiApp) formatDashboardSummary() string {
 	}
 
 	return strings.Join([]string{
-		a.t("state.dashboard.core"),
 		fmt.Sprintf("  %s: %t", a.t("state.label.running"), a.status.Running),
 		fmt.Sprintf("  %s: %s", a.t("state.label.state"), emptyFallback(a.status.State, a.t("state.unknown"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.engine"), emptyFallback(a.status.EngineResolved, emptyFallback(a.status.EngineMode, a.t("state.unknown")))),
@@ -22,17 +31,21 @@ func (a *tuiApp) formatDashboardSummary() string {
 		fmt.Sprintf("  %s: %s", a.t("state.label.startedAt"), emptyFallback(a.status.StartedAt, a.t("state.na"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.uptime"), formatCoreUptime(a.status)),
 		fmt.Sprintf("  %s: %s", a.t("state.label.error"), emptyFallback(a.status.Error, a.t("state.none"))),
-		"",
-		a.t("state.dashboard.telemetry"),
+	}, "\n")
+}
+
+func (a *tuiApp) formatDashboardTelemetry() string {
+	return strings.Join([]string{
 		fmt.Sprintf("  %s: %s | %s/s", a.t("state.label.up"), humanBytes(a.stats.UpBytes), humanBytes(a.stats.UpSpeed)),
 		fmt.Sprintf("  %s: %s | %s/s", a.t("state.label.down"), humanBytes(a.stats.DownBytes), humanBytes(a.stats.DownSpeed)),
 		fmt.Sprintf("  %s: %t (%dms) %s", a.t("state.label.network"), a.availability.Available, a.availability.ElapsedMs, a.availability.Message),
-		"",
-		a.t("state.dashboard.streams"),
 		fmt.Sprintf("  %s: %s", a.t("state.label.logs"), emptyFallback(a.logsStreamState, a.t("state.idle"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.events"), emptyFallback(a.eventsStreamState, a.t("state.idle"))),
-		"",
-		a.t("state.dashboard.config"),
+	}, "\n")
+}
+
+func (a *tuiApp) formatDashboardConfig() string {
+	return strings.Join([]string{
 		fmt.Sprintf("  %s: %d", a.t("state.label.socksPort"), intValue(a.config, "socksPort")),
 		fmt.Sprintf("  %s: %d", a.t("state.label.httpPort"), intValue(a.config, "httpPort")),
 		fmt.Sprintf("  %s: %s", a.t("state.label.tunName"), emptyFallback(stringValue(a.config, "tunName"), a.t("state.unset"))),
@@ -52,7 +65,7 @@ func (a *tuiApp) formatSelectedProfile() string {
 
 	lines := []string{
 		fmt.Sprintf("%s: %s", a.t("state.label.name"), p.Name),
-		fmt.Sprintf("ID: %s", p.ID),
+		fmt.Sprintf("%s: %s", a.t("state.label.id"), p.ID),
 		fmt.Sprintf("%s: %s", a.t("state.label.protocol"), p.Protocol),
 		fmt.Sprintf("%s: %s:%d", a.t("state.label.address"), p.Address, p.Port),
 		fmt.Sprintf("%s: %dms", a.t("state.label.delay"), p.DelayMs),
@@ -63,8 +76,8 @@ func (a *tuiApp) formatSelectedProfile() string {
 			"",
 			a.t("state.profile.transport"),
 			fmt.Sprintf("  %s: %s", a.t("state.label.network"), p.Transport.Network),
-			fmt.Sprintf("  tls: %t", p.Transport.TLS),
-			fmt.Sprintf("  sni: %s", emptyFallback(p.Transport.SNI, a.t("state.none"))),
+			fmt.Sprintf("  %s: %t", a.t("state.label.tls"), p.Transport.TLS),
+			fmt.Sprintf("  %s: %s", a.t("state.label.sni"), emptyFallback(p.Transport.SNI, a.t("state.none"))),
 		)
 	}
 	if len(a.batchDelay.Results) > 0 || a.batchRunning {
@@ -109,7 +122,7 @@ func (a *tuiApp) formatBatchDelayResults() string {
 
 	lines := []string{
 		a.t("state.batch.title"),
-		fmt.Sprintf("  total=%d success=%d failed=%d", a.batchDelay.Total, a.batchDelay.Success, a.batchDelay.Failed),
+		fmt.Sprintf("  %s=%d %s=%d %s=%d", a.t("state.label.total"), a.batchDelay.Total, a.t("state.label.success"), a.batchDelay.Success, a.t("state.label.failed"), a.batchDelay.Failed),
 	}
 	limit := len(a.batchDelay.Results)
 	if limit > 8 {
@@ -138,7 +151,7 @@ func (a *tuiApp) formatSelectedSubscription() string {
 
 	return strings.Join([]string{
 		fmt.Sprintf("%s: %s", a.t("state.label.remarks"), sub.Remarks),
-		fmt.Sprintf("ID: %s", sub.ID),
+		fmt.Sprintf("%s: %s", a.t("state.label.id"), sub.ID),
 		fmt.Sprintf("%s: %t", a.t("state.label.enabled"), sub.Enabled),
 		fmt.Sprintf("%s: %d", a.t("state.label.profiles"), sub.ProfileCount),
 		fmt.Sprintf("%s: %d %s", a.t("state.label.autoUpdate"), sub.AutoUpdateMinutes, a.t("state.minutes")),
@@ -146,7 +159,7 @@ func (a *tuiApp) formatSelectedSubscription() string {
 		fmt.Sprintf("%s: %s", a.t("state.label.convertTarget"), emptyFallback(sub.ConvertTarget, a.t("state.default"))),
 		fmt.Sprintf("%s: %s", a.t("state.label.updatedAt"), emptyFallback(sub.UpdatedAt, a.t("state.never"))),
 		"",
-		fmt.Sprintf("URL: %s", sub.URL),
+		fmt.Sprintf("%s: %s", a.t("state.label.url"), sub.URL),
 	}, "\n")
 }
 
@@ -194,7 +207,7 @@ func (a *tuiApp) formatNetworkSummary() string {
 	if len(a.hits.Items) > 0 {
 		lines = append(lines, "", a.t("state.network.outboundHits"))
 		for _, item := range a.hits.Items {
-			lines = append(lines, fmt.Sprintf("  %s up=%s/s down=%s/s", item.Outbound, humanBytes(item.UpSpeed), humanBytes(item.DownSpeed)))
+			lines = append(lines, fmt.Sprintf("  %s %s=%s/s %s=%s/s", item.Outbound, a.t("state.label.up"), humanBytes(item.UpSpeed), a.t("state.label.down"), humanBytes(item.DownSpeed)))
 		}
 	}
 	if a.diagnostics.Warning != "" {

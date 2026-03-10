@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"v2raye/backend-go/cmd/tui/components"
 
 	tcell "github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -11,13 +12,31 @@ func (a *tuiApp) build() tview.Primitive {
 	a.footer = newTextWidget(footerText(a.page, a.footerStatus))
 	a.footer.SetWrap(false)
 	a.pageHolder = tview.NewPages()
-	a.tabBar = tview.NewFlex().SetDirection(tview.FlexColumn)
-	a.dashboardSummary = readOnlyEditor("")
+	a.sidebar = components.NewSidebar(nil, func(page string) {
+		a.setActivePage(page)
+	}, nil)
+	a.dashboardStatus = readOnlyEditor("")
+	a.dashboardTelemetry = readOnlyEditor("")
+	a.dashboardConfig = readOnlyEditor("")
 	a.dashboardEvents = readOnlyEditor("")
 	a.logsStatus = newTextWidget(a.t("logs.status.default"))
 	a.logsStatus.SetWrap(false)
 	a.logsView = readOnlyEditor("")
 	a.logsView.SetWrap(false)
+	a.logsLevelSelect = newDropdownWidget("", []selectOption{{Label: "all", Value: "all"}, {Label: "error", Value: "error"}, {Label: "warning", Value: "warning"}, {Label: "info", Value: "info"}, {Label: "debug", Value: "debug"}}, func(value string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.storeLogLevelFilter(value)
+		a.refreshLogsWidget()
+	})
+	a.logsSourceSelect = newDropdownWidget("", []selectOption{{Label: "all", Value: "all"}, {Label: "app", Value: "app"}, {Label: "xray-core", Value: "xray-core"}}, func(value string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.storeLogSourceFilter(value)
+		a.refreshLogsWidget()
+	})
 	a.logsSearchInput = newInputWidget(a.t("label.search"), nil)
 	a.profileDetail = readOnlyEditor(a.t("profiles.detail.empty"))
 	a.profileBatchStatus = newTextWidget(a.t("profiles.batch.idle"))
@@ -25,25 +44,55 @@ func (a *tuiApp) build() tview.Primitive {
 	a.profileEditName = newInputWidget("name: ", a.profileEditChanged)
 	a.profileEditAddress = newInputWidget("address: ", a.profileEditChanged)
 	a.profileEditPort = newInputWidget("port: ", a.profileEditChanged)
-	a.profileEditNetwork = newInputWidget("network(tcp/ws/grpc): ", a.profileEditChanged)
-	a.profileEditTLS = newInputWidget("tls(true/false): ", a.profileEditChanged)
+	a.profileEditNetwork = newDropdownWidget("network: ", prependEmptyOption([]selectOption{{Label: "tcp", Value: "tcp"}, {Label: "ws", Value: "ws"}, {Label: "grpc", Value: "grpc"}, {Label: "h2", Value: "h2"}, {Label: "kcp", Value: "kcp"}, {Label: "quic", Value: "quic"}, {Label: "xhttp", Value: "xhttp"}}), func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markProfileEditDirty()
+	})
+	a.profileEditTLS = newDropdownWidget("tls: ", boolSelectOptions(), func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markProfileEditDirty()
+	})
 	a.profileEditSNI = newInputWidget("sni: ", a.profileEditChanged)
 	a.profileEditFingerprint = newInputWidget("fingerprint: ", a.profileEditChanged)
 	a.profileEditALPN = newInputWidget("alpn(csv): ", a.profileEditChanged)
-	a.profileEditSkipCert = newInputWidget("skipCertVerify(true/false): ", a.profileEditChanged)
+	a.profileEditSkipCert = newDropdownWidget("skipCertVerify: ", boolSelectOptions(), func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markProfileEditDirty()
+	})
 	a.profileEditRealityPK = newInputWidget("realityPublicKey: ", a.profileEditChanged)
 	a.profileEditRealitySID = newInputWidget("realityShortId: ", a.profileEditChanged)
 	a.profileEditWSPath = newInputWidget("wsPath: ", a.profileEditChanged)
 	a.profileEditH2Path = newInputWidget("h2Path(csv): ", a.profileEditChanged)
 	a.profileEditH2Host = newInputWidget("h2Host(csv): ", a.profileEditChanged)
 	a.profileEditGRPCSvc = newInputWidget("grpcServiceName: ", a.profileEditChanged)
-	a.profileEditGRPCMode = newInputWidget("grpcMode(gun|multi): ", a.profileEditChanged)
+	a.profileEditGRPCMode = newDropdownWidget("grpcMode: ", prependEmptyOption([]selectOption{{Label: "gun", Value: "gun"}, {Label: "multi", Value: "multi"}}), func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markProfileEditDirty()
+	})
 	a.profileEditVMessUUID = newInputWidget("vmess.uuid: ", a.profileEditChanged)
 	a.profileEditVMessAlter = newInputWidget("vmess.alterId: ", a.profileEditChanged)
-	a.profileEditVMessSec = newInputWidget("vmess.security: ", a.profileEditChanged)
+	a.profileEditVMessSec = newDropdownWidget("vmess.security: ", prependEmptyOption([]selectOption{{Label: "none", Value: "none"}, {Label: "auto", Value: "auto"}, {Label: "aes-128-gcm", Value: "aes-128-gcm"}, {Label: "chacha20-poly1305", Value: "chacha20-poly1305"}}), func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markProfileEditDirty()
+	})
 	a.profileEditVLESSUUID = newInputWidget("vless.uuid: ", a.profileEditChanged)
 	a.profileEditVLESSFlow = newInputWidget("vless.flow: ", a.profileEditChanged)
-	a.profileEditVLESSEnc = newInputWidget("vless.encryption: ", a.profileEditChanged)
+	a.profileEditVLESSEnc = newDropdownWidget("vless.encryption: ", prependEmptyOption([]selectOption{{Label: "none", Value: "none"}}), func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markProfileEditDirty()
+	})
 	a.profileEditSSMethod = newInputWidget("ss.method: ", a.profileEditChanged)
 	a.profileEditSSPassword = newInputWidget("ss.password: ", a.profileEditChanged)
 	a.profileEditSSPlugin = newInputWidget("ss.plugin: ", a.profileEditChanged)
@@ -51,25 +100,55 @@ func (a *tuiApp) build() tview.Primitive {
 	a.profileEditTrojanPwd = newInputWidget("trojan.password: ", a.profileEditChanged)
 	a.profileEditHy2Pwd = newInputWidget("hy2.password: ", a.profileEditChanged)
 	a.profileEditHy2SNI = newInputWidget("hy2.sni: ", a.profileEditChanged)
-	a.profileEditHy2Insecure = newInputWidget("hy2.insecure(true/false): ", a.profileEditChanged)
+	a.profileEditHy2Insecure = newDropdownWidget("hy2.insecure: ", boolSelectOptions(), func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markProfileEditDirty()
+	})
 	a.profileEditHy2UpMbps = newInputWidget("hy2.upMbps: ", a.profileEditChanged)
 	a.profileEditHy2DownMbps = newInputWidget("hy2.downMbps: ", a.profileEditChanged)
 	a.profileEditHy2Obfs = newInputWidget("hy2.obfs: ", a.profileEditChanged)
 	a.profileEditHy2ObfsPwd = newInputWidget("hy2.obfsPassword: ", a.profileEditChanged)
 	a.profileEditTuicUUID = newInputWidget("tuic.uuid: ", a.profileEditChanged)
 	a.profileEditTuicPwd = newInputWidget("tuic.password: ", a.profileEditChanged)
-	a.profileEditTuicCC = newInputWidget("tuic.congestionControl: ", a.profileEditChanged)
+	a.profileEditTuicCC = newDropdownWidget("tuic.congestionControl: ", prependEmptyOption([]selectOption{{Label: "bbr", Value: "bbr"}, {Label: "cubic", Value: "cubic"}, {Label: "new_reno", Value: "new_reno"}}), func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markProfileEditDirty()
+	})
 	a.profileEditTuicSNI = newInputWidget("tuic.sni: ", a.profileEditChanged)
-	a.profileEditTuicInsec = newInputWidget("tuic.insecure(true/false): ", a.profileEditChanged)
+	a.profileEditTuicInsec = newDropdownWidget("tuic.insecure: ", boolSelectOptions(), func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markProfileEditDirty()
+	})
 	a.profileEditTuicALPN = newInputWidget("tuic.alpn(csv): ", a.profileEditChanged)
 	a.profileDeleteConfirm = newInputWidget("delete confirm (type DELETE): ", nil)
 	a.profilesList = newListWidget()
 	a.subscriptionDetail = readOnlyEditor("Select a subscription to inspect.")
 	a.subscriptionsList = newListWidget()
 	a.networkSummary = readOnlyEditor("")
-	a.networkRoutingMode = newInputWidget("targetMode(global|bypass_cn|direct|custom): ", a.networkRoutingChanged)
-	a.networkDomainStrategy = newInputWidget("targetDomainStrategy(IPIfNonMatch|IPOnDemand|AsIs): ", a.networkRoutingChanged)
-	a.networkLocalBypass = newInputWidget("targetLocalBypass(true/false): ", a.networkRoutingChanged)
+	a.networkRoutingMode = newDropdownWidget("", []selectOption{{Label: "global", Value: "global"}, {Label: "bypass_cn", Value: "bypass_cn"}, {Label: "direct", Value: "direct"}, {Label: "custom", Value: "custom"}}, func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markNetworkRoutingDirty()
+	})
+	a.networkDomainStrategy = newDropdownWidget("", []selectOption{{Label: "IPIfNonMatch", Value: "IPIfNonMatch"}, {Label: "IPOnDemand", Value: "IPOnDemand"}, {Label: "AsIs", Value: "AsIs"}}, func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markNetworkRoutingDirty()
+	})
+	a.networkLocalBypass = newDropdownWidget("", []selectOption{{Label: "true", Value: "true"}, {Label: "false", Value: "false"}}, func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markNetworkRoutingDirty()
+	})
 	a.networkTestTarget = newInputWidget("target: ", nil)
 	a.networkTestPort = newInputWidget("port: ", nil)
 	a.networkTestResult = readOnlyEditor("No routing test executed.")
@@ -77,19 +156,67 @@ func (a *tuiApp) build() tview.Primitive {
 	a.settingsListenAddr = newInputWidget("listenAddr: ", a.settingsChanged)
 	a.settingsSocksPort = newInputWidget("socksPort: ", a.settingsChanged)
 	a.settingsHTTPPort = newInputWidget("httpPort: ", a.settingsChanged)
+	a.settingsLanguage = newDropdownWidget("", []selectOption{{Label: "English", Value: uiLangEN}, {Label: "中文", Value: uiLangZH}}, func(value string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.setUILanguage(value)
+	})
 	a.settingsTunName = newInputWidget("tunName: ", a.settingsChanged)
-	a.settingsTunMode = newInputWidget("tunMode(off|system|mixed|gvisor): ", a.settingsChanged)
+	a.settingsTunMode = newDropdownWidget("tunMode: ", []selectOption{{Label: "off", Value: "off"}, {Label: "system", Value: "system"}, {Label: "mixed", Value: "mixed"}, {Label: "gvisor", Value: "gvisor"}}, func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markSettingsDirty()
+	})
 	a.settingsTunMtu = newInputWidget("tunMtu: ", a.settingsChanged)
-	a.settingsTunAutoRoute = newInputWidget("tunAutoRoute(true/false): ", a.settingsChanged)
-	a.settingsTunStrict = newInputWidget("tunStrictRoute(true/false): ", a.settingsChanged)
-	a.settingsProxyMode = newInputWidget("proxyMode(forced_change|forced_clear|pac): ", a.settingsChanged)
+	a.settingsTunAutoRoute = newDropdownWidget("tunAutoRoute: ", boolSelectOptions(), func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markSettingsDirty()
+	})
+	a.settingsTunStrict = newDropdownWidget("tunStrictRoute: ", boolSelectOptions(), func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markSettingsDirty()
+	})
+	a.settingsProxyMode = newDropdownWidget("proxyMode: ", []selectOption{{Label: "forced_change", Value: "forced_change"}, {Label: "forced_clear", Value: "forced_clear"}, {Label: "pac", Value: "pac"}}, func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markSettingsDirty()
+	})
 	a.settingsProxyExcept = newInputWidget("proxyExceptions: ", a.settingsChanged)
 	a.settingsProxyUsers = newInputWidget("proxyUsers(csv): ", a.settingsChanged)
-	a.settingsCoreEngine = newInputWidget("coreEngine(xray-core): ", a.settingsChanged)
-	a.settingsLogLevel = newInputWidget("logLevel(debug|info|warning|error): ", a.settingsChanged)
-	a.settingsSkipCert = newInputWidget("skipCertVerify(true/false): ", a.settingsChanged)
-	a.settingsDNSMode = newInputWidget("dnsMode: ", a.settingsChanged)
+	a.settingsCoreEngine = newDropdownWidget("coreEngine: ", []selectOption{{Label: "xray-core", Value: "xray-core"}}, func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markSettingsDirty()
+	})
+	a.settingsLogLevel = newDropdownWidget("logLevel: ", []selectOption{{Label: "debug", Value: "debug"}, {Label: "info", Value: "info"}, {Label: "warning", Value: "warning"}, {Label: "error", Value: "error"}}, func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markSettingsDirty()
+	})
+	a.settingsSkipCert = newDropdownWidget("skipCertVerify: ", boolSelectOptions(), func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markSettingsDirty()
+	})
+	a.settingsDNSMode = newDropdownWidget("dnsMode: ", []selectOption{{Label: "UseSystemDNS", Value: "UseSystemDNS"}, {Label: "UseDNSList", Value: "UseDNSList"}, {Label: "Direct", Value: "Direct"}}, func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markSettingsDirty()
+	})
 	a.settingsDNSList = newInputWidget("dnsList(csv): ", a.settingsChanged)
+	a.refreshDropdownLabels()
+	a.refreshFieldLabels()
 
 	a.profilesList.SetChangedFunc(func(index int, mainText, secondaryText string, shortcut rune) {
 		a.onProfileSelectionChanged(index)
@@ -108,44 +235,202 @@ func (a *tuiApp) build() tview.Primitive {
 	title.SetBackgroundColor(tcell.ColorTeal)
 
 	help := newMutedText(a.t("layout.shortcuts"))
+	content := tview.NewFlex().SetDirection(tview.FlexColumn)
+	content.AddItem(a.sidebar, 20, 0, false)
+	content.AddItem(horizontalSpacer(1), 1, 0, false)
+	content.AddItem(a.pageHolder, 0, 1, true)
 
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
 	root.AddItem(title, 1, 0, false)
-	root.AddItem(a.tabBar, 1, 0, false)
 	root.AddItem(help, 1, 0, false)
-	root.AddItem(a.pageHolder, 0, 1, true)
+	root.AddItem(content, 0, 1, true)
 	root.AddItem(a.footer, 1, 0, false)
 
 	a.syncPages()
 	return root
 }
 
-func (a *tuiApp) buildTabs() {
-	if a.tabBar == nil {
+func (a *tuiApp) fieldLabel(key string) string {
+	return a.t(key) + ": "
+}
+
+func (a *tuiApp) fieldLabelWithChoices(labelKey, choicesKey string) string {
+	return fmt.Sprintf("%s (%s): ", a.t(labelKey), a.t(choicesKey))
+}
+
+func (a *tuiApp) fieldLabelWithChoicesAdaptive(labelKey, choicesKey string) string {
+	// Long choice hints can truncate form fields on narrow terminals.
+	if a.useStackedLayout() || (a.viewportCols > 0 && a.viewportCols < 150) {
+		return a.fieldLabel(labelKey)
+	}
+	return a.fieldLabelWithChoices(labelKey, choicesKey)
+}
+
+func (a *tuiApp) refreshFieldLabels() {
+	if a.logsLevelSelect != nil {
+		a.logsLevelSelect.SetLabel(a.fieldLabel("field.logs.level"))
+	}
+	if a.logsSourceSelect != nil {
+		a.logsSourceSelect.SetLabel(a.fieldLabel("field.logs.source"))
+	}
+	if a.logsSearchInput != nil {
+		a.logsSearchInput.SetLabel(a.t("label.search"))
+	}
+	if a.networkRoutingMode != nil {
+		a.networkRoutingMode.SetLabel(a.fieldLabelWithChoicesAdaptive("field.network.mode", "field.choices.network.mode"))
+	}
+	if a.networkDomainStrategy != nil {
+		a.networkDomainStrategy.SetLabel(a.fieldLabelWithChoicesAdaptive("field.network.domainStrategy", "field.choices.network.domainStrategy"))
+	}
+	if a.networkLocalBypass != nil {
+		a.networkLocalBypass.SetLabel(a.fieldLabelWithChoicesAdaptive("field.network.localBypass", "field.choices.network.localBypass"))
+	}
+	if a.networkTestTarget != nil {
+		a.networkTestTarget.SetLabel(a.fieldLabel("field.network.target"))
+	}
+	if a.networkTestPort != nil {
+		a.networkTestPort.SetLabel(a.fieldLabel("field.network.port"))
+	}
+	if a.settingsLanguage != nil {
+		a.settingsLanguage.SetLabel(a.fieldLabelWithChoicesAdaptive("field.settings.language", "field.choices.settings.language"))
+	}
+	if a.settingsListenAddr != nil {
+		a.settingsListenAddr.SetLabel(a.fieldLabel("field.settings.listenAddr"))
+	}
+	if a.settingsSocksPort != nil {
+		a.settingsSocksPort.SetLabel(a.fieldLabel("field.settings.socksPort"))
+	}
+	if a.settingsHTTPPort != nil {
+		a.settingsHTTPPort.SetLabel(a.fieldLabel("field.settings.httpPort"))
+	}
+	if a.settingsTunName != nil {
+		a.settingsTunName.SetLabel(a.fieldLabel("field.settings.tunName"))
+	}
+	if a.settingsTunMode != nil {
+		a.settingsTunMode.SetLabel(a.fieldLabelWithChoicesAdaptive("field.settings.tunMode", "field.choices.settings.tunMode"))
+	}
+	if a.settingsTunMtu != nil {
+		a.settingsTunMtu.SetLabel(a.fieldLabel("field.settings.tunMtu"))
+	}
+	if a.settingsTunAutoRoute != nil {
+		a.settingsTunAutoRoute.SetLabel(a.fieldLabel("field.settings.tunAutoRoute"))
+	}
+	if a.settingsTunStrict != nil {
+		a.settingsTunStrict.SetLabel(a.fieldLabel("field.settings.tunStrictRoute"))
+	}
+	if a.settingsProxyMode != nil {
+		a.settingsProxyMode.SetLabel(a.fieldLabelWithChoicesAdaptive("field.settings.proxyMode", "field.choices.settings.proxyMode"))
+	}
+	if a.settingsProxyExcept != nil {
+		a.settingsProxyExcept.SetLabel(a.fieldLabel("field.settings.proxyExceptions"))
+	}
+	if a.settingsProxyUsers != nil {
+		a.settingsProxyUsers.SetLabel(a.fieldLabel("field.settings.proxyUsers"))
+	}
+	if a.settingsCoreEngine != nil {
+		a.settingsCoreEngine.SetLabel(a.fieldLabel("field.settings.coreEngine"))
+	}
+	if a.settingsLogLevel != nil {
+		// Keep this label short to avoid compressing the dropdown field.
+		a.settingsLogLevel.SetLabel(a.fieldLabel("field.settings.logLevel"))
+	}
+	if a.settingsSkipCert != nil {
+		a.settingsSkipCert.SetLabel(a.fieldLabel("field.settings.skipCertVerify"))
+	}
+	if a.settingsDNSMode != nil {
+		a.settingsDNSMode.SetLabel(a.fieldLabelWithChoicesAdaptive("field.settings.dnsMode", "field.choices.settings.dnsMode"))
+	}
+	if a.settingsDNSList != nil {
+		a.settingsDNSList.SetLabel(a.fieldLabel("field.settings.dnsList"))
+	}
+}
+
+func (a *tuiApp) refreshDropdownLabels() {
+	if a.logsLevelSelect != nil {
+		a.logsLevelSelect.ReplaceOptions([]selectOption{{Label: a.t("dropdown.logs.level.all"), Value: "all"}, {Label: a.t("dropdown.logs.level.error"), Value: "error"}, {Label: a.t("dropdown.logs.level.warning"), Value: "warning"}, {Label: a.t("dropdown.logs.level.info"), Value: "info"}, {Label: a.t("dropdown.logs.level.debug"), Value: "debug"}})
+	}
+	if a.logsSourceSelect != nil {
+		a.logsSourceSelect.ReplaceOptions([]selectOption{{Label: a.t("dropdown.logs.source.all"), Value: "all"}, {Label: a.t("dropdown.logs.source.app"), Value: "app"}, {Label: a.t("dropdown.logs.source.core"), Value: "xray-core"}})
+	}
+	if a.profileEditNetwork != nil {
+		a.profileEditNetwork.ReplaceOptions(a.prependLocalizedEmptyOption([]selectOption{{Label: "TCP", Value: "tcp"}, {Label: "WebSocket", Value: "ws"}, {Label: "gRPC", Value: "grpc"}, {Label: "HTTP/2", Value: "h2"}, {Label: "KCP", Value: "kcp"}, {Label: "QUIC", Value: "quic"}, {Label: "XHTTP", Value: "xhttp"}}))
+	}
+	if a.profileEditTLS != nil {
+		a.profileEditTLS.ReplaceOptions(a.localizedBoolSelectOptions())
+	}
+	if a.profileEditSkipCert != nil {
+		a.profileEditSkipCert.ReplaceOptions(a.localizedBoolSelectOptions())
+	}
+	if a.profileEditGRPCMode != nil {
+		a.profileEditGRPCMode.ReplaceOptions(a.prependLocalizedEmptyOption([]selectOption{{Label: "Gun", Value: "gun"}, {Label: "Multi", Value: "multi"}}))
+	}
+	if a.profileEditVMessSec != nil {
+		a.profileEditVMessSec.ReplaceOptions(a.prependLocalizedEmptyOption([]selectOption{{Label: "None", Value: "none"}, {Label: "Auto", Value: "auto"}, {Label: "AES-128-GCM", Value: "aes-128-gcm"}, {Label: "ChaCha20-Poly1305", Value: "chacha20-poly1305"}}))
+	}
+	if a.profileEditVLESSEnc != nil {
+		a.profileEditVLESSEnc.ReplaceOptions(a.prependLocalizedEmptyOption([]selectOption{{Label: "None", Value: "none"}}))
+	}
+	if a.profileEditHy2Insecure != nil {
+		a.profileEditHy2Insecure.ReplaceOptions(a.localizedBoolSelectOptions())
+	}
+	if a.profileEditTuicCC != nil {
+		a.profileEditTuicCC.ReplaceOptions(a.prependLocalizedEmptyOption([]selectOption{{Label: "BBR", Value: "bbr"}, {Label: "Cubic", Value: "cubic"}, {Label: "New Reno", Value: "new_reno"}}))
+	}
+	if a.profileEditTuicInsec != nil {
+		a.profileEditTuicInsec.ReplaceOptions(a.localizedBoolSelectOptions())
+	}
+	if a.networkRoutingMode != nil {
+		a.networkRoutingMode.ReplaceOptions([]selectOption{{Label: a.t("dropdown.routing.mode.global"), Value: "global"}, {Label: a.t("dropdown.routing.mode.bypassCN"), Value: "bypass_cn"}, {Label: a.t("dropdown.routing.mode.direct"), Value: "direct"}, {Label: a.t("dropdown.routing.mode.custom"), Value: "custom"}})
+	}
+	if a.networkDomainStrategy != nil {
+		a.networkDomainStrategy.ReplaceOptions([]selectOption{{Label: a.t("dropdown.routing.strategy.ifNonMatch"), Value: "IPIfNonMatch"}, {Label: a.t("dropdown.routing.strategy.onDemand"), Value: "IPOnDemand"}, {Label: a.t("dropdown.routing.strategy.asIs"), Value: "AsIs"}})
+	}
+	if a.networkLocalBypass != nil {
+		a.networkLocalBypass.ReplaceOptions(a.localizedBoolSelectOptions())
+	}
+	if a.settingsLanguage != nil {
+		a.settingsLanguage.ReplaceOptions([]selectOption{{Label: a.t("dropdown.language.english"), Value: uiLangEN}, {Label: a.t("dropdown.language.chinese"), Value: uiLangZH}})
+	}
+	if a.settingsTunMode != nil {
+		a.settingsTunMode.ReplaceOptions([]selectOption{{Label: a.t("dropdown.tun.off"), Value: "off"}, {Label: a.t("dropdown.tun.system"), Value: "system"}, {Label: a.t("dropdown.tun.mixed"), Value: "mixed"}, {Label: a.t("dropdown.tun.gvisor"), Value: "gvisor"}})
+	}
+	if a.settingsTunAutoRoute != nil {
+		a.settingsTunAutoRoute.ReplaceOptions(a.localizedBoolSelectOptions())
+	}
+	if a.settingsTunStrict != nil {
+		a.settingsTunStrict.ReplaceOptions(a.localizedBoolSelectOptions())
+	}
+	if a.settingsProxyMode != nil {
+		a.settingsProxyMode.ReplaceOptions([]selectOption{{Label: a.t("dropdown.proxy.forceEnable"), Value: "forced_change"}, {Label: a.t("dropdown.proxy.forceDisable"), Value: "forced_clear"}, {Label: a.t("dropdown.proxy.pac"), Value: "pac"}})
+	}
+	if a.settingsCoreEngine != nil {
+		a.settingsCoreEngine.ReplaceOptions([]selectOption{{Label: a.t("dropdown.engine.xray"), Value: "xray-core"}})
+	}
+	if a.settingsLogLevel != nil {
+		a.settingsLogLevel.ReplaceOptions([]selectOption{{Label: a.t("dropdown.log.debug"), Value: "debug"}, {Label: a.t("dropdown.log.info"), Value: "info"}, {Label: a.t("dropdown.log.warning"), Value: "warning"}, {Label: a.t("dropdown.log.error"), Value: "error"}})
+	}
+	if a.settingsSkipCert != nil {
+		a.settingsSkipCert.ReplaceOptions(a.localizedBoolSelectOptions())
+	}
+	if a.settingsDNSMode != nil {
+		a.settingsDNSMode.ReplaceOptions([]selectOption{{Label: a.t("dropdown.dns.system"), Value: "UseSystemDNS"}, {Label: a.t("dropdown.dns.list"), Value: "UseDNSList"}, {Label: a.t("dropdown.dns.direct"), Value: "Direct"}})
+	}
+}
+
+func (a *tuiApp) syncSidebar() {
+	if a.sidebar == nil {
 		return
 	}
-	a.tabBar.Clear()
-	for idx, tab := range tuiPageTabs() {
-		tab := tab
-		label := fmt.Sprintf("%c %s", tab.shortcut, pageDisplayName(tab.key))
-		btn := tview.NewButton(label)
-		btn.SetSelectedFunc(func() {
-			a.setActivePage(tab.key)
+	items := make([]components.NavItem, 0, len(tuiPageTabs()))
+	for _, tab := range tuiPageTabs() {
+		items = append(items, components.NavItem{
+			Key:      tab.key,
+			Label:    pageDisplayName(tab.key),
+			Shortcut: tab.shortcut,
 		})
-		btn.SetLabelColor(tcell.ColorWhite)
-		btn.SetLabelColorActivated(tcell.ColorBlack)
-		if tab.key == a.page {
-			btn.SetBackgroundColor(tcell.ColorGreen)
-			btn.SetBackgroundColorActivated(tcell.ColorYellow)
-		} else {
-			btn.SetBackgroundColor(tcell.ColorDarkBlue)
-			btn.SetBackgroundColorActivated(tcell.ColorYellow)
-		}
-		a.tabBar.AddItem(btn, buttonWidth(label), 0, false)
-		if idx != len(tuiPageTabs())-1 {
-			a.tabBar.AddItem(horizontalSpacer(1), 1, 0, false)
-		}
 	}
+	a.sidebar.SetItems(items)
+	a.sidebar.SetSelectedKey(a.page)
 }
 
 func (a *tuiApp) syncPages() {
@@ -169,7 +454,9 @@ func (a *tuiApp) syncPages() {
 		page = a.buildDashboardPage()
 	}
 
-	a.focusables = page.focusables
+	a.syncSidebar()
+
+	a.focusables = append([]tview.Primitive{}, page.focusables...)
 	a.focusGroups = nil
 	for _, group := range page.focusGroups {
 		if len(group) == 0 {
@@ -177,11 +464,17 @@ func (a *tuiApp) syncPages() {
 		}
 		a.focusGroups = append(a.focusGroups, group)
 	}
+	if a.sidebar != nil {
+		sidebarFocusables := a.sidebar.GetFocusables()
+		if len(sidebarFocusables) > 0 {
+			a.focusables = append(a.focusables, sidebarFocusables...)
+			a.focusGroups = append(a.focusGroups, sidebarFocusables)
+		}
+	}
 	if len(a.focusGroups) == 0 && len(a.focusables) > 0 {
 		a.focusGroups = [][]tview.Primitive{a.focusables}
 	}
 	a.focusGroup = 0
-	a.buildTabs()
 	a.pageHolder.RemovePage("current")
 	a.pageHolder.AddAndSwitchToPage("current", page.root, true)
 	if a.app != nil {

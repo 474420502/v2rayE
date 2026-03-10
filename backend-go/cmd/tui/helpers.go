@@ -47,6 +47,7 @@ type inputWidget struct {
 	*tview.InputField
 }
 
+// newInputWidget 创建输入框组件
 func newInputWidget(label string, onChange func(string)) *inputWidget {
 	widget := &inputWidget{InputField: tview.NewInputField()}
 	widget.SetLabel(label)
@@ -56,6 +57,17 @@ func newInputWidget(label string, onChange func(string)) *inputWidget {
 	widget.SetFieldBackgroundColor(tcell.ColorBlack)
 	widget.SetPlaceholderTextColor(tcell.ColorDarkGray)
 	widget.SetChangedFunc(onChange)
+
+	// 添加键盘处理支持
+	widget.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		// Enter键取消焦点，让用户可以使用Tab导航
+		if event.Key() == tcell.KeyEnter {
+			// 不做任何特殊处理，让输入完成
+			return event
+		}
+		return event
+	})
+
 	return widget
 }
 
@@ -65,6 +77,107 @@ func (w *inputWidget) SetText(value string, _ *tview.Application) {
 
 func (w *inputWidget) Text() string {
 	return w.GetText()
+}
+
+type selectOption struct {
+	Label string
+	Value string
+}
+
+func boolSelectOptions() []selectOption {
+	return []selectOption{
+		{Label: "true", Value: "true"},
+		{Label: "false", Value: "false"},
+	}
+}
+
+func prependEmptyOption(options []selectOption) []selectOption {
+	return append([]selectOption{{Label: "(empty)", Value: ""}}, options...)
+}
+
+type dropdownWidget struct {
+	*tview.DropDown
+	options  []selectOption
+	onChange func(string)
+}
+
+// newDropdownWidget 创建带键盘处理支持的dropdown组件
+// label: 显示的标签文本
+// options: 下拉选项列表
+// onChange: 选项变更回调
+func newDropdownWidget(label string, options []selectOption, onChange func(string)) *dropdownWidget {
+	widget := &dropdownWidget{DropDown: tview.NewDropDown()}
+	widget.onChange = onChange
+	widget.SetLabel(label)
+	widget.SetLabelColor(editableLabelColor)
+	widget.SetFieldTextColor(editableValueColor)
+	widget.SetFieldBackgroundColor(tcell.ColorBlack)
+	widget.ReplaceOptions(options)
+
+	// 设置输入捕获来处理键盘导航
+	// DropDown原生支持使用上下箭头选择，Enter确认，Tab/Esc退出选择模式
+	widget.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		// 让默认的键盘导航正常工作
+		// tview的DropDown在获得焦点后会自动处理上下箭头和Enter键
+		return event
+	})
+
+	return widget
+}
+
+func (w *dropdownWidget) ReplaceOptions(options []selectOption) {
+	currentValue := w.Text()
+	w.options = append(w.options[:0], options...)
+	labels := make([]string, 0, len(options))
+	for _, option := range options {
+		labels = append(labels, option.Label)
+	}
+	w.SetOptions(labels, func(text string, index int) {
+		if w.onChange == nil || index < 0 || index >= len(w.options) {
+			return
+		}
+		w.onChange(w.options[index].Value)
+	})
+	w.SetText(currentValue, nil)
+}
+
+func (w *dropdownWidget) SetText(value string, _ *tview.Application) {
+	fallbackIndex := -1
+	for index, option := range w.options {
+		if fallbackIndex == -1 && option.Value == "" {
+			fallbackIndex = index
+		}
+		if option.Value == value {
+			w.SetCurrentOption(index)
+			return
+		}
+	}
+	if fallbackIndex >= 0 {
+		w.SetCurrentOption(fallbackIndex)
+		return
+	}
+	if len(w.options) > 0 {
+		w.SetCurrentOption(0)
+	}
+}
+
+func (w *dropdownWidget) Text() string {
+	index, _ := w.GetCurrentOption()
+	if index >= 0 && index < len(w.options) {
+		return w.options[index].Value
+	}
+	return ""
+}
+
+func (a *tuiApp) localizedBoolSelectOptions() []selectOption {
+	return []selectOption{
+		{Label: a.t("dropdown.bool.true"), Value: "true"},
+		{Label: a.t("dropdown.bool.false"), Value: "false"},
+	}
+}
+
+func (a *tuiApp) prependLocalizedEmptyOption(options []selectOption) []selectOption {
+	return append([]selectOption{{Label: a.t("dropdown.empty"), Value: ""}}, options...)
 }
 
 type textSetter interface {
@@ -576,4 +689,150 @@ func fitSingleLineToWidth(text string, cols int) string {
 		return text + strings.Repeat(" ", cols-len(runes))
 	}
 	return text
+}
+
+// ============ Grid Layout Helpers (基于 tview demos) ============
+
+// NewGridLayout 创建新的 Grid 布局
+// 参考 /home/eson/tools/tview/demos/grid/main.go
+func newGridLayout() *tview.Grid {
+	return tview.NewGrid().
+		SetBorders(false).
+		SetGap(1, 1)
+}
+
+// GridWithSizes 创建带尺寸的 Grid
+func gridWithSizes(rows, cols []int) *tview.Grid {
+	grid := tview.NewGrid().
+		SetBorders(false).
+		SetGap(1, 1)
+	if len(rows) > 0 {
+		grid.SetRows(rows...)
+	}
+	if len(cols) > 0 {
+		grid.SetColumns(cols...)
+	}
+	return grid
+}
+
+// AddNavItem 添加导航项到 Grid
+func addNavItem(grid *tview.Grid, item tview.Primitive, row, col, rowSpan, colSpan int, minHeight, minWidth int) {
+	grid.AddItem(item, row, col, rowSpan, colSpan, minHeight, minWidth, false)
+}
+
+// ============ Form Helpers (基于 tview demos/form/main.go) ============
+
+// createProfileForm 创建配置文件表单
+func createProfileForm(onProtocolChanged func(string, int),
+	onFieldChanged func(string, string),
+	onSave func(),
+	onCancel func()) *tview.Form {
+
+	form := tview.NewForm().
+		AddDropDown("协议类型", []string{"vmess", "vless", "trojan", "shadowsocks"}, 0, func(option string, optionIndex int) {
+			if onProtocolChanged != nil {
+				onProtocolChanged(option, optionIndex)
+			}
+		}).
+		AddInputField("服务器地址", "", 40, nil, func(text string) {
+			if onFieldChanged != nil {
+				onFieldChanged("address", text)
+			}
+		}).
+		AddInputField("端口", "", 10, func(text string, lastChar rune) bool {
+			// 简单的端口验证
+			if text == "" {
+				return true
+			}
+			for _, c := range text {
+				if c < '0' || c > '9' {
+					return false
+				}
+			}
+			return true
+		}, func(text string) {
+			if onFieldChanged != nil {
+				onFieldChanged("port", text)
+			}
+		}).
+		AddPasswordField("密码", "", 30, '*', func(text string) {
+			if onFieldChanged != nil {
+				onFieldChanged("password", text)
+			}
+		}).
+		AddCheckbox("启用 TLS", false, func(checked bool) {
+			if onFieldChanged != nil {
+				onFieldChanged("tls", fmt.Sprintf("%t", checked))
+			}
+		}).
+		AddButton("保存", onSave).
+		AddButton("取消", onCancel)
+
+	form.SetBorder(true).SetTitle("配置文件编辑").SetTitleAlign(tview.AlignLeft)
+	return form
+}
+
+// createSettingsFormGroup 构建设置分组表单
+func createSettingsFormGroup(title string, fields []formFieldConfig, onChanged func(string, string)) *tview.Form {
+	form := tview.NewForm()
+	form.SetBorder(true)
+	form.SetTitle(" " + title + " ")
+
+	for _, field := range fields {
+		switch field.Type {
+		case "dropdown":
+			form.AddDropDown(field.Label, field.Options, field.Selected, func(option string, optionIndex int) {
+				if onChanged != nil {
+					onChanged(field.Key, option)
+				}
+			})
+		case "input":
+			form.AddInputField(field.Label, field.Value, 30, nil, func(text string) {
+				if onChanged != nil {
+					onChanged(field.Key, text)
+				}
+			})
+		case "checkbox":
+			checked := field.Value == "true"
+			form.AddCheckbox(field.Label, checked, func(b bool) {
+				if onChanged != nil {
+					onChanged(field.Key, fmt.Sprintf("%t", b))
+				}
+			})
+		}
+	}
+
+	return form
+}
+
+type formFieldConfig struct {
+	Key      string
+	Label    string
+	Type     string
+	Value    string
+	Options  []string
+	Selected int
+}
+
+// ============ Card Helpers ============
+
+// newCard 创建一个带标题的卡片
+func newCard(title string, content tview.Primitive) *tview.Flex {
+	flex := tview.NewFlex().SetDirection(tview.FlexRow)
+	flex.SetBorder(true)
+	flex.SetTitle(" " + title + " ")
+	flex.SetBorderColor(tcell.ColorTeal)
+	flex.SetBackgroundColor(tcell.ColorBlack)
+	if content != nil {
+		flex.AddItem(content, 0, 1, false)
+	}
+	return flex
+}
+
+// updateCardContent 更新卡片内容
+func updateCardContent(card *tview.Flex, content tview.Primitive) {
+	card.Clear()
+	if content != nil {
+		card.AddItem(content, 0, 1, false)
+	}
 }

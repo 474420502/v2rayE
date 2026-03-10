@@ -795,7 +795,7 @@ func (a *tuiApp) saveSelectedProfileEditAction(ctx context.Context) error {
 		port = parsed
 	}
 	network := strings.TrimSpace(strings.ToLower(a.profileEditNetwork.Text()))
-	if network != "" && network != "tcp" && network != "ws" && network != "grpc" && network != "h2" && network != "kcp" && network != "quic" {
+	if network != "" && network != "tcp" && network != "ws" && network != "grpc" && network != "h2" && network != "kcp" && network != "quic" && network != "xhttp" {
 		err := errors.New(a.t("error.profile.invalidNetwork"))
 		a.setProfileEditMessage(a.tf("profileEdit.message.error", err.Error()))
 		return err

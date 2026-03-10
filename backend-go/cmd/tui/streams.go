@@ -2,12 +2,11 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"time"
 )
 
 func (a *tuiApp) startBackgroundWork() {
-	go a.runAction("initial load", func(context.Context) error {
+	go a.runAction(a.t("action.initialLoad"), func(context.Context) error {
 		return a.reloadAll()
 	})
 	go a.pollOverview()
@@ -21,10 +20,10 @@ func (a *tuiApp) streamLogs() {
 		if a.ctx.Err() != nil {
 			return
 		}
-		a.setLogsStreamState("connecting")
+		a.setLogsStreamState(a.t("stream.state.connecting"))
 		err := a.client.StreamLogs(a.ctx, func() {
 			delay = time.Second
-			a.setLogsStreamState("connected")
+			a.setLogsStreamState(a.t("stream.state.connected"))
 		}, func(line LogLine) error {
 			a.storeIncomingLogLine(line)
 			a.refreshLogsWidget()
@@ -35,10 +34,10 @@ func (a *tuiApp) streamLogs() {
 		}
 		reason := errorString(err)
 		if reason == "<nil>" {
-			reason = "stream closed"
+			reason = a.t("stream.reason.closed")
 		}
-		a.pushEvent("log stream disconnected: " + reason)
-		a.setLogsStreamState(fmt.Sprintf("reconnecting in %s (%s)", delay, reason))
+		a.pushEvent(a.tf("stream.event.logDisconnected", reason))
+		a.setLogsStreamState(a.tf("stream.state.reconnecting", delay, reason))
 		if !sleepContext(a.ctx, delay) {
 			return
 		}
@@ -52,10 +51,10 @@ func (a *tuiApp) streamEvents() {
 		if a.ctx.Err() != nil {
 			return
 		}
-		a.setEventsStreamState("connecting")
+		a.setEventsStreamState(a.t("stream.state.connecting"))
 		err := a.client.StreamEvents(a.ctx, func() {
 			delay = time.Second
-			a.setEventsStreamState("connected")
+			a.setEventsStreamState(a.t("stream.state.connected"))
 		}, func(msg EventMessage) error {
 			a.pushEvent(formatEvent(msg))
 			return nil
@@ -65,10 +64,10 @@ func (a *tuiApp) streamEvents() {
 		}
 		reason := errorString(err)
 		if reason == "<nil>" {
-			reason = "stream closed"
+			reason = a.t("stream.reason.closed")
 		}
-		a.pushEvent("event stream disconnected: " + reason)
-		a.setEventsStreamState(fmt.Sprintf("reconnecting in %s (%s)", delay, reason))
+		a.pushEvent(a.tf("stream.event.eventDisconnected", reason))
+		a.setEventsStreamState(a.tf("stream.state.reconnecting", delay, reason))
 		if !sleepContext(a.ctx, delay) {
 			return
 		}

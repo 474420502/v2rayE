@@ -26,8 +26,8 @@ type Store struct {
 	mu      sync.RWMutex
 }
 
-// ResolveDataDir normalizes the configured data directory and keeps legacy
-// mistaken defaults pinned to the current root-owned location.
+// ResolveDataDir normalizes the configured data directory and preserves
+// compatibility with historical default locations.
 func ResolveDataDir(dataDir string) string {
 	trimmed := strings.TrimSpace(dataDir)
 	if trimmed == "" {
@@ -170,10 +170,8 @@ func normalizeConfigMap(cfg map[string]interface{}) map[string]interface{} {
 		delete(normalized, "dnsServers")
 	}
 
-	switch asString(normalized["coreEngine"]) {
-	case "", "embedded", "auto", "xray", "builtin", "internal":
-		normalized["coreEngine"] = "xray-core"
-	}
+	// coreEngine 只能是 xray-core
+	normalized["coreEngine"] = "xray-core"
 
 	tunMode, hasTunMode := normalized["tunMode"].(string)
 	tunMode = normalizeTunMode(tunMode)

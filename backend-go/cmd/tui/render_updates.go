@@ -9,59 +9,119 @@ import (
 )
 
 func (a *tuiApp) refreshWidgets() {
+	a.refreshWidgetsWithLists(false, false)
+}
+
+type interactiveTextWidget interface {
+	tview.Primitive
+	Text() string
+	SetText(string, *tview.Application)
+}
+
+func (a *tuiApp) refreshWidgetsWithLists(refreshProfiles, refreshSubscriptions bool) {
 	a.runUI(func(app *tview.Application) {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 
-		a.dashboardSummary.SetText(a.formatDashboardSummary(), app)
-		a.dashboardEvents.SetText(strings.Join(a.events, "\n"), app)
-		a.logsView.SetText(a.formatFilteredLogs(), app)
+		a.refreshDashboardWidgets(app)
+		a.withSuspendedFieldTracking(func() {
+			a.setInteractiveText(app, a.logsLevelSelect, a.logLevelFilter)
+			a.setInteractiveText(app, a.logsSourceSelect, a.logSourceFilter)
+		})
+		if !a.primitiveFocused(app, a.logsView) {
+			a.logsView.SetText(a.formatFilteredLogs(), app)
+		}
 		a.logsStatus.SetText(fitSingleLineToWidth(a.formatLogsStatus(), a.viewportCols), app)
-		a.refreshProfilesList()
+		if refreshProfiles {
+			a.refreshProfilesList()
+		}
 		a.profileBatchStatus.SetText(a.formatBatchDelayStatus(), app)
 		a.profileEditStatus.SetText(a.formatProfileEditStatus(), app)
 		a.profileDetail.SetText(a.formatSelectedProfile(), app)
 		if !a.profileEditDirty || !a.profileEditLoaded || a.profileEditForID != a.selectedProfileID {
 			a.syncProfileEditorFromSelection(app)
 		}
-		a.refreshSubscriptionsList()
+		if refreshSubscriptions {
+			a.refreshSubscriptionsList()
+		}
 		a.subscriptionDetail.SetText(a.formatSelectedSubscription(), app)
 		a.networkSummary.SetText(a.formatNetworkSummary(), app)
 		a.withSuspendedFieldTracking(func() {
 			if !a.networkRoutingDirty {
-				a.networkRoutingMode.SetText(a.routing.Mode, app)
-				a.networkDomainStrategy.SetText(a.routing.DomainStrategy, app)
+				a.setInteractiveText(app, a.networkRoutingMode, a.routing.Mode)
+				a.setInteractiveText(app, a.networkDomainStrategy, a.routing.DomainStrategy)
 				localBypass := true
 				if a.routing.LocalBypassEnabled != nil {
 					localBypass = *a.routing.LocalBypassEnabled
 				}
-				a.networkLocalBypass.SetText(strconv.FormatBool(localBypass), app)
+				a.setInteractiveText(app, a.networkLocalBypass, strconv.FormatBool(localBypass))
 			}
 		})
 		a.networkTestResult.SetText(a.formatRoutingTestResult(), app)
 		a.settingsSummary.SetText(a.formatSettingsSummary(), app)
 		a.withSuspendedFieldTracking(func() {
 			if !a.settingsDirty || !a.settingsFormLoaded {
-				a.settingsListenAddr.SetText(stringValue(a.config, "listenAddr"), app)
-				a.settingsSocksPort.SetText(strconv.Itoa(intValue(a.config, "socksPort")), app)
-				a.settingsHTTPPort.SetText(strconv.Itoa(intValue(a.config, "httpPort")), app)
-				a.settingsCoreEngine.SetText(stringValue(a.config, "coreEngine"), app)
-				a.settingsLogLevel.SetText(stringValue(a.config, "logLevel"), app)
-				a.settingsSkipCert.SetText(strconv.FormatBool(boolValue(a.config, "skipCertVerify")), app)
-				a.settingsTunName.SetText(stringValue(a.config, "tunName"), app)
-				a.settingsTunMode.SetText(stringValue(a.config, "tunMode"), app)
-				a.settingsTunMtu.SetText(strconv.Itoa(intValue(a.config, "tunMtu")), app)
-				a.settingsTunAutoRoute.SetText(strconv.FormatBool(boolValue(a.config, "tunAutoRoute")), app)
-				a.settingsTunStrict.SetText(strconv.FormatBool(boolValue(a.config, "tunStrictRoute")), app)
-				a.settingsDNSMode.SetText(stringValue(a.config, "dnsMode"), app)
-				a.settingsDNSList.SetText(strings.Join(toStringSlice(a.config["dnsList"]), ","), app)
-				a.settingsProxyMode.SetText(stringValue(a.config, "systemProxyMode"), app)
-				a.settingsProxyExcept.SetText(stringValue(a.config, "systemProxyExceptions"), app)
-				a.settingsProxyUsers.SetText(strings.Join(toStringSlice(a.config["systemProxyUsers"]), ","), app)
+				a.setInteractiveText(app, a.settingsListenAddr, stringValue(a.config, "listenAddr"))
+				a.setInteractiveText(app, a.settingsSocksPort, strconv.Itoa(intValue(a.config, "socksPort")))
+				a.setInteractiveText(app, a.settingsHTTPPort, strconv.Itoa(intValue(a.config, "httpPort")))
+				a.setInteractiveText(app, a.settingsLanguage, currentGlobalUILanguage())
+				a.setInteractiveText(app, a.settingsCoreEngine, stringValue(a.config, "coreEngine"))
+				a.setInteractiveText(app, a.settingsLogLevel, stringValue(a.config, "logLevel"))
+				a.setInteractiveText(app, a.settingsSkipCert, strconv.FormatBool(boolValue(a.config, "skipCertVerify")))
+				a.setInteractiveText(app, a.settingsTunName, stringValue(a.config, "tunName"))
+				a.setInteractiveText(app, a.settingsTunMode, stringValue(a.config, "tunMode"))
+				a.setInteractiveText(app, a.settingsTunMtu, strconv.Itoa(intValue(a.config, "tunMtu")))
+				a.setInteractiveText(app, a.settingsTunAutoRoute, strconv.FormatBool(boolValue(a.config, "tunAutoRoute")))
+				a.setInteractiveText(app, a.settingsTunStrict, strconv.FormatBool(boolValue(a.config, "tunStrictRoute")))
+				a.setInteractiveText(app, a.settingsDNSMode, stringValue(a.config, "dnsMode"))
+				a.setInteractiveText(app, a.settingsDNSList, strings.Join(toStringSlice(a.config["dnsList"]), ","))
+				a.setInteractiveText(app, a.settingsProxyMode, stringValue(a.config, "systemProxyMode"))
+				a.setInteractiveText(app, a.settingsProxyExcept, stringValue(a.config, "systemProxyExceptions"))
+				a.setInteractiveText(app, a.settingsProxyUsers, strings.Join(toStringSlice(a.config["systemProxyUsers"]), ","))
 				a.settingsFormLoaded = true
 			}
 		})
 	})
+}
+
+func (a *tuiApp) primitiveFocused(app *tview.Application, primitive tview.Primitive) bool {
+	if app == nil || primitive == nil {
+		return false
+	}
+	focus := app.GetFocus()
+	if focus == nil {
+		return false
+	}
+	if focus == primitive {
+		return true
+	}
+	switch widget := primitive.(type) {
+	case *inputWidget:
+		return focus == widget.InputField
+	case *dropdownWidget:
+		return focus == widget.DropDown
+	case *textWidget:
+		return focus == widget.TextView
+	default:
+		return false
+	}
+}
+
+func (a *tuiApp) setInteractiveText(app *tview.Application, widget interactiveTextWidget, value string) {
+	if widget == nil || a.primitiveFocused(app, widget) {
+		return
+	}
+	if widget.Text() == value {
+		return
+	}
+	widget.SetText(value, app)
+}
+
+func (a *tuiApp) refreshDashboardWidgets(app *tview.Application) {
+	a.dashboardStatus.SetText(a.formatDashboardStatus(), app)
+	a.dashboardTelemetry.SetText(a.formatDashboardTelemetry(), app)
+	a.dashboardConfig.SetText(a.formatDashboardConfig(), app)
+	a.dashboardEvents.SetText(strings.Join(a.events, "\n"), app)
 }
 
 func (a *tuiApp) syncProfileEditorFromSelection(app *tview.Application) {
@@ -222,7 +282,13 @@ func (a *tuiApp) refreshLogsWidget() {
 	a.runUI(func(app *tview.Application) {
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		a.logsView.SetText(a.formatFilteredLogs(), app)
+		a.withSuspendedFieldTracking(func() {
+			a.setInteractiveText(app, a.logsLevelSelect, a.logLevelFilter)
+			a.setInteractiveText(app, a.logsSourceSelect, a.logSourceFilter)
+		})
+		if !a.primitiveFocused(app, a.logsView) {
+			a.logsView.SetText(a.formatFilteredLogs(), app)
+		}
 		a.logsStatus.SetText(fitSingleLineToWidth(a.formatLogsStatus(), a.viewportCols), app)
 	})
 }
@@ -312,7 +378,7 @@ func (a *tuiApp) setLogsStreamState(state string) {
 			return
 		}
 		a.logsStreamState = state
-		a.dashboardSummary.SetText(a.formatDashboardSummary(), app)
+		a.refreshDashboardWidgets(app)
 		a.logsStatus.SetText(a.formatLogsStatus(), app)
 	})
 }
@@ -325,7 +391,7 @@ func (a *tuiApp) setEventsStreamState(state string) {
 			return
 		}
 		a.eventsStreamState = state
-		a.dashboardSummary.SetText(a.formatDashboardSummary(), app)
+		a.refreshDashboardWidgets(app)
 	})
 }
 

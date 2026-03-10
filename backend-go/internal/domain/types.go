@@ -106,7 +106,7 @@ type TUICConfig struct {
 
 // TransportConfig holds transport/stream settings for vmess/vless/trojan.
 type TransportConfig struct {
-	Network string `json:"network"` // tcp|ws|grpc|h2|kcp|quic
+	Network string `json:"network"` // tcp|ws|grpc|h2|kcp|quic|xhttp
 
 	// WebSocket
 	WSPath    string            `json:"wsPath,omitempty"`
