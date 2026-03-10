@@ -29,15 +29,10 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	operationsRow1 := buttonRow(saveRouting, geoUpdate)
 	operationsRow2 := buttonRow(repairTun, routeTest)
 
-	if a.useStackedLayout() {
-		proxyActionsRow = buttonColumn(applyProxy, clearProxy)
-		operationsRow1 = buttonColumn(saveRouting, geoUpdate)
-		operationsRow2 = buttonColumn(repairTun, routeTest)
-	}
-	testRow := inputRow(a.networkTestTarget, a.networkTestPort, a.useStackedLayout(), 4, 1)
-	proxyActionsHeight := actionBlockHeight(a.useStackedLayout(), 2)
-	operationsHeight := actionBlockHeight(a.useStackedLayout(), 2)
-	testRowHeight := dualItemRowHeight(a.useStackedLayout())
+	testRow := inputRow(a.networkTestTarget, a.networkTestPort, false, 4, 1)
+	proxyActionsHeight := actionBlockHeight(false, 2)
+	operationsHeight := actionBlockHeight(false, 2)
+	testRowHeight := dualItemRowHeight(false)
 
 	actionsPanel := tview.NewFlex().SetDirection(tview.FlexRow)
 	actionsPanelHeight := 1 + 1 + 1
@@ -92,34 +87,19 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	diagnosticsPanel := wrapPanel(a.t("network.panel.diagnostics"), a.networkSummary)
 	testResultPanel := wrapPanel(a.t("network.panel.testResult"), a.networkTestResult)
 
-	var body tview.Primitive
-	if a.useStackedLayout() {
-		stack := tview.NewFlex().SetDirection(tview.FlexRow)
-		stack.AddItem(presetsPanel, 0, 3, false)
-		stack.AddItem(verticalSpacer(1), 1, 0, false)
-		stack.AddItem(routingPanel, 0, 4, false)
-		stack.AddItem(verticalSpacer(1), 1, 0, false)
-		stack.AddItem(toolsPanel, 0, 3, false)
-		stack.AddItem(verticalSpacer(1), 1, 0, false)
-		stack.AddItem(diagnosticsPanel, 0, 6, false)
-		stack.AddItem(verticalSpacer(1), 1, 0, false)
-		stack.AddItem(testResultPanel, 0, 3, false)
-		body = stack
-	} else {
-		leftColumn := tview.NewFlex().SetDirection(tview.FlexRow)
-		leftColumn.AddItem(presetsPanel, 0, 3, false)
-		leftColumn.AddItem(verticalSpacer(1), 1, 0, false)
-		leftColumn.AddItem(routingPanel, 0, 4, false)
-		leftColumn.AddItem(verticalSpacer(1), 1, 0, false)
-		leftColumn.AddItem(toolsPanel, 0, 3, false)
+	leftColumn := tview.NewFlex().SetDirection(tview.FlexRow)
+	leftColumn.AddItem(presetsPanel, 0, 3, false)
+	leftColumn.AddItem(verticalSpacer(1), 1, 0, false)
+	leftColumn.AddItem(routingPanel, 0, 4, false)
+	leftColumn.AddItem(verticalSpacer(1), 1, 0, false)
+	leftColumn.AddItem(toolsPanel, 0, 3, false)
 
-		rightColumn := tview.NewFlex().SetDirection(tview.FlexRow)
-		rightColumn.AddItem(diagnosticsPanel, 0, 7, false)
-		rightColumn.AddItem(verticalSpacer(1), 1, 0, false)
-		rightColumn.AddItem(testResultPanel, 0, 3, false)
+	rightColumn := tview.NewFlex().SetDirection(tview.FlexRow)
+	rightColumn.AddItem(diagnosticsPanel, 0, 7, false)
+	rightColumn.AddItem(verticalSpacer(1), 1, 0, false)
+	rightColumn.AddItem(testResultPanel, 0, 3, false)
 
-		body = splitContent(false, leftColumn, rightColumn, 5, 6)
-	}
+	body := splitContent(false, leftColumn, rightColumn, 5, 6)
 	root := buildPageLayout(a.t("common.actions"), actionsPanel, actionsPanelHeight, body)
 
 	return builtPage{

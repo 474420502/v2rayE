@@ -21,17 +21,8 @@ func (a *tuiApp) buildLogsPage() builtPage {
 	clearBtn := a.actionButton(a.t("logs.btn.clearSearch"), a.clearLogSearchAction)
 
 	searchActions := buttonRow(applyBtn, clearBtn)
-	searchRow := inputRow(a.logsSearchInput, searchActions, a.useStackedLayout(), 6, 4)
-	searchRowHeight := dualItemRowHeight(a.useStackedLayout())
-	if a.useStackedLayout() {
-		searchActions = buttonColumn(applyBtn, clearBtn)
-		stackedSearchRow := tview.NewFlex().SetDirection(tview.FlexRow)
-		stackedSearchRow.AddItem(a.logsSearchInput, 1, 0, false)
-		stackedSearchRow.AddItem(verticalSpacer(1), 1, 0, false)
-		stackedSearchRow.AddItem(searchActions, actionBlockHeight(true, 2), 0, false)
-		searchRow = stackedSearchRow
-		searchRowHeight = 1 + 1 + actionBlockHeight(true, 2)
-	}
+	searchRow := inputRow(a.logsSearchInput, searchActions, false, 6, 4)
+	searchRowHeight := dualItemRowHeight(false)
 
 	filtersContentHeight := 1 + 1 + 1
 
@@ -66,20 +57,12 @@ func (a *tuiApp) buildLogsPage() builtPage {
 	filters := tview.NewFlex().SetDirection(tview.FlexRow)
 	filters.AddItem(newMutedText(a.t("logs.desc")), 1, 0, false)
 	filters.AddItem(verticalSpacer(1), 1, 0, false)
-	if a.useStackedLayout() {
-		filters.AddItem(levelPanel, 0, 3, false)
-		filters.AddItem(verticalSpacer(1), 1, 0, false)
-		filters.AddItem(sourcePanel, 0, 2, false)
-		filters.AddItem(verticalSpacer(1), 1, 0, false)
-		filters.AddItem(searchPanel, 0, 3, false)
-	} else {
-		grid := tview.NewGrid().SetBorders(false).SetGap(1, 1)
-		grid.SetRows(0, 0).SetColumns(0, 0)
-		grid.AddItem(levelPanel, 0, 0, 1, 1, 0, 0, false)
-		grid.AddItem(sourcePanel, 0, 1, 1, 1, 0, 0, false)
-		grid.AddItem(searchPanel, 1, 0, 1, 2, 0, 0, false)
-		filters.AddItem(grid, 0, 1, false)
-	}
+	grid := tview.NewGrid().SetBorders(false).SetGap(1, 1)
+	grid.SetRows(0, 0).SetColumns(0, 0)
+	grid.AddItem(levelPanel, 0, 0, 1, 1, 0, 0, false)
+	grid.AddItem(sourcePanel, 0, 1, 1, 1, 0, 0, false)
+	grid.AddItem(searchPanel, 1, 0, 1, 2, 0, 0, false)
+	filters.AddItem(grid, 0, 1, false)
 	body := wrapPanel(a.t("logs.panel.logs"), a.logsView)
 	root := buildPageLayout(a.t("logs.panel.filters"), filters, filtersContentHeight, body)
 

@@ -29,22 +29,16 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 	proxyUserActionsRow1 := buttonRow(proxyUsersDetect, proxyUsersDefault)
 	proxyUserActionsRow2 := buttonRow(proxyUsersAddAll, proxyUsersSelect)
 
-	if a.useStackedLayout() {
-		controls = buttonColumn(saveBtn, clearErrBtn, exitCleanupBtn)
-		proxyUserActionsRow1 = buttonColumn(proxyUsersDetect, proxyUsersDefault)
-		proxyUserActionsRow2 = buttonColumn(proxyUsersAddAll, proxyUsersSelect)
-	}
-
 	generalPanel := buildGroupPanel(
 		a.t("settings.group.general"),
 		struct {
 			primitive tview.Primitive
 			height    int
-		}{primitive: inputRow(a.settingsListenAddr, a.settingsSocksPort, a.useStackedLayout(), 3, 2), height: dualItemRowHeight(a.useStackedLayout())},
+		}{primitive: inputRow(a.settingsListenAddr, a.settingsSocksPort, false, 3, 2), height: dualItemRowHeight(false)},
 		struct {
 			primitive tview.Primitive
 			height    int
-		}{primitive: inputRow(a.settingsHTTPPort, a.settingsSkipCert, a.useStackedLayout(), 2, 3), height: dualItemRowHeight(a.useStackedLayout())},
+		}{primitive: inputRow(a.settingsHTTPPort, a.settingsSkipCert, false, 2, 3), height: dualItemRowHeight(false)},
 		struct {
 			primitive tview.Primitive
 			height    int
@@ -52,7 +46,7 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 		struct {
 			primitive tview.Primitive
 			height    int
-		}{primitive: inputRow(a.settingsCoreEngine, a.settingsLogLevel, a.useStackedLayout(), 1, 1), height: dualItemRowHeight(a.useStackedLayout())},
+		}{primitive: inputRow(a.settingsCoreEngine, a.settingsLogLevel, false, 1, 1), height: dualItemRowHeight(false)},
 	)
 
 	tunPanel := buildGroupPanel(
@@ -60,11 +54,11 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 		struct {
 			primitive tview.Primitive
 			height    int
-		}{primitive: inputRow(a.settingsTunName, a.settingsTunMode, a.useStackedLayout(), 2, 3), height: dualItemRowHeight(a.useStackedLayout())},
+		}{primitive: inputRow(a.settingsTunName, a.settingsTunMode, false, 2, 3), height: dualItemRowHeight(false)},
 		struct {
 			primitive tview.Primitive
 			height    int
-		}{primitive: inputRow(a.settingsTunMtu, a.settingsTunAutoRoute, a.useStackedLayout(), 2, 3), height: dualItemRowHeight(a.useStackedLayout())},
+		}{primitive: inputRow(a.settingsTunMtu, a.settingsTunAutoRoute, false, 2, 3), height: dualItemRowHeight(false)},
 		struct {
 			primitive tview.Primitive
 			height    int
@@ -84,11 +78,11 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 		struct {
 			primitive tview.Primitive
 			height    int
-		}{primitive: proxyUserActionsRow1, height: actionBlockHeight(a.useStackedLayout(), 2)},
+		}{primitive: proxyUserActionsRow1, height: actionBlockHeight(false, 2)},
 		struct {
 			primitive tview.Primitive
 			height    int
-		}{primitive: proxyUserActionsRow2, height: actionBlockHeight(a.useStackedLayout(), 2)},
+		}{primitive: proxyUserActionsRow2, height: actionBlockHeight(false, 2)},
 		struct {
 			primitive tview.Primitive
 			height    int
@@ -120,54 +114,50 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 	rightColumn.AddItem(wrapPanel(a.t("settings.panel.summary"), a.settingsSummary), 0, 4, false)
 
 	editorGrid := tview.NewGrid().SetBorders(false).SetGap(1, 1)
-	if a.useStackedLayout() {
-		editorGrid.SetRows(0, 0, 0, 0, 0).SetColumns(0)
-		editorGrid.AddItem(generalPanel, 0, 0, 1, 1, 0, 0, false)
-		editorGrid.AddItem(tunPanel, 1, 0, 1, 1, 0, 0, false)
-		editorGrid.AddItem(proxyPanel, 2, 0, 1, 1, 0, 0, false)
-		editorGrid.AddItem(dnsPanel, 3, 0, 1, 1, 0, 0, false)
-		editorGrid.AddItem(wrapPanel(a.t("settings.panel.summary"), a.settingsSummary), 4, 0, 1, 1, 0, 0, false)
-	} else {
-		editorGrid.SetRows(0, 0, 0).SetColumns(0, 0)
-		editorGrid.AddItem(generalPanel, 0, 0, 1, 1, 0, 0, false)
-		editorGrid.AddItem(proxyPanel, 0, 1, 1, 1, 0, 0, false)
-		editorGrid.AddItem(tunPanel, 1, 0, 1, 1, 0, 0, false)
-		editorGrid.AddItem(dnsPanel, 1, 1, 1, 1, 0, 0, false)
-		editorGrid.AddItem(wrapPanel(a.t("settings.panel.summary"), a.settingsSummary), 2, 0, 1, 2, 0, 0, false)
-	}
+	editorGrid.SetRows(0, 0, 0).SetColumns(0, 0)
+	editorGrid.AddItem(generalPanel, 0, 0, 1, 1, 0, 0, false)
+	editorGrid.AddItem(proxyPanel, 0, 1, 1, 1, 0, 0, false)
+	editorGrid.AddItem(tunPanel, 1, 0, 1, 1, 0, 0, false)
+	editorGrid.AddItem(dnsPanel, 1, 1, 1, 1, 0, 0, false)
+	editorGrid.AddItem(wrapPanel(a.t("settings.panel.summary"), a.settingsSummary), 2, 0, 1, 2, 0, 0, false)
 	body := wrapPanel(a.t("settings.panel.editor"), editorGrid)
 
 	quickActions := tview.NewFlex().SetDirection(tview.FlexRow)
-	controlsHeight := actionBlockHeight(a.useStackedLayout(), 3)
+	controlsHeight := actionBlockHeight(false, 3)
 	quickActionsContentHeight := 1 + 1 + controlsHeight
 	quickActions.AddItem(newMutedText(a.t("settings.desc")), 1, 0, false)
 	quickActions.AddItem(verticalSpacer(1), 1, 0, false)
 	quickActions.AddItem(controls, controlsHeight, 0, false)
 
 	root := buildPageLayout(a.t("settings.panel.quickActions"), quickActions, quickActionsContentHeight, body)
+
+	actionGroup := buttonsToFocusables(saveBtn, clearErrBtn, exitCleanupBtn)
+	contentGroup := joinFocusables(
+		primitivesToFocusables(a.settingsListenAddr, a.settingsSocksPort, a.settingsHTTPPort),
+		primitivesToFocusables(a.settingsLanguage, a.settingsCoreEngine, a.settingsLogLevel, a.settingsSkipCert),
+		primitivesToFocusables(a.settingsTunName, a.settingsTunMode, a.settingsTunMtu, a.settingsTunAutoRoute, a.settingsTunStrict),
+		primitivesToFocusables(a.settingsDNSMode, a.settingsDNSList),
+		primitivesToFocusables(a.settingsProxyMode, a.settingsProxyExcept),
+		buttonsToFocusables(proxyUsersDetect, proxyUsersDefault),
+		buttonsToFocusables(proxyUsersAddAll, proxyUsersSelect),
+		primitivesToFocusables(a.settingsProxyUsers),
+	)
+
+	focusGroups := [][]tview.Primitive{
+		actionGroup,
+		primitivesToFocusables(a.settingsListenAddr, a.settingsSocksPort, a.settingsHTTPPort),
+		primitivesToFocusables(a.settingsLanguage, a.settingsCoreEngine, a.settingsLogLevel, a.settingsSkipCert),
+		primitivesToFocusables(a.settingsTunName, a.settingsTunMode, a.settingsTunMtu, a.settingsTunAutoRoute, a.settingsTunStrict),
+		primitivesToFocusables(a.settingsDNSMode, a.settingsDNSList),
+		primitivesToFocusables(a.settingsProxyMode, a.settingsProxyExcept),
+		buttonsToFocusables(proxyUsersDetect, proxyUsersDefault),
+		buttonsToFocusables(proxyUsersAddAll, proxyUsersSelect),
+		primitivesToFocusables(a.settingsProxyUsers),
+	}
+
 	return builtPage{
-		root: root,
-		focusables: joinFocusables(
-			buttonsToFocusables(saveBtn, clearErrBtn, exitCleanupBtn),
-			primitivesToFocusables(a.settingsListenAddr, a.settingsSocksPort, a.settingsHTTPPort),
-			primitivesToFocusables(a.settingsLanguage, a.settingsCoreEngine, a.settingsLogLevel, a.settingsSkipCert),
-			primitivesToFocusables(a.settingsTunName, a.settingsTunMode, a.settingsTunMtu, a.settingsTunAutoRoute, a.settingsTunStrict),
-			primitivesToFocusables(a.settingsDNSMode, a.settingsDNSList),
-			primitivesToFocusables(a.settingsProxyMode, a.settingsProxyExcept),
-			buttonsToFocusables(proxyUsersDetect, proxyUsersDefault),
-			buttonsToFocusables(proxyUsersAddAll, proxyUsersSelect),
-			primitivesToFocusables(a.settingsProxyUsers),
-		),
-		focusGroups: [][]tview.Primitive{
-			buttonsToFocusables(saveBtn, clearErrBtn, exitCleanupBtn),
-			primitivesToFocusables(a.settingsListenAddr, a.settingsSocksPort, a.settingsHTTPPort),
-			primitivesToFocusables(a.settingsLanguage, a.settingsCoreEngine, a.settingsLogLevel, a.settingsSkipCert),
-			primitivesToFocusables(a.settingsTunName, a.settingsTunMode, a.settingsTunMtu, a.settingsTunAutoRoute, a.settingsTunStrict),
-			primitivesToFocusables(a.settingsDNSMode, a.settingsDNSList),
-			primitivesToFocusables(a.settingsProxyMode, a.settingsProxyExcept),
-			buttonsToFocusables(proxyUsersDetect, proxyUsersDefault),
-			buttonsToFocusables(proxyUsersAddAll, proxyUsersSelect),
-			primitivesToFocusables(a.settingsProxyUsers),
-		},
+		root:       root,
+		focusables: joinFocusables(actionGroup, contentGroup),
+		focusGroups: focusGroups,
 	}
 }

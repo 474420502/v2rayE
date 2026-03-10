@@ -12,14 +12,6 @@ import (
 )
 
 const (
-	// 布局断点定义
-	narrowLayoutBreakpoint = 110 // 窄屏布局切换点 (≥110列时按钮横排)
-	ultraNarrowBreakpoint  = 80  // 极窄模式断点 (侧边栏隐藏 → 顶部Tab栏)
-	minViewportCols        = 50  // 最小支持列数
-	minViewportRows        = 12  // 最小支持行数
-)
-
-const (
 	profileEditSectionBasic     = "basic"
 	profileEditSectionProtocol  = "protocol"
 	profileEditSectionTransport = "transport"
@@ -590,82 +582,16 @@ func emphasizeKeyword(message, keyword string) string {
 	return builder.String()
 }
 
-func (a *tuiApp) useStackedLayout() bool {
-	// 仅当视口宽度不足时才堆叠按钮/控件。
-	// 注意：不对行数设置条件——堆叠会增加高度，对短终端反而更糟。
-	return a.viewportCols > 0 && a.viewportCols < narrowLayoutBreakpoint
-}
-
-// useUltraNarrowLayout 判断是否使用极窄布局（侧边栏最小化等）
-func (a *tuiApp) useUltraNarrowLayout() bool {
-	return a.viewportCols > 0 && a.viewportCols < ultraNarrowBreakpoint
-}
-
-// isViewportUsable 判断当前视口是否可用（最小尺寸以上）
-func (a *tuiApp) isViewportUsable() bool {
-	if a.viewportCols > 0 && a.viewportCols < minViewportCols {
-		return false
-	}
-	if a.viewportRows > 0 && a.viewportRows < minViewportRows {
-		return false
-	}
-	return true
-}
-
-// updateSidebarMode 根据视口大小更新侧边栏模式
 func (a *tuiApp) updateSidebarMode() {
-	if a.sidebar == nil {
-		return
-	}
-
-	// 极窄模式下完全隐藏侧边栏（<90列）
-	if a.useUltraNarrowLayout() {
-		a.sidebar.SetVisible(false)
-		a.sidebar.SetCompact(false)
-		return
-	}
-
-	// 确保侧边栏可见
-	if !a.sidebar.IsVisible() {
+	// 大视窗模式下侧边栏始终可见
+	if a.sidebar != nil {
 		a.sidebar.SetVisible(true)
+		a.sidebar.SetCompact(false)
 	}
-
-	// 窄屏模式下使用紧凑模式（<130列）
-	a.sidebar.SetCompact(a.useStackedLayout())
-}
-
-func (a *tuiApp) viewportLayoutMode() string {
-	if a.useUltraNarrowLayout() {
-		return "ultra"
-	}
-	if a.useStackedLayout() {
-		return "stacked"
-	}
-	return "wide"
-}
-
-// applyViewportLayoutMode 仅在断点模式变化时重建页面，避免每帧重排。
-func (a *tuiApp) applyViewportLayoutMode() {
-	mode := a.viewportLayoutMode()
-	if mode == a.layoutMode {
-		a.updateSidebarMode()
-		return
-	}
-	a.layoutMode = mode
-	a.updateSidebarMode()
-	if a.pageHolder == nil {
-		return
-	}
-	// BeforeDraw runs in the draw cycle; defer full page rebuild to a queued UI update.
-	a.runUI(func(_ *tview.Application) {
-		a.syncPages()
-	})
 }
 
 func (a *tuiApp) viewportWarning() string {
-	if !a.isViewportUsable() {
-		return "⚠ too small"
-	}
+	// 大视窗模式下始终没有警告
 	return ""
 }
 

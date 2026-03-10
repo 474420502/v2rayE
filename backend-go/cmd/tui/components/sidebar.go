@@ -22,7 +22,7 @@ type Sidebar struct {
 	onSelect   func(string)
 	buttons    []*tview.Button
 	theme      *Theme
-	compact    bool   // 紧凑模式（极窄）
+	compact    bool
 	visible    bool   // 是否可见
 }
 
@@ -57,7 +57,7 @@ func (s *Sidebar) SetItems(items []NavItem) {
 	s.build()
 }
 
-// SetCompact 设置紧凑模式（极窄模式）
+// SetCompact 设置紧凑模式。
 func (s *Sidebar) SetCompact(compact bool) {
 	if s.compact != compact {
 		s.compact = compact

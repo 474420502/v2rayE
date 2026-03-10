@@ -27,6 +27,7 @@ type tuiApp struct {
 	layoutMode   string
 
 	pageHolder  *tview.Pages
+	rootPages   *tview.Pages
 	tabBar      *tview.Flex
 	helpBar     *tview.TextView // 动态帮助/导航栏 (窄屏时切换为 Tab 导航)
 	sidebar     *components.Sidebar

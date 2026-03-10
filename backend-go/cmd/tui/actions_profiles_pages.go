@@ -23,6 +23,10 @@ const profileQuickEditDiffPage = "profile-quick-edit-diff"
 const profileActionsMenuPage = "profile-actions-menu"
 const profileDeleteConfirmPage = "profile-delete-confirm"
 
+func (a *tuiApp) profileQuickEditOverlay(content tview.Primitive) tview.Primitive {
+	return centeredPrimitive(content, 120, 30)
+}
+
 func (a *tuiApp) openProfileDeleteConfirmDialogAction(context.Context) error {
 	a.openProfileDeleteConfirmDialog()
 	return nil
@@ -354,7 +358,7 @@ func (a *tuiApp) openProfileQuickEditDialog() {
 		form.AddItem(buttonRow(previewBtn, resetBtn, formatBtn, saveBtn, cancelBtn), 1, 0, false)
 
 		a.profileEditPrev = app.GetFocus()
-		a.pageHolder.AddPage(profileQuickEditDialogPage, centeredPrimitive(form, 120, 30), true, true)
+		a.pageHolder.AddPage(profileQuickEditDialogPage, a.profileQuickEditOverlay(form), true, true)
 		a.profileEditVisible.Store(true)
 		app.SetFocus(editor)
 		a.setFooter(a.t("footer.profile.editorHint"))

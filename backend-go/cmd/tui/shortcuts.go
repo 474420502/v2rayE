@@ -148,37 +148,3 @@ func pageDisplayName(page string) string {
 	}
 }
 
-// tabBarText 生成紧凑的 Tab 导航条文本（超窄视口时替换帮助栏）。
-// 格式: "[1]Dash  [2]Prof  ..." 当前页黑字青底高亮，其余灰色。
-func (a *tuiApp) tabBarText() string {
-	tabs := tuiPageTabs()
-	parts := make([]string, 0, len(tabs))
-	for _, tab := range tabs {
-		name := tabShortName(tab.key)
-		if tab.key == a.page {
-			parts = append(parts, fmt.Sprintf("[black:teal:b][%c]%s[-:-:-]", tab.shortcut, name))
-		} else {
-			parts = append(parts, fmt.Sprintf("[darkgray::-][%c]%s[-:-:-]", tab.shortcut, name))
-		}
-	}
-	return strings.Join(parts, " ")
-}
-
-func tabShortName(page string) string {
-	switch page {
-	case pageDashboard:
-		return "Dash"
-	case pageProfiles:
-		return "Prof"
-	case pageSubscriptions:
-		return "Subs"
-	case pageNetwork:
-		return "Net"
-	case pageSettings:
-		return "Set"
-	case pageLogs:
-		return "Logs"
-	default:
-		return page
-	}
-}

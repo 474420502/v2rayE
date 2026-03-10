@@ -247,16 +247,14 @@ func (a *tuiApp) build() tview.Primitive {
 	a.helpBar = help
 	content := tview.NewFlex().SetDirection(tview.FlexColumn)
 
-	// 根据侧边栏可见性调整布局
+	// 声明 root 变量
+	var root *tview.Flex
+
+	// 大视窗布局：侧边栏导航
 	sidebarWidth := 0
 	spacerWidth := 1
 	if a.sidebar != nil && a.sidebar.IsVisible() {
-		// 极窄模式下紧凑显示，否则正常显示
-		if a.useUltraNarrowLayout() {
-			sidebarWidth = 3 // 只显示图标
-		} else {
-			sidebarWidth = 20
-		}
+		sidebarWidth = 20
 	}
 	if sidebarWidth > 0 {
 		content.AddItem(a.sidebar, sidebarWidth, 0, false)
@@ -264,14 +262,17 @@ func (a *tuiApp) build() tview.Primitive {
 	}
 	content.AddItem(a.pageHolder, 0, 1, true)
 
-	root := tview.NewFlex().SetDirection(tview.FlexRow)
+	root = tview.NewFlex().SetDirection(tview.FlexRow)
 	root.AddItem(title, 1, 0, false)
 	root.AddItem(help, 1, 0, false)
 	root.AddItem(content, 0, 1, true)
 	root.AddItem(a.footer, 1, 0, false)
 
+	a.rootPages = tview.NewPages()
+	a.rootPages.AddPage("main", root, true, true)
+
 	a.syncPages()
-	return root
+	return a.rootPages
 }
 
 func (a *tuiApp) fieldLabel(key string) string {
@@ -284,7 +285,7 @@ func (a *tuiApp) fieldLabelWithChoices(labelKey, choicesKey string) string {
 
 func (a *tuiApp) fieldLabelWithChoicesAdaptive(labelKey, choicesKey string) string {
 	// Long choice hints can truncate form fields on narrow terminals.
-	if a.useStackedLayout() || (a.viewportCols > 0 && a.viewportCols < 150) {
+	if a.viewportCols > 0 && a.viewportCols < 150 {
 		return a.fieldLabel(labelKey)
 	}
 	return a.fieldLabelWithChoices(labelKey, choicesKey)
@@ -484,10 +485,10 @@ func (a *tuiApp) syncPages() {
 		page = a.buildDashboardPage()
 	}
 
-	// 更新侧边栏模式（响应视口变化）
-	a.updateSidebarMode()
+	// 同步侧边栏
 	a.syncSidebar()
 
+	prevFocusGroup := a.focusGroup
 	a.focusables = append([]tview.Primitive{}, page.focusables...)
 	a.focusGroups = nil
 	for _, group := range page.focusGroups {
@@ -507,18 +508,28 @@ func (a *tuiApp) syncPages() {
 	if len(a.focusGroups) == 0 && len(a.focusables) > 0 {
 		a.focusGroups = [][]tview.Primitive{a.focusables}
 	}
-	a.focusGroup = 0
+	if len(a.focusGroups) == 0 {
+		a.focusGroup = -1
+	} else {
+		if prevFocusGroup < 0 {
+			prevFocusGroup = 0
+		}
+		if prevFocusGroup >= len(a.focusGroups) {
+			prevFocusGroup = len(a.focusGroups) - 1
+		}
+		a.focusGroup = prevFocusGroup
+	}
 	a.pageHolder.RemovePage("current")
 	a.pageHolder.AddAndSwitchToPage("current", page.root, true)
 	if a.app != nil {
-		if len(a.focusGroups) > 0 && len(a.focusGroups[0]) > 0 {
-			a.app.SetFocus(a.focusGroups[0][0])
+		if len(a.focusGroups) > 0 && a.focusGroup >= 0 && a.focusGroup < len(a.focusGroups) && len(a.focusGroups[a.focusGroup]) > 0 {
+			a.app.SetFocus(a.focusGroups[a.focusGroup][0])
 		} else if len(a.focusables) > 0 {
 			a.app.SetFocus(a.focusables[0])
 		}
+		a.refreshFooter()
+		a.refreshHelpBar()
 	}
-	a.refreshFooter()
-	a.refreshHelpBar()
 }
 
 func (a *tuiApp) settingsChanged(string) {

@@ -435,16 +435,9 @@ func (a *tuiApp) refreshFooter() {
 	a.footer.SetText(footer, a.app)
 }
 
-// refreshHelpBar 更新顶部帮助/导航栏:
-//   - 超窄模式 (sidebar 隐藏): 显示 Tab 导航条，高亮当前页
-//   - 正常模式: 显示快捷键提示文字
+// refreshHelpBar 更新顶部帮助栏（大视窗模式固定显示快捷键提示）。
 func (a *tuiApp) refreshHelpBar() {
 	if a.helpBar == nil {
-		return
-	}
-	if a.useUltraNarrowLayout() {
-		// 超窄时替换为页面导航条（不做宽度截断，tview color tags 长度与显示宽度不一致）
-		a.helpBar.SetText(a.tabBarText())
 		return
 	}
 	text := a.t("layout.shortcuts")
