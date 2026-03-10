@@ -17,11 +17,13 @@ type NavItem struct {
 // Sidebar 侧边栏导航组件
 type Sidebar struct {
 	*tview.Flex
-	items    []NavItem
-	selected int
-	onSelect func(string)
-	buttons  []*tview.Button
-	theme    *Theme
+	items      []NavItem
+	selected   int
+	onSelect   func(string)
+	buttons    []*tview.Button
+	theme      *Theme
+	compact    bool   // 紧凑模式（极窄）
+	visible    bool   // 是否可见
 }
 
 // NewSidebar 创建新的侧边栏
@@ -55,16 +57,55 @@ func (s *Sidebar) SetItems(items []NavItem) {
 	s.build()
 }
 
+// SetCompact 设置紧凑模式（极窄模式）
+func (s *Sidebar) SetCompact(compact bool) {
+	if s.compact != compact {
+		s.compact = compact
+		s.build()
+	}
+}
+
+// SetVisible 设置侧边栏是否可见
+func (s *Sidebar) SetVisible(visible bool) {
+	if s.visible != visible {
+		s.visible = visible
+		s.build()
+	}
+}
+
+// IsVisible 获取侧边栏是否可见
+func (s *Sidebar) IsVisible() bool {
+	return s.visible
+}
+
 // build 构建侧边栏内容
 func (s *Sidebar) build() {
 	s.Clear()
+
+	// 如果不可见，只保留一个占位符
+	if !s.visible {
+		s.SetBorder(false)
+		s.AddItem(tview.NewBox(), 0, 1, false)
+		return
+	}
+
 	s.SetBorder(true)
-	s.SetTitle(" Menu ")
+
+	// 根据是否为紧凑模式设置标题
+	if s.compact {
+		s.SetTitle(" ≡ ")
+	} else {
+		s.SetTitle(" Menu ")
+	}
 	s.SetBorderColor(s.theme.Border)
 
 	// 添加标题
 	title := tview.NewTextView()
-	title.SetText("[::b]v2rayE")
+	if s.compact {
+		title.SetText("[::b]E")
+	} else {
+		title.SetText("[::b]v2rayE")
+	}
 	title.SetTextAlign(tview.AlignCenter)
 	title.SetBackgroundColor(s.theme.Primary)
 	title.SetTextColor(tcell.ColorBlack)
@@ -78,7 +119,14 @@ func (s *Sidebar) build() {
 	s.buttons = make([]*tview.Button, len(s.items))
 	for i, item := range s.items {
 		item := item
-		btn := tview.NewButton(fmt.Sprintf("%c %s", item.Shortcut, item.Label))
+		var btnLabel string
+		if s.compact {
+			// 紧凑模式只显示快捷键
+			btnLabel = fmt.Sprintf("%c", item.Shortcut)
+		} else {
+			btnLabel = fmt.Sprintf("%c %s", item.Shortcut, item.Label)
+		}
+		btn := tview.NewButton(btnLabel)
 		btn.SetSelectedFunc(func() {
 			s.Select(i)
 			if s.onSelect != nil {

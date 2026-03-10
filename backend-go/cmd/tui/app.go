@@ -24,9 +24,11 @@ type tuiApp struct {
 	footerStatus string
 	viewportCols int
 	viewportRows int
+	layoutMode   string
 
 	pageHolder  *tview.Pages
 	tabBar      *tview.Flex
+	helpBar     *tview.TextView // 动态帮助/导航栏 (窄屏时切换为 Tab 导航)
 	sidebar     *components.Sidebar
 	focusables  []tview.Primitive
 	focusGroups [][]tview.Primitive
@@ -143,6 +145,7 @@ type tuiApp struct {
 	subscriptionsList      *tview.List
 	subscriptionDetail     *textWidget
 	networkSummary         *textWidget
+	networkPresetSelect    *dropdownWidget
 	networkRoutingMode     *dropdownWidget
 	networkDomainStrategy  *dropdownWidget
 	networkLocalBypass     *dropdownWidget

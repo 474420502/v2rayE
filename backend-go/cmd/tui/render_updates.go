@@ -49,6 +49,14 @@ func (a *tuiApp) refreshWidgetsWithLists(refreshProfiles, refreshSubscriptions b
 		a.withSuspendedFieldTracking(func() {
 			if !a.networkRoutingDirty {
 				a.setInteractiveText(app, a.networkRoutingMode, a.routing.Mode)
+				if a.networkPresetSelect != nil {
+					preset := ""
+					switch a.routing.Mode {
+					case "global", "bypass_cn", "direct":
+						preset = a.routing.Mode
+					}
+					a.setInteractiveText(app, a.networkPresetSelect, preset)
+				}
 				a.setInteractiveText(app, a.networkDomainStrategy, a.routing.DomainStrategy)
 				localBypass := true
 				if a.routing.LocalBypassEnabled != nil {
@@ -425,4 +433,23 @@ func (a *tuiApp) refreshFooter() {
 		footer = fitSingleLineToWidth(footer, a.viewportCols)
 	}
 	a.footer.SetText(footer, a.app)
+}
+
+// refreshHelpBar 更新顶部帮助/导航栏:
+//   - 超窄模式 (sidebar 隐藏): 显示 Tab 导航条，高亮当前页
+//   - 正常模式: 显示快捷键提示文字
+func (a *tuiApp) refreshHelpBar() {
+	if a.helpBar == nil {
+		return
+	}
+	if a.useUltraNarrowLayout() {
+		// 超窄时替换为页面导航条（不做宽度截断，tview color tags 长度与显示宽度不一致）
+		a.helpBar.SetText(a.tabBarText())
+		return
+	}
+	text := a.t("layout.shortcuts")
+	if a.viewportCols > 0 {
+		text = fitSingleLineToWidth(text, a.viewportCols)
+	}
+	a.helpBar.SetText(text)
 }

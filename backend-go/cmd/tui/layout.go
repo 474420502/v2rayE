@@ -15,6 +15,9 @@ func (a *tuiApp) build() tview.Primitive {
 	a.sidebar = components.NewSidebar(nil, func(page string) {
 		a.setActivePage(page)
 	}, nil)
+
+	// 设置侧边栏的初始状态
+	a.updateSidebarMode()
 	a.dashboardStatus = readOnlyEditor("")
 	a.dashboardTelemetry = readOnlyEditor("")
 	a.dashboardConfig = readOnlyEditor("")
@@ -131,6 +134,12 @@ func (a *tuiApp) build() tview.Primitive {
 	a.subscriptionDetail = readOnlyEditor("Select a subscription to inspect.")
 	a.subscriptionsList = newListWidget()
 	a.networkSummary = readOnlyEditor("")
+	a.networkPresetSelect = newDropdownWidget("", []selectOption{{Label: "(empty)", Value: ""}, {Label: "global", Value: "global"}, {Label: "bypass_cn", Value: "bypass_cn"}, {Label: "direct", Value: "direct"}}, func(value string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.applyRoutingPresetToForm(value)
+	})
 	a.networkRoutingMode = newDropdownWidget("", []selectOption{{Label: "global", Value: "global"}, {Label: "bypass_cn", Value: "bypass_cn"}, {Label: "direct", Value: "direct"}, {Label: "custom", Value: "custom"}}, func(string) {
 		if a.fieldTrackingSuspended() {
 			return
@@ -235,9 +244,24 @@ func (a *tuiApp) build() tview.Primitive {
 	title.SetBackgroundColor(tcell.ColorTeal)
 
 	help := newMutedText(a.t("layout.shortcuts"))
+	a.helpBar = help
 	content := tview.NewFlex().SetDirection(tview.FlexColumn)
-	content.AddItem(a.sidebar, 20, 0, false)
-	content.AddItem(horizontalSpacer(1), 1, 0, false)
+
+	// 根据侧边栏可见性调整布局
+	sidebarWidth := 0
+	spacerWidth := 1
+	if a.sidebar != nil && a.sidebar.IsVisible() {
+		// 极窄模式下紧凑显示，否则正常显示
+		if a.useUltraNarrowLayout() {
+			sidebarWidth = 3 // 只显示图标
+		} else {
+			sidebarWidth = 20
+		}
+	}
+	if sidebarWidth > 0 {
+		content.AddItem(a.sidebar, sidebarWidth, 0, false)
+		content.AddItem(horizontalSpacer(spacerWidth), 1, 0, false)
+	}
 	content.AddItem(a.pageHolder, 0, 1, true)
 
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
@@ -278,6 +302,9 @@ func (a *tuiApp) refreshFieldLabels() {
 	}
 	if a.networkRoutingMode != nil {
 		a.networkRoutingMode.SetLabel(a.fieldLabelWithChoicesAdaptive("field.network.mode", "field.choices.network.mode"))
+	}
+	if a.networkPresetSelect != nil {
+		a.networkPresetSelect.SetLabel(a.fieldLabel("field.network.preset"))
 	}
 	if a.networkDomainStrategy != nil {
 		a.networkDomainStrategy.SetLabel(a.fieldLabelWithChoicesAdaptive("field.network.domainStrategy", "field.choices.network.domainStrategy"))
@@ -382,6 +409,9 @@ func (a *tuiApp) refreshDropdownLabels() {
 	if a.networkRoutingMode != nil {
 		a.networkRoutingMode.ReplaceOptions([]selectOption{{Label: a.t("dropdown.routing.mode.global"), Value: "global"}, {Label: a.t("dropdown.routing.mode.bypassCN"), Value: "bypass_cn"}, {Label: a.t("dropdown.routing.mode.direct"), Value: "direct"}, {Label: a.t("dropdown.routing.mode.custom"), Value: "custom"}})
 	}
+	if a.networkPresetSelect != nil {
+		a.networkPresetSelect.ReplaceOptions([]selectOption{{Label: a.t("dropdown.routing.preset.empty"), Value: ""}, {Label: a.t("dropdown.routing.preset.global"), Value: "global"}, {Label: a.t("dropdown.routing.preset.bypassCN"), Value: "bypass_cn"}, {Label: a.t("dropdown.routing.preset.direct"), Value: "direct"}})
+	}
 	if a.networkDomainStrategy != nil {
 		a.networkDomainStrategy.ReplaceOptions([]selectOption{{Label: a.t("dropdown.routing.strategy.ifNonMatch"), Value: "IPIfNonMatch"}, {Label: a.t("dropdown.routing.strategy.onDemand"), Value: "IPOnDemand"}, {Label: a.t("dropdown.routing.strategy.asIs"), Value: "AsIs"}})
 	}
@@ -454,6 +484,8 @@ func (a *tuiApp) syncPages() {
 		page = a.buildDashboardPage()
 	}
 
+	// 更新侧边栏模式（响应视口变化）
+	a.updateSidebarMode()
 	a.syncSidebar()
 
 	a.focusables = append([]tview.Primitive{}, page.focusables...)
@@ -464,7 +496,8 @@ func (a *tuiApp) syncPages() {
 		}
 		a.focusGroups = append(a.focusGroups, group)
 	}
-	if a.sidebar != nil {
+	// 只有当侧边栏可见时才添加其焦点元素
+	if a.sidebar != nil && a.sidebar.IsVisible() {
 		sidebarFocusables := a.sidebar.GetFocusables()
 		if len(sidebarFocusables) > 0 {
 			a.focusables = append(a.focusables, sidebarFocusables...)
@@ -485,6 +518,7 @@ func (a *tuiApp) syncPages() {
 		}
 	}
 	a.refreshFooter()
+	a.refreshHelpBar()
 }
 
 func (a *tuiApp) settingsChanged(string) {

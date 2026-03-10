@@ -18,9 +18,6 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	}
 
 	checkBtn := a.actionButton(a.t("network.btn.check"), a.reloadOverviewAction)
-	globalPreset := a.actionButton(a.t("network.btn.presetGlobal"), a.presetGlobalProxyAction)
-	bypassPreset := a.actionButton(a.t("network.btn.presetBypass"), a.presetBypassCNProxyAction)
-	directPreset := a.actionButton(a.t("network.btn.presetDirect"), a.presetDirectNoProxyAction)
 	applyProxy := a.actionButton(a.t("network.btn.applyProxy"), a.applySystemProxyAction)
 	clearProxy := a.actionButton(a.t("network.btn.clearProxy"), a.clearSystemProxyAction)
 	saveRouting := a.actionButton(a.t("network.btn.saveRouting"), a.saveRoutingModeAction)
@@ -28,19 +25,16 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	repairTun := a.actionButton(a.t("network.btn.repairTun"), a.repairTunAction)
 	routeTest := a.actionButton(a.t("network.btn.routeTest"), a.routeTestAction)
 
-	presetActionsRow := buttonRow(globalPreset, bypassPreset, directPreset)
 	proxyActionsRow := buttonRow(applyProxy, clearProxy)
 	operationsRow1 := buttonRow(saveRouting, geoUpdate)
 	operationsRow2 := buttonRow(repairTun, routeTest)
 
 	if a.useStackedLayout() {
-		presetActionsRow = buttonColumn(globalPreset, bypassPreset, directPreset)
 		proxyActionsRow = buttonColumn(applyProxy, clearProxy)
 		operationsRow1 = buttonColumn(saveRouting, geoUpdate)
 		operationsRow2 = buttonColumn(repairTun, routeTest)
 	}
 	testRow := inputRow(a.networkTestTarget, a.networkTestPort, a.useStackedLayout(), 4, 1)
-	presetActionsHeight := actionBlockHeight(a.useStackedLayout(), 3)
 	proxyActionsHeight := actionBlockHeight(a.useStackedLayout(), 2)
 	operationsHeight := actionBlockHeight(a.useStackedLayout(), 2)
 	testRowHeight := dualItemRowHeight(a.useStackedLayout())
@@ -56,7 +50,7 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 		struct {
 			primitive tview.Primitive
 			height    int
-		}{primitive: presetActionsRow, height: presetActionsHeight},
+		}{primitive: a.networkPresetSelect, height: 1},
 		struct {
 			primitive tview.Primitive
 			height    int
@@ -132,7 +126,7 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 		root: root,
 		focusables: joinFocusables(
 			buttonsToFocusables(checkBtn),
-			buttonsToFocusables(globalPreset, bypassPreset, directPreset),
+			primitivesToFocusables(a.networkPresetSelect),
 			buttonsToFocusables(applyProxy, clearProxy),
 			primitivesToFocusables(a.networkRoutingMode, a.networkDomainStrategy, a.networkLocalBypass),
 			buttonsToFocusables(saveRouting, geoUpdate),
@@ -141,7 +135,7 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 		),
 		focusGroups: [][]tview.Primitive{
 			buttonsToFocusables(checkBtn),
-			buttonsToFocusables(globalPreset, bypassPreset, directPreset),
+			primitivesToFocusables(a.networkPresetSelect),
 			buttonsToFocusables(applyProxy, clearProxy),
 			primitivesToFocusables(a.networkRoutingMode, a.networkDomainStrategy, a.networkLocalBypass),
 			buttonsToFocusables(saveRouting, geoUpdate),

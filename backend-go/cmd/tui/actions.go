@@ -14,6 +14,10 @@ func (a *tuiApp) attachApp(app *tview.Application) {
 		cols, rows := screen.Size()
 		a.viewportCols = cols
 		a.viewportRows = rows
+		// 仅在断点切换时重建布局，避免每帧重排。
+		a.applyViewportLayoutMode()
+		// 实时更新帮助栏内容（超窄时显示 Tab 导航条）
+		a.refreshHelpBar()
 		return false
 	})
 }

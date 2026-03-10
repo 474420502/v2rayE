@@ -54,6 +54,8 @@ func TestFocusedDropDownFromPrimitive_SupportsNativeDropdown(t *testing.T) {
 
 func TestFocusSidebarSelected_MovesFocusToSelectedSidebarButton(t *testing.T) {
 	a := newTUI(context.Background(), nil)
+	a.viewportCols = 120 // 设置合理的视口宽度，避免触发极窄模式
+	a.viewportRows = 30
 	app := tview.NewApplication()
 	a.attachApp(app)
 
@@ -63,6 +65,7 @@ func TestFocusSidebarSelected_MovesFocusToSelectedSidebarButton(t *testing.T) {
 	}, nil, nil)
 	sidebar.Select(1)
 	a.sidebar = sidebar
+	a.sidebar.SetVisible(true) // 确保侧边栏可见
 
 	content := tview.NewButton("content")
 	app.SetFocus(content)
@@ -77,6 +80,8 @@ func TestFocusSidebarSelected_MovesFocusToSelectedSidebarButton(t *testing.T) {
 
 func TestHandlerEsc_BackToSidebarFromContent(t *testing.T) {
 	a := newTUI(context.Background(), nil)
+	a.viewportCols = 120 // 设置合理的视口宽度，避免触发极窄模式
+	a.viewportRows = 30
 	app := tview.NewApplication()
 	a.attachApp(app)
 
@@ -86,6 +91,7 @@ func TestHandlerEsc_BackToSidebarFromContent(t *testing.T) {
 	}, nil, nil)
 	sidebar.Select(0)
 	a.sidebar = sidebar
+	a.sidebar.SetVisible(true) // 确保侧边栏可见
 
 	content := tview.NewInputField()
 	app.SetFocus(content)

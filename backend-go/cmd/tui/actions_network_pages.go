@@ -365,57 +365,41 @@ func (a *tuiApp) saveRoutingModeAction(ctx context.Context) error {
 	return a.reloadNetwork()
 }
 
-func (a *tuiApp) presetGlobalProxyAction(ctx context.Context) error {
-	if err := a.applyRoutingPreset(ctx, "global", "IPIfNonMatch", true); err != nil {
-		return err
-	}
-	_, err := a.client.ApplySystemProxy(ctx, "forced_change", stringValue(a.copyConfig(), "systemProxyExceptions"))
-	if err != nil {
-		return err
-	}
-	a.setFooter(a.t("footer.routing.preset.global"))
-	return a.reloadAll()
-}
+func (a *tuiApp) applyRoutingPresetToForm(preset string) {
+	var (
+		mode          string
+		domainStrategy string
+		localBypass    bool
+		footerKey      string
+	)
 
-func (a *tuiApp) presetBypassCNProxyAction(ctx context.Context) error {
-	if err := a.applyRoutingPreset(ctx, "bypass_cn", "IPIfNonMatch", true); err != nil {
-		return err
+	switch strings.TrimSpace(preset) {
+	case "global":
+		mode = "global"
+		domainStrategy = "IPIfNonMatch"
+		localBypass = true
+		footerKey = "footer.routing.preset.global"
+	case "bypass_cn":
+		mode = "bypass_cn"
+		domainStrategy = "IPIfNonMatch"
+		localBypass = true
+		footerKey = "footer.routing.preset.bypassCN"
+	case "direct":
+		mode = "direct"
+		domainStrategy = "AsIs"
+		localBypass = true
+		footerKey = "footer.routing.preset.direct"
+	default:
+		return
 	}
-	_, err := a.client.ApplySystemProxy(ctx, "forced_change", stringValue(a.copyConfig(), "systemProxyExceptions"))
-	if err != nil {
-		return err
-	}
-	a.setFooter(a.t("footer.routing.preset.bypassCN"))
-	return a.reloadAll()
-}
 
-func (a *tuiApp) presetDirectNoProxyAction(ctx context.Context) error {
-	if err := a.applyRoutingPreset(ctx, "direct", "AsIs", true); err != nil {
-		return err
-	}
-	if _, err := a.client.ApplySystemProxy(ctx, "forced_clear", ""); err != nil {
-		return err
-	}
-	a.setFooter(a.t("footer.routing.preset.direct"))
-	return a.reloadAll()
-}
-
-func (a *tuiApp) applyRoutingPreset(ctx context.Context, mode, domainStrategy string, localBypass bool) error {
-	routing := a.copyRouting()
-	routing.Mode = mode
-	routing.DomainStrategy = domainStrategy
-	routing.LocalBypassEnabled = &localBypass
-	if _, err := a.client.UpdateRouting(ctx, routing); err != nil {
-		return err
-	}
-	a.markNetworkRoutingDirty()
-	a.runUI(func(app *tview.Application) {
-		a.networkRoutingMode.SetText(mode, app)
-		a.networkDomainStrategy.SetText(domainStrategy, app)
-		a.networkLocalBypass.SetText(strconv.FormatBool(localBypass), app)
+	a.withSuspendedFieldTracking(func() {
+		a.networkRoutingMode.SetText(mode, a.app)
+		a.networkDomainStrategy.SetText(domainStrategy, a.app)
+		a.networkLocalBypass.SetText(strconv.FormatBool(localBypass), a.app)
 	})
-	a.clearNetworkRoutingDirty()
-	return nil
+	a.markNetworkRoutingDirty()
+	a.setFooter(a.t(footerKey))
 }
 
 func (a *tuiApp) selectRoutingGlobalAction(context.Context) error {
