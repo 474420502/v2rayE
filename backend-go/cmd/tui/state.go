@@ -82,7 +82,8 @@ func (a *tuiApp) formatDashboardTelemetry() string {
 		}
 	} else {
 		lines = append(lines,
-			fmt.Sprintf("  proxy: %s=%s | %s/s, %s=%s | %s/s",
+			fmt.Sprintf("  %s: %s=%s | %s/s, %s=%s | %s/s",
+				a.outboundLabel("proxy"),
 				a.t("state.label.up"), humanBytes(a.stats.UpBytes), humanBytes(a.stats.UpSpeed),
 				a.t("state.label.down"), humanBytes(a.stats.DownBytes), humanBytes(a.stats.DownSpeed),
 			),

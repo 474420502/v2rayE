@@ -16,11 +16,11 @@ func (a *tuiApp) buildDashboardPage() builtPage {
 	eventsCard := wrapPanel(a.t("dashboard.panel.events"), a.dashboardEvents)
 
 	grid := tview.NewGrid().SetBorders(false).SetGap(1, 1)
-	grid.SetRows(0, 0).SetColumns(0, 0, 0)
+	grid.SetRows(0, 0).SetColumns(0, 0, 0, 0)
 	grid.AddItem(statusCard, 0, 0, 1, 1, 0, 0, false)
-	grid.AddItem(telemetryCard, 0, 1, 1, 1, 0, 0, false)
-	grid.AddItem(configCard, 0, 2, 1, 1, 0, 0, false)
-	grid.AddItem(eventsCard, 1, 0, 1, 3, 0, 0, false)
+	grid.AddItem(telemetryCard, 0, 1, 1, 2, 0, 0, false)
+	grid.AddItem(configCard, 0, 3, 1, 1, 0, 0, false)
+	grid.AddItem(eventsCard, 1, 0, 1, 4, 0, 0, false)
 
 	actionsHeight := actionBlockHeight(false, 4)
 	actionsContentHeight := 1 + 1 + actionsHeight
