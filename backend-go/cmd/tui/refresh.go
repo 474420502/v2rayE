@@ -62,11 +62,16 @@ func (a *tuiApp) reloadOverview() error {
 	if err != nil {
 		return err
 	}
+	hits, err := a.client.GetRoutingHits(ctx)
+	if err != nil {
+		return err
+	}
 	if users, usersErr := a.client.ListSystemProxyUsers(ctx); usersErr == nil {
 		a.storeSystemProxyUsers(users)
 	}
 
 	a.storeOverview(status, config, stats, availability)
+	a.storeRoutingHits(hits)
 	a.refreshWidgets()
 	return nil
 }

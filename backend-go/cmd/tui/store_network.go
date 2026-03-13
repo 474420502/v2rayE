@@ -8,6 +8,12 @@ func (a *tuiApp) storeNetwork(routing RoutingConfig, diagnostics RoutingDiagnost
 	a.mu.Unlock()
 }
 
+func (a *tuiApp) storeRoutingHits(hits RoutingHitStats) {
+	a.mu.Lock()
+	a.hits = hits
+	a.mu.Unlock()
+}
+
 func (a *tuiApp) storeRoutingTestResult(result RoutingTestResult) {
 	a.mu.Lock()
 	a.routingTest = result

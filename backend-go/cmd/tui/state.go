@@ -6,6 +6,21 @@ import (
 	"strings"
 )
 
+func (a *tuiApp) outboundLabel(outbound string) string {
+	switch strings.ToLower(strings.TrimSpace(outbound)) {
+	case "total":
+		return a.t("state.outbound.total")
+	case "proxy":
+		return a.t("state.outbound.proxy")
+	case "direct":
+		return a.t("state.outbound.direct")
+	case "block":
+		return a.t("state.outbound.block")
+	default:
+		return outbound
+	}
+}
+
 func (a *tuiApp) formatDashboardSummary() string {
 	return strings.Join([]string{
 		a.formatDashboardStatus(),
@@ -35,13 +50,68 @@ func (a *tuiApp) formatDashboardStatus() string {
 }
 
 func (a *tuiApp) formatDashboardTelemetry() string {
-	return strings.Join([]string{
-		fmt.Sprintf("  %s: %s | %s/s", a.t("state.label.up"), humanBytes(a.stats.UpBytes), humanBytes(a.stats.UpSpeed)),
-		fmt.Sprintf("  %s: %s | %s/s", a.t("state.label.down"), humanBytes(a.stats.DownBytes), humanBytes(a.stats.DownSpeed)),
+	lines := make([]string, 0, 8)
+	hitsByOutbound := make(map[string]RoutingOutboundHit, len(a.hits.Items))
+	total := RoutingOutboundHit{Outbound: "total"}
+	for _, item := range a.hits.Items {
+		hitsByOutbound[item.Outbound] = item
+		total.UpBytes += item.UpBytes
+		total.DownBytes += item.DownBytes
+		total.UpSpeed += item.UpSpeed
+		total.DownSpeed += item.DownSpeed
+	}
+
+	if len(a.hits.Items) > 0 {
+		lines = append(lines, fmt.Sprintf("  %s: %s=%s | %s/s, %s=%s | %s/s",
+			a.outboundLabel(total.Outbound),
+			a.t("state.label.up"), humanBytes(total.UpBytes), humanBytes(total.UpSpeed),
+			a.t("state.label.down"), humanBytes(total.DownBytes), humanBytes(total.DownSpeed),
+		))
+		ordered := []string{"proxy", "direct", "block"}
+		for _, outbound := range ordered {
+			item, ok := hitsByOutbound[outbound]
+			if !ok {
+				item = RoutingOutboundHit{Outbound: outbound}
+			}
+			lines = append(lines, fmt.Sprintf("  %s: %s=%s | %s/s, %s=%s | %s/s",
+				a.outboundLabel(item.Outbound),
+				a.t("state.label.up"), humanBytes(item.UpBytes), humanBytes(item.UpSpeed),
+				a.t("state.label.down"), humanBytes(item.DownBytes), humanBytes(item.DownSpeed),
+			))
+			delete(hitsByOutbound, outbound)
+		}
+	} else {
+		lines = append(lines,
+			fmt.Sprintf("  proxy: %s=%s | %s/s, %s=%s | %s/s",
+				a.t("state.label.up"), humanBytes(a.stats.UpBytes), humanBytes(a.stats.UpSpeed),
+				a.t("state.label.down"), humanBytes(a.stats.DownBytes), humanBytes(a.stats.DownSpeed),
+			),
+		)
+	}
+
+	if len(hitsByOutbound) > 0 {
+		others := make([]string, 0, len(hitsByOutbound))
+		for outbound := range hitsByOutbound {
+			others = append(others, outbound)
+		}
+		sort.Strings(others)
+		for _, outbound := range others {
+			item := hitsByOutbound[outbound]
+			lines = append(lines, fmt.Sprintf("  %s: %s=%s | %s/s, %s=%s | %s/s",
+				a.outboundLabel(item.Outbound),
+				a.t("state.label.up"), humanBytes(item.UpBytes), humanBytes(item.UpSpeed),
+				a.t("state.label.down"), humanBytes(item.DownBytes), humanBytes(item.DownSpeed),
+			))
+		}
+	}
+
+	lines = append(lines,
 		fmt.Sprintf("  %s: %t (%dms) %s", a.t("state.label.network"), a.availability.Available, a.availability.ElapsedMs, a.availability.Message),
 		fmt.Sprintf("  %s: %s", a.t("state.label.logs"), emptyFallback(a.logsStreamState, a.t("state.idle"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.events"), emptyFallback(a.eventsStreamState, a.t("state.idle"))),
-	}, "\n")
+	)
+
+	return strings.Join(lines, "\n")
 }
 
 func (a *tuiApp) formatDashboardConfig() string {
@@ -207,7 +277,7 @@ func (a *tuiApp) formatNetworkSummary() string {
 	if len(a.hits.Items) > 0 {
 		lines = append(lines, "", a.t("state.network.outboundHits"))
 		for _, item := range a.hits.Items {
-			lines = append(lines, fmt.Sprintf("  %s %s=%s/s %s=%s/s", item.Outbound, a.t("state.label.up"), humanBytes(item.UpSpeed), a.t("state.label.down"), humanBytes(item.DownSpeed)))
+			lines = append(lines, fmt.Sprintf("  %s %s=%s/s %s=%s/s", a.outboundLabel(item.Outbound), a.t("state.label.up"), humanBytes(item.UpSpeed), a.t("state.label.down"), humanBytes(item.DownSpeed)))
 		}
 	}
 	if a.diagnostics.Warning != "" {
@@ -228,8 +298,8 @@ func (a *tuiApp) formatRoutingTestResult() string {
 		fmt.Sprintf("  %s: %d", a.t("state.label.port"), a.routingTest.Port),
 		fmt.Sprintf("  %s: %s", a.t("state.label.matchedRule"), emptyFallback(a.routingTest.MatchedRule, a.t("state.default"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.matchedValue"), emptyFallback(a.routingTest.MatchedValue, a.t("state.none"))),
-		fmt.Sprintf("  %s: %s", a.t("state.label.outbound"), emptyFallback(a.routingTest.Outbound, "proxy")),
-		fmt.Sprintf("  %s: %s", a.t("state.label.action"), emptyFallback(a.routingTest.Action, "proxy")),
+		fmt.Sprintf("  %s: %s", a.t("state.label.outbound"), a.outboundLabel(emptyFallback(a.routingTest.Outbound, "proxy"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.action"), a.outboundLabel(emptyFallback(a.routingTest.Action, "proxy"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.note"), emptyFallback(a.routingTest.Note, a.t("state.none"))),
 	}, "\n")
 }
