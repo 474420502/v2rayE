@@ -69,21 +69,45 @@ func TestRestoreCoreOnBootRetriesUntilRunning(t *testing.T) {
 		network: []domain.AvailabilityResult{{Available: true}},
 		starts: []domain.CoreStatus{
 			{Running: false, Error: "network warming up"},
-			{Running: false, Error: "dns warming up"},
+			{Running: true, Degraded: true, State: "degraded", Error: "tun takeover failed"},
 			{Running: true, CurrentProfileID: "p1"},
 		},
 	}
 
 	restoreCoreOnBoot(context.Background(), stub, bootRestoreOptions{
-		initialNetworkWait: 20 * time.Millisecond,
+		initialNetworkWait:  20 * time.Millisecond,
 		networkPollInterval: time.Millisecond,
-		maxStartAttempts: 4,
-		retryBackoffBase: time.Millisecond,
-		maxRetryBackoff: 2 * time.Millisecond,
+		maxStartAttempts:    4,
+		retryBackoffBase:    time.Millisecond,
+		maxRetryBackoff:     2 * time.Millisecond,
 	})
 
 	if stub.startCalls != 3 {
 		t.Fatalf("expected 3 StartCore calls, got %d", stub.startCalls)
+	}
+}
+
+func TestRestoreCoreOnBootRetriesWhenCoreStartsDegraded(t *testing.T) {
+	t.Parallel()
+
+	stub := &bootRestoreStub{
+		network: []domain.AvailabilityResult{{Available: true}},
+		starts: []domain.CoreStatus{
+			{Running: true, Degraded: true, State: "degraded", Error: "tun takeover failed"},
+			{Running: true, CurrentProfileID: "p1"},
+		},
+	}
+
+	restoreCoreOnBoot(context.Background(), stub, bootRestoreOptions{
+		initialNetworkWait:  20 * time.Millisecond,
+		networkPollInterval: time.Millisecond,
+		maxStartAttempts:    3,
+		retryBackoffBase:    time.Millisecond,
+		maxRetryBackoff:     time.Millisecond,
+	})
+
+	if stub.startCalls != 2 {
+		t.Fatalf("expected degraded boot restore to retry, got %d StartCore calls", stub.startCalls)
 	}
 }
 
@@ -92,15 +116,15 @@ func TestRestoreCoreOnBootStopsAfterMaxAttempts(t *testing.T) {
 
 	stub := &bootRestoreStub{
 		network: []domain.AvailabilityResult{{Available: true}},
-		starts: []domain.CoreStatus{{Running: false, Error: "still failing"}},
+		starts:  []domain.CoreStatus{{Running: false, Error: "still failing"}},
 	}
 
 	restoreCoreOnBoot(context.Background(), stub, bootRestoreOptions{
-		initialNetworkWait: 20 * time.Millisecond,
+		initialNetworkWait:  20 * time.Millisecond,
 		networkPollInterval: time.Millisecond,
-		maxStartAttempts: 2,
-		retryBackoffBase: time.Millisecond,
-		maxRetryBackoff: time.Millisecond,
+		maxStartAttempts:    2,
+		retryBackoffBase:    time.Millisecond,
+		maxRetryBackoff:     time.Millisecond,
 	})
 
 	if stub.startCalls != 2 {

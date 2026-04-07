@@ -46,6 +46,7 @@ type Service struct {
 	trackedPID    int
 	lastError     string
 	lastErrorAt   string
+	degraded      bool
 	lastEngine    string
 	coreStartedAt time.Time
 
@@ -182,6 +183,7 @@ func (s *Service) StartCore() domain.CoreStatus {
 	s.watchdogRestartScheduled = false
 	s.watchdogRestarting = false
 	s.clearCoreErrorLocked()
+	s.degraded = false
 	s.lastEngine = resolved
 	s.coreStartedAt = time.Now().UTC()
 
@@ -198,9 +200,11 @@ func (s *Service) StartCore() domain.CoreStatus {
 			_ = s.cleanupStaleTunInterface(cfg)
 			if retryErr := s.setupManagedTunRouting(cfg, &profile); retryErr != nil {
 				log.Printf("[native] StartCore: TUN route setup failed (retry): %v", retryErr)
+				s.degraded = true
 				s.setCoreError(fmt.Sprintf("TUN 接管失败，核心已降级为仅本地代理可用: %s", retryErr.Error()))
 				s.logs.AppLog("warning", fmt.Sprintf("tun route takeover failed; core kept running: %v", retryErr))
 			} else {
+				s.degraded = false
 				s.logs.AppLog("info", "tun route takeover recovered after stale cleanup retry")
 			}
 		}
@@ -218,13 +222,26 @@ func (s *Service) StartCore() domain.CoreStatus {
 }
 
 func (s *Service) StopCore() domain.CoreStatus {
+	return s.stopCore(true, true)
+}
+
+// ShutdownCore stops the core during process teardown without changing the
+// persisted restore intent. Explicit user-driven stops should use StopCore.
+func (s *Service) ShutdownCore() domain.CoreStatus {
+	return s.stopCore(false, true)
+}
+
+func (s *Service) stopCore(clearRestoreState, resetWatchdog bool) domain.CoreStatus {
 	s.mu.Lock()
 	xrayCore := s.xrayCore
 	s.xrayCore = nil
 	s.running = false
-	s.watchdogRestartAttempts = 0
-	s.watchdogRestartScheduled = false
-	s.watchdogRestarting = false
+	s.degraded = false
+	if resetWatchdog {
+		s.watchdogRestartAttempts = 0
+		s.watchdogRestartScheduled = false
+		s.watchdogRestarting = false
+	}
 	s.coreStartedAt = time.Time{}
 	s.clearCoreErrorLocked()
 	if s.stats != nil {
@@ -244,7 +261,9 @@ func (s *Service) StopCore() domain.CoreStatus {
 	}
 	s.clearSystemProxyOnCoreStop()
 	s.logs.AppLog("info", "core stopped")
-	_ = s.saveState(false)
+	if clearRestoreState {
+		_ = s.saveState(false)
+	}
 	return s.CoreStatus()
 }
 
@@ -1553,6 +1572,7 @@ func (s *Service) checkProcExited() {
 	if s.xrayCore != nil && !s.xrayCore.IsRunning() {
 		s.xrayCore = nil
 		s.running = false
+		s.degraded = false
 		s.coreStartedAt = time.Time{}
 		s.setCoreError("xray-core instance exited")
 		s.clearTunRouting()
@@ -1576,7 +1596,8 @@ func (s *Service) watchdogTick() {
 	s.mu.Lock()
 	wasRunning := s.running
 	s.checkProcExited()
-	if !(wasRunning && !s.running) {
+	reason, restartWhileRunning := s.watchdogRestartPlanLocked(wasRunning)
+	if reason == "" {
 		s.mu.Unlock()
 		return
 	}
@@ -1584,11 +1605,21 @@ func (s *Service) watchdogTick() {
 		s.mu.Unlock()
 		return
 	}
-	s.scheduleAutoRestartLocked("core exited unexpectedly")
+	s.scheduleAutoRestartLocked(reason, restartWhileRunning)
 	s.mu.Unlock()
 }
 
-func (s *Service) scheduleAutoRestartLocked(reason string) {
+func (s *Service) watchdogRestartPlanLocked(wasRunning bool) (string, bool) {
+	if wasRunning && !s.running {
+		return "core exited unexpectedly", false
+	}
+	if s.running && s.degraded {
+		return "core running in degraded mode", true
+	}
+	return "", false
+}
+
+func (s *Service) scheduleAutoRestartLocked(reason string, restartWhileRunning bool) {
 	cfg := s.loadConfig()
 	if !boolCfg(cfg, "coreAutoRestart", true) {
 		log.Printf("[native] watchdog: auto restart disabled, skip (%s)", reason)
@@ -1626,10 +1657,10 @@ func (s *Service) scheduleAutoRestartLocked(reason string) {
 
 	s.watchdogRestartScheduled = true
 	log.Printf("[native] watchdog: schedule auto restart attempt=%d delay=%s reason=%s", attempt, delay, reason)
-	go s.runScheduledAutoRestart(delay, attempt)
+	go s.runScheduledAutoRestart(delay, attempt, restartWhileRunning)
 }
 
-func (s *Service) runScheduledAutoRestart(delay time.Duration, attempt int) {
+func (s *Service) runScheduledAutoRestart(delay time.Duration, attempt int, restartWhileRunning bool) {
 	time.Sleep(delay)
 
 	s.mu.Lock()
@@ -1637,7 +1668,7 @@ func (s *Service) runScheduledAutoRestart(delay time.Duration, attempt int) {
 		s.mu.Unlock()
 		return
 	}
-	if s.running {
+	if s.running && !restartWhileRunning {
 		s.watchdogRestartScheduled = false
 		s.mu.Unlock()
 		return
@@ -1647,11 +1678,14 @@ func (s *Service) runScheduledAutoRestart(delay time.Duration, attempt int) {
 	s.mu.Unlock()
 
 	log.Printf("[native] watchdog: auto restart attempt=%d starting", attempt)
+	if restartWhileRunning {
+		s.stopCore(false, false)
+	}
 	st := s.StartCore()
 
 	s.mu.Lock()
 	s.watchdogRestarting = false
-	if st.Running {
+	if st.Ready() {
 		s.watchdogRestartAttempts = 0
 		s.mu.Unlock()
 		s.logs.AppLog("info", "core auto restart succeeded")
@@ -1664,7 +1698,7 @@ func (s *Service) runScheduledAutoRestart(delay time.Duration, attempt int) {
 	log.Printf("[native] watchdog: auto restart attempt=%d failed: %s", attempt, errMsg)
 	s.logs.AppLog("warning", fmt.Sprintf("core auto restart failed (attempt=%d): %s", attempt, errMsg))
 	if !s.watchdogRestartScheduled {
-		s.scheduleAutoRestartLocked("previous auto restart attempt failed")
+		s.scheduleAutoRestartLocked("previous auto restart attempt failed", false)
 	}
 	s.mu.Unlock()
 }
@@ -1678,6 +1712,9 @@ func (s *Service) buildStatus() domain.CoreStatus {
 	st := "stopped"
 	if s.running {
 		st = "running"
+		if s.degraded {
+			st = "degraded"
+		}
 	}
 	resolved := s.lastEngine
 	if resolved == "" {
@@ -1700,6 +1737,7 @@ func (s *Service) buildStatus() domain.CoreStatus {
 	}
 	return domain.CoreStatus{
 		Running:          s.running,
+		Degraded:         s.degraded,
 		CoreType:         coreType,
 		EngineMode:       mode,
 		EngineResolved:   resolved,

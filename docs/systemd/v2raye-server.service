@@ -1,7 +1,7 @@
 [Unit]
 Description=v2rayE Backend API Service
-After=network-online.target nss-lookup.target NetworkManager-wait-online.service systemd-networkd-wait-online.service
-Wants=network-online.target nss-lookup.target NetworkManager-wait-online.service systemd-networkd-wait-online.service
+After=network-online.target nss-lookup.target
+Wants=network-online.target nss-lookup.target
 
 [Service]
 Type=simple

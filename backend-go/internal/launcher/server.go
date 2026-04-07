@@ -19,20 +19,20 @@ type bootRestoreService interface {
 }
 
 type bootRestoreOptions struct {
-	initialNetworkWait time.Duration
+	initialNetworkWait  time.Duration
 	networkPollInterval time.Duration
-	maxStartAttempts int
-	retryBackoffBase time.Duration
-	maxRetryBackoff time.Duration
+	maxStartAttempts    int
+	retryBackoffBase    time.Duration
+	maxRetryBackoff     time.Duration
 }
 
 func defaultBootRestoreOptions() bootRestoreOptions {
 	return bootRestoreOptions{
-		initialNetworkWait: 30 * time.Second,
+		initialNetworkWait:  30 * time.Second,
 		networkPollInterval: 3 * time.Second,
-		maxStartAttempts: 6,
-		retryBackoffBase: 2 * time.Second,
-		maxRetryBackoff: 30 * time.Second,
+		maxStartAttempts:    6,
+		retryBackoffBase:    2 * time.Second,
+		maxRetryBackoff:     30 * time.Second,
 	}
 }
 
@@ -99,13 +99,7 @@ func RunServer(ctx context.Context, opts ServerOptions) error {
 	}
 
 	err = <-errCh
-	wasRunning := svc.CoreStatus().Running
-	svc.StopCore()
-	if wasRunning {
-		state, _ := store.LoadState()
-		state.CoreShouldRestore = true
-		_ = store.SaveState(state)
-	}
+	svc.ShutdownCore()
 	return err
 }
 
@@ -127,7 +121,7 @@ func restoreCoreOnBoot(ctx context.Context, svc bootRestoreService, opts bootRes
 		}
 
 		st := svc.StartCore()
-		if st.Running {
+		if st.Ready() {
 			log.Printf("[main] restored core on boot (profile=%s, attempt=%d/%d)", st.CurrentProfileID, attempt, maxAttempts)
 			return
 		}

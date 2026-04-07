@@ -11,15 +11,21 @@ type APIEnvelope struct {
 // CoreStatus represents the current state of the proxy core.
 type CoreStatus struct {
 	Running          bool   `json:"running"`
+	Degraded         bool   `json:"degraded,omitempty"`
 	CoreType         string `json:"coreType,omitempty"`
 	EngineMode       string `json:"engineMode,omitempty"`
 	EngineResolved   string `json:"engineResolved,omitempty"`
 	CurrentProfileID string `json:"currentProfileId,omitempty"`
-	State            string `json:"state,omitempty"` // stopped|starting|running|stopping
+	State            string `json:"state,omitempty"` // stopped|starting|running|degraded|stopping
 	StartedAt        string `json:"startedAt,omitempty"`
 	UptimeSec        int64  `json:"uptimeSec,omitempty"`
 	Error            string `json:"error,omitempty"`
 	ErrorAt          string `json:"errorAt,omitempty"`
+}
+
+// Ready reports whether the core is running without a degraded runtime state.
+func (s CoreStatus) Ready() bool {
+	return s.Running && !s.Degraded
 }
 
 // Protocol constants.
