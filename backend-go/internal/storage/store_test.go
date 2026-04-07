@@ -2,6 +2,15 @@ package storage
 
 import "testing"
 
+func TestDefaultConfigUsesSafeSystemProxyMode(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	if got := cfg["systemProxyMode"]; got != "forced_clear" {
+		t.Fatalf("DefaultConfig systemProxyMode = %#v, want %q", got, "forced_clear")
+	}
+}
+
 func TestResolveDataDir(t *testing.T) {
 	t.Parallel()
 

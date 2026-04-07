@@ -157,6 +157,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now v2raye-server
 ```
 
+说明：默认配置下，后台服务不会在开机时强制改写 GNOME/KDE 桌面代理；如果需要桌面代理联动，请显式把 `systemProxyMode` 设为 `forced_change`，并在 root/systemd 环境中按需设置 `V2RAYN_DESKTOP_USER`。
+
 ## 核心环境变量
 
 - `V2RAYN_API_ADDR`: 后端监听地址，默认 `0.0.0.0:18000`
@@ -167,6 +169,8 @@ sudo systemctl enable --now v2raye-server
 - `V2RAYN_CORE_CMD`: 指定外部核心命令
 - `V2RAYN_CORE_CMD_TEMPLATE`: 指定带占位符的核心命令模板
 - `V2RAYN_DESKTOP_USER`: 当服务以 root/systemd 运行时，指定写系统代理的桌面用户
+
+开机恢复说明：检测到 `autoRun` 或上次运行需恢复时，服务会先等待有限时长的网络探测成功，再执行带退避的核心恢复重试，减少系统刚开机时默认路由和 DNS 尚未稳定导致的 TUN/代理恢复失败。
 
 ## TUN 能力说明
 

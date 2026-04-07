@@ -1,7 +1,7 @@
 [Unit]
 Description=v2rayE Backend API Service
-After=network-online.target
-Wants=network-online.target
+After=network-online.target nss-lookup.target NetworkManager-wait-online.service systemd-networkd-wait-online.service
+Wants=network-online.target nss-lookup.target NetworkManager-wait-online.service systemd-networkd-wait-online.service
 
 [Service]
 Type=simple
@@ -14,6 +14,7 @@ Environment=V2RAYN_API_TOKEN=
 Environment=V2RAYN_API_ALLOW_PUBLIC=0
 Environment=V2RAYN_XRAY_CMD=xray
 Environment=V2RAYN_DESKTOP_USER=
+Environment=V2RAYN_DATA_DIR=/opt/v2rayE
 
 [Install]
 WantedBy=multi-user.target

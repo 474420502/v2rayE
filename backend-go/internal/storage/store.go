@@ -115,7 +115,7 @@ func DefaultConfig() map[string]interface{} {
 		"tunHijackDefaultRoute":         false,
 		"tunHijackDefaultRouteExplicit": false,
 		"tunStrictRoute":                false,
-		"systemProxyMode":               "forced_change",
+		"systemProxyMode":               "forced_clear",
 		"systemProxyExceptions":         "",
 		"systemProxyUsers":              []interface{}{},
 		"coreAutoRestart":               true,
@@ -270,7 +270,7 @@ func normalizeSystemProxyMode(mode string) string {
 	case "pac":
 		return "pac"
 	default:
-		return "forced_change"
+		return "forced_clear"
 	}
 }
 

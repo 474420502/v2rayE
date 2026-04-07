@@ -1779,7 +1779,7 @@ func (s *Service) clearCoreErrorLocked() {
 
 func (s *Service) clearSystemProxyOnCoreStop() {
 	cfg := s.loadConfig()
-	mode := normalizeSystemProxyMode(strCfg(cfg, "systemProxyMode", "forced_change"))
+	mode := normalizeSystemProxyMode(strCfg(cfg, "systemProxyMode", "forced_clear"))
 	if mode != "forced_change" && mode != "pac" {
 		return
 	}
@@ -1817,7 +1817,7 @@ func normalizeRuntimeConfig(cfg map[string]interface{}) map[string]interface{} {
 }
 
 func (s *Service) applyConfiguredSystemProxyOnCoreStart(cfg map[string]interface{}) error {
-	mode := normalizeSystemProxyMode(strCfg(cfg, "systemProxyMode", "forced_change"))
+	mode := normalizeSystemProxyMode(strCfg(cfg, "systemProxyMode", "forced_clear"))
 	if mode != "forced_change" && mode != "pac" {
 		return nil
 	}

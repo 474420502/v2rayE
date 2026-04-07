@@ -156,6 +156,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now v2raye-server
 ```
 
+Note: with the default configuration, the background service does not force desktop proxy changes at boot. If you want GNOME/KDE proxy integration, explicitly set `systemProxyMode=forced_change` and provide `V2RAYN_DESKTOP_USER` when running under root/systemd.
+
 ## Key environment variables
 
 - `V2RAYN_API_ADDR`: backend listen address, default `0.0.0.0:18000`
@@ -166,6 +168,8 @@ sudo systemctl enable --now v2raye-server
 - `V2RAYN_CORE_CMD`: external core command
 - `V2RAYN_CORE_CMD_TEMPLATE`: external core command template with placeholders
 - `V2RAYN_DESKTOP_USER`: desktop user name to target when the service runs as root/systemd
+
+Boot restore note: when `autoRun` or persisted runtime state requests restore, the backend now waits for a bounded connectivity probe and then retries guarded core restore with backoff, reducing early-boot TUN/proxy failures caused by unstable default routes or DNS.
 
 ## TUN status in the first release
 
