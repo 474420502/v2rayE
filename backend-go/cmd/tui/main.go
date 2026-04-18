@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	tcell "github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -17,12 +18,15 @@ func Run(ctx context.Context, baseURL, token string) error {
 	tui.attachApp(app)
 	app.SetRoot(root, true)
 	app.SetInputCapture(tui.handler)
+	app.SetAfterDrawFunc(func(screen tcell.Screen) {
+		_ = screen
+		tui.startBackgroundWork()
+	})
 	app.EnableMouse(true)
 	go func() {
 		<-ctx.Done()
 		app.Stop()
 	}()
-	tui.startBackgroundWork()
 	if err := app.Run(); err != nil {
 		return fmt.Errorf("failed to start tui: %w", err)
 	}

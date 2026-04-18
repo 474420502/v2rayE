@@ -6,12 +6,19 @@ import (
 )
 
 func (a *tuiApp) startBackgroundWork() {
+	if !a.markBackgroundWorkStarted() {
+		return
+	}
 	go a.runAction(a.t("action.initialLoad"), func(context.Context) error {
 		return a.reloadAll()
 	})
 	go a.pollOverview()
 	go a.streamLogs()
 	go a.streamEvents()
+}
+
+func (a *tuiApp) markBackgroundWorkStarted() bool {
+	return a.backgroundWorkStarted.CompareAndSwap(false, true)
 }
 
 func (a *tuiApp) streamLogs() {

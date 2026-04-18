@@ -176,6 +176,7 @@ type tuiApp struct {
 
 	suspendFieldTracking   atomic.Bool
 	suspendListSelection   atomic.Bool
+	backgroundWorkStarted  atomic.Bool
 	commandPaletteVisible  atomic.Bool
 	profileActionsVisible  atomic.Bool
 	profileDeleteVisible   atomic.Bool

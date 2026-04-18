@@ -418,6 +418,17 @@ func TestBuildNetworkPage_FocusGroupsFollowSeparatedVisualFlow(t *testing.T) {
 	}
 }
 
+func TestMarkBackgroundWorkStarted_OnlyOnce(t *testing.T) {
+	a := newTUI(context.Background(), nil)
+
+	if !a.markBackgroundWorkStarted() {
+		t.Fatal("expected first background-work mark to succeed")
+	}
+	if a.markBackgroundWorkStarted() {
+		t.Fatal("expected second background-work mark to be ignored")
+	}
+}
+
 func writeTestEnvelope(t *testing.T, w http.ResponseWriter, data any) {
 	t.Helper()
 	payload, err := json.Marshal(data)
