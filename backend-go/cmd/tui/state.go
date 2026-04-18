@@ -253,7 +253,7 @@ func (a *tuiApp) formatNetworkSummary() string {
 		targetLocalBypass = parseBoolText(localBypassText)
 	}
 	currentPreset := a.routingPresetLabel(routingPresetKey(a.routing))
-	targetPreset := a.routingPresetLabel(a.targetRoutingPreset())
+	targetPreset := a.routingPresetLabel(a.targetRoutingPresetWithPending(strings.TrimSpace(a.networkPresetApplied)))
 	lines := []string{
 		a.t("state.network.availability"),
 		fmt.Sprintf("  %s: %t", a.t("state.label.available"), a.availability.Available),
@@ -317,7 +317,11 @@ func routingPresetKey(routing RoutingConfig) string {
 }
 
 func (a *tuiApp) targetRoutingPreset() string {
-	if preset := strings.TrimSpace(a.pendingNetworkPreset()); preset != "" {
+	return a.targetRoutingPresetWithPending(strings.TrimSpace(a.pendingNetworkPreset()))
+}
+
+func (a *tuiApp) targetRoutingPresetWithPending(preset string) string {
+	if preset != "" {
 		return preset
 	}
 	targetMode := strings.ToLower(strings.TrimSpace(a.networkRoutingMode.Text()))

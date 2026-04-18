@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	tcell "github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -426,6 +427,32 @@ func TestMarkBackgroundWorkStarted_OnlyOnce(t *testing.T) {
 	}
 	if a.markBackgroundWorkStarted() {
 		t.Fatal("expected second background-work mark to be ignored")
+	}
+}
+
+func TestFormatNetworkSummary_DoesNotDeadlockWhileHoldingMutex(t *testing.T) {
+	trueValue := true
+	a := newTUI(context.Background(), nil)
+	_ = a.build()
+	a.routing = RoutingConfig{
+		Mode:               "global",
+		DomainStrategy:     "IPIfNonMatch",
+		LocalBypassEnabled: &trueValue,
+	}
+	a.networkPresetApplied = "global"
+
+	done := make(chan struct{})
+	go func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		_ = a.formatNetworkSummary()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("formatNetworkSummary deadlocked while app mutex was held")
 	}
 }
 
