@@ -3,6 +3,8 @@ package tui
 import "github.com/rivo/tview"
 
 func (a *tuiApp) buildNetworkPage() builtPage {
+	stackedRows := a.stackFormRows()
+	stackedActions := a.stackActionButtons()
 	buildGroupPanel := func(title string, rows ...struct {
 		primitive tview.Primitive
 		height    int
@@ -25,20 +27,20 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	repairTun := a.actionButton(a.t("network.btn.repairTun"), a.repairTunAction)
 	routeTest := a.actionButton(a.t("network.btn.routeTest"), a.routeTestAction)
 
-	proxyActionsRow := buttonRow(applyProxy, clearProxy)
-	operationsRow1 := buttonRow(saveRouting, geoUpdate)
-	operationsRow2 := buttonRow(repairTun, routeTest)
+	proxyActionsRow := buttonStrip(stackedActions, applyProxy, clearProxy)
+	operationsRow1 := buttonStrip(stackedActions, saveRouting, geoUpdate)
+	operationsRow2 := buttonStrip(stackedActions, repairTun, routeTest)
 
-	testRow := inputRow(a.networkTestTarget, a.networkTestPort, false, 4, 1)
-	proxyActionsHeight := actionBlockHeight(false, 2)
-	operationsHeight := actionBlockHeight(false, 2)
-	testRowHeight := dualItemRowHeight(false)
+	testRow := inputRow(a.networkTestTarget, a.networkTestPort, stackedRows, 4, 1)
+	proxyActionsHeight := actionBlockHeight(stackedActions, 2)
+	operationsHeight := actionBlockHeight(stackedActions, 2)
+	testRowHeight := dualItemRowHeight(stackedRows)
 
 	actionsPanel := tview.NewFlex().SetDirection(tview.FlexRow)
 	actionsPanelHeight := 1 + 1 + 1
 	actionsPanel.AddItem(newMutedText(a.t("network.desc")), 1, 0, false)
 	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
-	actionsPanel.AddItem(buttonRow(checkBtn), 1, 0, false)
+	actionsPanel.AddItem(buttonStrip(stackedActions, checkBtn), actionBlockHeight(stackedActions, 1), 0, false)
 
 	presetsPanel := buildGroupPanel(
 		a.t("network.group.presets"),
@@ -105,7 +107,7 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	rightColumn.AddItem(verticalSpacer(1), 1, 0, false)
 	rightColumn.AddItem(testResultPanel, 0, 3, false)
 
-	body := splitContent(false, leftColumn, rightColumn, 5, 6)
+	body := splitContent(a.stackPageColumns(), leftColumn, rightColumn, 5, 6)
 	root := buildPageLayout(a.t("common.actions"), actionsPanel, actionsPanelHeight, body)
 	checkGroup := buttonsToFocusables(checkBtn)
 	presetGroup := primitivesToFocusables(a.networkPresetSelect)

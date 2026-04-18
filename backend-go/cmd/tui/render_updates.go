@@ -444,7 +444,7 @@ func (a *tuiApp) refreshHelpBar() {
 	if a.helpBar == nil {
 		return
 	}
-	text := a.t("layout.shortcuts")
+	text := a.helpBarText()
 	if a.viewportCols > 0 {
 		text = fitSingleLineToWidth(text, a.viewportCols)
 	}

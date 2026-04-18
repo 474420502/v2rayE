@@ -3,6 +3,8 @@ package tui
 import "github.com/rivo/tview"
 
 func (a *tuiApp) buildLogsPage() builtPage {
+	stackedRows := a.stackFormRows()
+	stackedColumns := a.stackPageColumns()
 	buildGroupPanel := func(title string, rows ...struct {
 		primitive tview.Primitive
 		height    int
@@ -20,9 +22,9 @@ func (a *tuiApp) buildLogsPage() builtPage {
 	applyBtn := a.actionButton(a.t("logs.btn.applySearch"), a.applyLogSearchAction)
 	clearBtn := a.actionButton(a.t("logs.btn.clearSearch"), a.clearLogSearchAction)
 
-	searchActions := buttonRow(applyBtn, clearBtn)
-	searchRow := inputRow(a.logsSearchInput, searchActions, false, 6, 4)
-	searchRowHeight := dualItemRowHeight(false)
+	searchActions := buttonStrip(stackedRows, applyBtn, clearBtn)
+	searchRow := inputRow(a.logsSearchInput, searchActions, stackedRows, 6, 4)
+	searchRowHeight := dualItemRowHeight(stackedRows)
 
 	filtersContentHeight := 1 + 1 + 1
 
@@ -57,12 +59,22 @@ func (a *tuiApp) buildLogsPage() builtPage {
 	filters := tview.NewFlex().SetDirection(tview.FlexRow)
 	filters.AddItem(newMutedText(a.t("logs.desc")), 1, 0, false)
 	filters.AddItem(verticalSpacer(1), 1, 0, false)
-	grid := tview.NewGrid().SetBorders(false).SetGap(1, 1)
-	grid.SetRows(0, 0).SetColumns(0, 0)
-	grid.AddItem(levelPanel, 0, 0, 1, 1, 0, 0, false)
-	grid.AddItem(sourcePanel, 0, 1, 1, 1, 0, 0, false)
-	grid.AddItem(searchPanel, 1, 0, 1, 2, 0, 0, false)
-	filters.AddItem(grid, 0, 1, false)
+	if stackedColumns {
+		stacked := tview.NewFlex().SetDirection(tview.FlexRow)
+		stacked.AddItem(levelPanel, 0, 2, false)
+		stacked.AddItem(verticalSpacer(1), 1, 0, false)
+		stacked.AddItem(sourcePanel, 0, 2, false)
+		stacked.AddItem(verticalSpacer(1), 1, 0, false)
+		stacked.AddItem(searchPanel, 0, 4, false)
+		filters.AddItem(stacked, 0, 1, false)
+	} else {
+		grid := tview.NewGrid().SetBorders(false).SetGap(1, 1)
+		grid.SetRows(0, 0).SetColumns(0, 0)
+		grid.AddItem(levelPanel, 0, 0, 1, 1, 0, 0, false)
+		grid.AddItem(sourcePanel, 0, 1, 1, 1, 0, 0, false)
+		grid.AddItem(searchPanel, 1, 0, 1, 2, 0, 0, false)
+		filters.AddItem(grid, 0, 1, false)
+	}
 	body := wrapPanel(a.t("logs.panel.logs"), a.logsView)
 	root := buildPageLayout(a.t("logs.panel.filters"), filters, filtersContentHeight, body)
 

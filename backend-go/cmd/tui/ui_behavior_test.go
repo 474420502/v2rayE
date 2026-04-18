@@ -17,6 +17,7 @@ import (
 func TestFieldLabelWithChoicesAdaptive_NarrowUsesShortLabel(t *testing.T) {
 	a := newTUI(context.Background(), nil)
 	a.viewportCols = 120
+	a.layoutMode = layoutModeNarrow
 	got := a.fieldLabelWithChoicesAdaptive("field.settings.logLevel", "field.choices.settings.logLevel")
 	want := a.fieldLabel("field.settings.logLevel")
 	if got != want {
@@ -27,10 +28,58 @@ func TestFieldLabelWithChoicesAdaptive_NarrowUsesShortLabel(t *testing.T) {
 func TestFieldLabelWithChoicesAdaptive_WideUsesChoicesLabel(t *testing.T) {
 	a := newTUI(context.Background(), nil)
 	a.viewportCols = 180
+	a.layoutMode = layoutModeWide
 	got := a.fieldLabelWithChoicesAdaptive("field.settings.logLevel", "field.choices.settings.logLevel")
 	want := a.fieldLabelWithChoices("field.settings.logLevel", "field.choices.settings.logLevel")
 	if got != want {
 		t.Fatalf("expected choices label %q, got %q", want, got)
+	}
+}
+
+func TestDeriveLayoutMode_UsesResponsiveThresholds(t *testing.T) {
+	tests := []struct {
+		name string
+		cols int
+		rows int
+		want string
+	}{
+		{name: "wide", cols: 180, rows: 40, want: layoutModeWide},
+		{name: "compact", cols: 150, rows: 40, want: layoutModeCompact},
+		{name: "narrow by width", cols: 120, rows: 40, want: layoutModeNarrow},
+		{name: "narrow by short height", cols: 160, rows: 24, want: layoutModeNarrow},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := deriveLayoutMode(tt.cols, tt.rows); got != tt.want {
+				t.Fatalf("expected layout mode %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestUpdateSidebarMode_UsesCompactAndHiddenSidebar(t *testing.T) {
+	compact := newTUI(context.Background(), nil)
+	compact.layoutMode = layoutModeCompact
+	_ = compact.build()
+	compact.updateSidebarMode()
+	if !compact.sidebar.IsVisible() {
+		t.Fatal("expected sidebar to stay visible in compact mode")
+	}
+	buttons := compact.sidebar.GetAllButtons()
+	if len(buttons) == 0 {
+		t.Fatal("expected compact sidebar to keep focusable buttons")
+	}
+	if buttons[0].GetLabel() != "1" {
+		t.Fatalf("expected compact sidebar button label to collapse to shortcut, got %q", buttons[0].GetLabel())
+	}
+
+	narrow := newTUI(context.Background(), nil)
+	narrow.layoutMode = layoutModeNarrow
+	_ = narrow.build()
+	narrow.updateSidebarMode()
+	if narrow.sidebar.IsVisible() {
+		t.Fatal("expected sidebar to hide in narrow mode")
 	}
 }
 

@@ -256,21 +256,15 @@ func (a *tuiApp) build() tview.Primitive {
 
 	help := newMutedText(a.t("layout.shortcuts"))
 	a.helpBar = help
-	content := tview.NewFlex().SetDirection(tview.FlexColumn)
+	a.contentLayout = tview.NewFlex().SetDirection(tview.FlexColumn)
+	a.sidebarSpacer = tview.NewBox().SetBackgroundColor(tcell.ColorBlack)
+	content := a.contentLayout
 
 	// 声明 root 变量
 	var root *tview.Flex
 
-	// 大视窗布局：侧边栏导航
-	sidebarWidth := 0
-	spacerWidth := 1
-	if a.sidebar != nil && a.sidebar.IsVisible() {
-		sidebarWidth = 20
-	}
-	if sidebarWidth > 0 {
-		content.AddItem(a.sidebar, sidebarWidth, 0, false)
-		content.AddItem(horizontalSpacer(spacerWidth), 1, 0, false)
-	}
+	content.AddItem(a.sidebar, 0, 0, false)
+	content.AddItem(a.sidebarSpacer, 0, 0, false)
 	content.AddItem(a.pageHolder, 0, 1, true)
 
 	root = tview.NewFlex().SetDirection(tview.FlexRow)
@@ -282,6 +276,7 @@ func (a *tuiApp) build() tview.Primitive {
 	a.rootPages = tview.NewPages()
 	a.rootPages.AddPage("main", root, true, true)
 
+	a.updateSidebarMode()
 	a.syncPages()
 	return a.rootPages
 }
@@ -295,8 +290,7 @@ func (a *tuiApp) fieldLabelWithChoices(labelKey, choicesKey string) string {
 }
 
 func (a *tuiApp) fieldLabelWithChoicesAdaptive(labelKey, choicesKey string) string {
-	// Long choice hints can truncate form fields on narrow terminals.
-	if a.viewportCols > 0 && a.viewportCols < 150 {
+	if a.useShortFieldLabels() {
 		return a.fieldLabel(labelKey)
 	}
 	return a.fieldLabelWithChoices(labelKey, choicesKey)

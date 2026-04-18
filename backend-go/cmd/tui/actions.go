@@ -12,8 +12,7 @@ func (a *tuiApp) attachApp(app *tview.Application) {
 	a.app = app
 	app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
 		cols, rows := screen.Size()
-		a.viewportCols = cols
-		a.viewportRows = rows
+		a.syncViewportLayout(cols, rows)
 		return false
 	})
 }

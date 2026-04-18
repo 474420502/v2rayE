@@ -3,11 +3,12 @@ package tui
 import "github.com/rivo/tview"
 
 func (a *tuiApp) buildProfilesPage() builtPage {
+	stackedActions := a.stackActionButtons()
 	importURLBtn := a.actionButton(a.t("profiles.btn.importURL"), a.openImportProfileDialogAction)
 	importClipboardBtn := a.actionButton(a.t("profiles.btn.importClipboard"), a.importProfileFromClipboardAction)
 	batchDelayBtn := a.actionButton(a.t("profiles.btn.batchDelay"), a.batchDelayProfilesAction)
 
-	controlsActions := buttonRow(importURLBtn, importClipboardBtn, batchDelayBtn)
+	controlsActions := buttonStrip(stackedActions, importURLBtn, importClipboardBtn, batchDelayBtn)
 
 	workflowPanel := tview.NewFlex().SetDirection(tview.FlexRow)
 	workflowPanel.AddItem(a.profileEditStatus, 1, 0, false)
@@ -20,21 +21,20 @@ func (a *tuiApp) buildProfilesPage() builtPage {
 	profilesPanel := wrapPanel(a.t("profiles.panel.list"), a.profilesList)
 	selectedPanel := wrapPanel(a.t("profiles.panel.selected"), a.profileDetail)
 	workflowCard := wrapPanel(a.t("profiles.panel.workflow"), workflowPanel)
-
-	grid := tview.NewGrid().SetBorders(false).SetGap(1, 1)
-	grid.SetRows(0, 0).SetColumns(0, 0)
-	grid.AddItem(profilesPanel, 0, 0, 2, 1, 0, 0, false)
-	grid.AddItem(selectedPanel, 0, 1, 1, 1, 0, 0, false)
-	grid.AddItem(workflowCard, 1, 1, 1, 1, 0, 0, false)
+	detailColumn := tview.NewFlex().SetDirection(tview.FlexRow)
+	detailColumn.AddItem(selectedPanel, 0, 5, false)
+	detailColumn.AddItem(verticalSpacer(1), 1, 0, false)
+	detailColumn.AddItem(workflowCard, 0, 4, false)
+	body := splitContent(a.stackPageColumns(), profilesPanel, detailColumn, 5, 4)
 
 	controls := tview.NewFlex().SetDirection(tview.FlexRow)
-	controlsHeight := actionBlockHeight(false, 3)
+	controlsHeight := actionBlockHeight(stackedActions, 3)
 	controlsContentHeight := 1 + 1 + controlsHeight
 	controls.AddItem(newMutedText(a.t("profiles.controls.desc")), 1, 0, false)
 	controls.AddItem(verticalSpacer(1), 1, 0, false)
 	controls.AddItem(controlsActions, controlsHeight, 0, false)
 
-	root := buildPageLayout(a.t("profiles.panel.controls"), controls, controlsContentHeight, grid)
+	root := buildPageLayout(a.t("profiles.panel.controls"), controls, controlsContentHeight, body)
 	actionGroup := buttonsToFocusables(importURLBtn, importClipboardBtn, batchDelayBtn)
 	listGroup := primitivesToFocusables(a.profilesList)
 	detailGroup := primitivesToFocusables(a.profileDetail)

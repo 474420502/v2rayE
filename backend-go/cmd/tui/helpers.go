@@ -188,6 +188,12 @@ type builtPage struct {
 	focusGroups [][]tview.Primitive
 }
 
+const (
+	layoutModeWide    = "wide"
+	layoutModeCompact = "compact"
+	layoutModeNarrow  = "narrow"
+)
+
 func readOnlyEditor(content string) *textWidget {
 	return newTextWidget(content)
 }
@@ -241,6 +247,13 @@ func buttonRow(buttons ...*tview.Button) *tview.Flex {
 	}
 	row.AddItem(horizontalSpacer(1), 0, 1, false)
 	return row
+}
+
+func buttonStrip(stacked bool, buttons ...*tview.Button) tview.Primitive {
+	if stacked {
+		return buttonColumn(buttons...)
+	}
+	return buttonRow(buttons...)
 }
 
 func buttonColumn(buttons ...*tview.Button) *tview.Flex {
@@ -316,6 +329,77 @@ func buildPageLayout(headerTitle string, header tview.Primitive, headerContentHe
 	root.AddItem(verticalSpacer(1), 1, 0, false)
 	root.AddItem(body, 0, 1, false)
 	return root
+}
+
+func deriveLayoutMode(cols, rows int) string {
+	if cols > 0 {
+		switch {
+		case cols < 140:
+			return layoutModeNarrow
+		case cols < 170:
+			if rows > 0 && rows < 26 {
+				return layoutModeNarrow
+			}
+			return layoutModeCompact
+		}
+	}
+	if rows > 0 && rows < 24 {
+		return layoutModeCompact
+	}
+	return layoutModeWide
+}
+
+func (a *tuiApp) stackPageColumns() bool {
+	return a.layoutMode == layoutModeNarrow
+}
+
+func (a *tuiApp) stackActionButtons() bool {
+	return a.layoutMode == layoutModeNarrow
+}
+
+func (a *tuiApp) stackFormRows() bool {
+	return a.layoutMode == layoutModeNarrow
+}
+
+func (a *tuiApp) useShortFieldLabels() bool {
+	return a.layoutMode != layoutModeWide
+}
+
+func (a *tuiApp) helpBarText() string {
+	switch a.layoutMode {
+	case layoutModeCompact:
+		return a.t("layout.shortcuts.compact")
+	case layoutModeNarrow:
+		return a.t("layout.shortcuts.narrow")
+	default:
+		return a.t("layout.shortcuts")
+	}
+}
+
+func (a *tuiApp) syncViewportLayout(cols, rows int) {
+	prevCols := a.viewportCols
+	prevRows := a.viewportRows
+	prevMode := a.layoutMode
+
+	a.viewportCols = cols
+	a.viewportRows = rows
+	nextMode := deriveLayoutMode(cols, rows)
+	if nextMode != "" {
+		a.layoutMode = nextMode
+	}
+
+	if a.layoutMode != prevMode {
+		a.updateSidebarMode()
+		a.refreshFieldLabels()
+		a.syncPages()
+		return
+	}
+
+	if prevCols != cols || prevRows != rows {
+		a.updateSidebarMode()
+		a.refreshFooter()
+		a.refreshHelpBar()
+	}
 }
 
 func joinFocusables(groups ...[]tview.Primitive) []tview.Primitive {
@@ -583,16 +667,44 @@ func emphasizeKeyword(message, keyword string) string {
 }
 
 func (a *tuiApp) updateSidebarMode() {
-	// 大视窗模式下侧边栏始终可见
 	if a.sidebar != nil {
-		a.sidebar.SetVisible(true)
-		a.sidebar.SetCompact(false)
+		switch a.layoutMode {
+		case layoutModeNarrow:
+			a.sidebar.SetVisible(false)
+			a.sidebar.SetCompact(true)
+		case layoutModeCompact:
+			a.sidebar.SetVisible(true)
+			a.sidebar.SetCompact(true)
+		default:
+			a.sidebar.SetVisible(true)
+			a.sidebar.SetCompact(false)
+		}
+	}
+	if a.contentLayout != nil && a.sidebar != nil && a.sidebarSpacer != nil {
+		sidebarWidth := 0
+		spacerWidth := 0
+		switch a.layoutMode {
+		case layoutModeCompact:
+			sidebarWidth = 4
+			spacerWidth = 1
+		case layoutModeWide:
+			sidebarWidth = 20
+			spacerWidth = 1
+		}
+		a.contentLayout.ResizeItem(a.sidebar, sidebarWidth, 0)
+		a.contentLayout.ResizeItem(a.sidebarSpacer, spacerWidth, 0)
 	}
 }
 
 func (a *tuiApp) viewportWarning() string {
-	// 大视窗模式下始终没有警告
-	return ""
+	switch a.layoutMode {
+	case layoutModeCompact:
+		return a.t("layout.warning.compact")
+	case layoutModeNarrow:
+		return a.t("layout.warning.narrow")
+	default:
+		return ""
+	}
 }
 
 func parseBoolText(value string) bool {

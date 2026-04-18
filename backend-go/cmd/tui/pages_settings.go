@@ -3,6 +3,8 @@ package tui
 import "github.com/rivo/tview"
 
 func (a *tuiApp) buildSettingsPage() builtPage {
+	stackedRows := a.stackFormRows()
+	stackedActions := a.stackActionButtons()
 	buildGroupPanel := func(title string, rows ...struct {
 		primitive tview.Primitive
 		height    int
@@ -25,20 +27,20 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 	proxyUsersAddAll := a.actionButton(a.t("settings.btn.addNonSystemUsers"), a.addNonSystemProxyUsersAction)
 	proxyUsersSelect := a.actionButton(a.t("settings.btn.selectUsers"), a.openProxyUserSelectDialogAction)
 
-	controls := buttonRow(saveBtn, clearErrBtn, exitCleanupBtn)
-	proxyUserActionsRow1 := buttonRow(proxyUsersDetect, proxyUsersDefault)
-	proxyUserActionsRow2 := buttonRow(proxyUsersAddAll, proxyUsersSelect)
+	controls := buttonStrip(stackedActions, saveBtn, clearErrBtn, exitCleanupBtn)
+	proxyUserActionsRow1 := buttonStrip(stackedActions, proxyUsersDetect, proxyUsersDefault)
+	proxyUserActionsRow2 := buttonStrip(stackedActions, proxyUsersAddAll, proxyUsersSelect)
 
 	generalPanel := buildGroupPanel(
 		a.t("settings.group.general"),
 		struct {
 			primitive tview.Primitive
 			height    int
-		}{primitive: inputRow(a.settingsListenAddr, a.settingsSocksPort, false, 3, 2), height: dualItemRowHeight(false)},
+		}{primitive: inputRow(a.settingsListenAddr, a.settingsSocksPort, stackedRows, 3, 2), height: dualItemRowHeight(stackedRows)},
 		struct {
 			primitive tview.Primitive
 			height    int
-		}{primitive: inputRow(a.settingsHTTPPort, a.settingsSkipCert, false, 2, 3), height: dualItemRowHeight(false)},
+		}{primitive: inputRow(a.settingsHTTPPort, a.settingsSkipCert, stackedRows, 2, 3), height: dualItemRowHeight(stackedRows)},
 		struct {
 			primitive tview.Primitive
 			height    int
@@ -46,7 +48,7 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 		struct {
 			primitive tview.Primitive
 			height    int
-		}{primitive: inputRow(a.settingsCoreEngine, a.settingsLogLevel, false, 1, 1), height: dualItemRowHeight(false)},
+		}{primitive: inputRow(a.settingsCoreEngine, a.settingsLogLevel, stackedRows, 1, 1), height: dualItemRowHeight(stackedRows)},
 	)
 
 	tunPanel := buildGroupPanel(
@@ -54,11 +56,11 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 		struct {
 			primitive tview.Primitive
 			height    int
-		}{primitive: inputRow(a.settingsTunName, a.settingsTunMode, false, 2, 3), height: dualItemRowHeight(false)},
+		}{primitive: inputRow(a.settingsTunName, a.settingsTunMode, stackedRows, 2, 3), height: dualItemRowHeight(stackedRows)},
 		struct {
 			primitive tview.Primitive
 			height    int
-		}{primitive: inputRow(a.settingsTunMtu, a.settingsTunAutoRoute, false, 2, 3), height: dualItemRowHeight(false)},
+		}{primitive: inputRow(a.settingsTunMtu, a.settingsTunAutoRoute, stackedRows, 2, 3), height: dualItemRowHeight(stackedRows)},
 		struct {
 			primitive tview.Primitive
 			height    int
@@ -82,11 +84,11 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 		struct {
 			primitive tview.Primitive
 			height    int
-		}{primitive: proxyUserActionsRow1, height: actionBlockHeight(false, 2)},
+		}{primitive: proxyUserActionsRow1, height: actionBlockHeight(stackedActions, 2)},
 		struct {
 			primitive tview.Primitive
 			height    int
-		}{primitive: proxyUserActionsRow2, height: actionBlockHeight(false, 2)},
+		}{primitive: proxyUserActionsRow2, height: actionBlockHeight(stackedActions, 2)},
 		struct {
 			primitive tview.Primitive
 			height    int
@@ -115,19 +117,12 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 	rightColumn.AddItem(verticalSpacer(1), 1, 0, false)
 	rightColumn.AddItem(dnsPanel, 0, 3, false)
 	rightColumn.AddItem(verticalSpacer(1), 1, 0, false)
-	rightColumn.AddItem(wrapPanel(a.t("settings.panel.summary"), a.settingsSummary), 0, 4, false)
-
-	editorGrid := tview.NewGrid().SetBorders(false).SetGap(1, 1)
-	editorGrid.SetRows(0, 0, 0).SetColumns(0, 0)
-	editorGrid.AddItem(generalPanel, 0, 0, 1, 1, 0, 0, false)
-	editorGrid.AddItem(proxyPanel, 0, 1, 1, 1, 0, 0, false)
-	editorGrid.AddItem(tunPanel, 1, 0, 1, 1, 0, 0, false)
-	editorGrid.AddItem(dnsPanel, 1, 1, 1, 1, 0, 0, false)
-	editorGrid.AddItem(wrapPanel(a.t("settings.panel.summary"), a.settingsSummary), 2, 0, 1, 2, 0, 0, false)
-	body := wrapPanel(a.t("settings.panel.editor"), editorGrid)
+	summaryPanel := wrapPanel(a.t("settings.panel.summary"), a.settingsSummary)
+	rightColumn.AddItem(summaryPanel, 0, 4, false)
+	body := wrapPanel(a.t("settings.panel.editor"), splitContent(a.stackPageColumns(), leftColumn, rightColumn, 5, 6))
 
 	quickActions := tview.NewFlex().SetDirection(tview.FlexRow)
-	controlsHeight := actionBlockHeight(false, 3)
+	controlsHeight := actionBlockHeight(stackedActions, 3)
 	quickActionsContentHeight := 1 + 1 + controlsHeight
 	quickActions.AddItem(newMutedText(a.t("settings.desc")), 1, 0, false)
 	quickActions.AddItem(verticalSpacer(1), 1, 0, false)

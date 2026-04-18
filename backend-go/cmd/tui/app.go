@@ -28,9 +28,11 @@ type tuiApp struct {
 
 	pageHolder  *tview.Pages
 	rootPages   *tview.Pages
+	contentLayout *tview.Flex
 	tabBar      *tview.Flex
 	helpBar     *tview.TextView // 动态帮助/导航栏 (窄屏时切换为 Tab 导航)
 	sidebar     *components.Sidebar
+	sidebarSpacer *tview.Box
 	focusables  []tview.Primitive
 	focusGroups [][]tview.Primitive
 	focusGroup  int
@@ -206,5 +208,6 @@ func newTUI(ctx context.Context, client *apiClient) *tuiApp {
 		proxyUsersStatus:  tr(lang, "state.notLoaded"),
 		footerStatus:      tr(lang, "status.ready"),
 		viewportCols:      0,
+		layoutMode:        layoutModeWide,
 	}
 }

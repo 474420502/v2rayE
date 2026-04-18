@@ -3,17 +3,18 @@ package tui
 import "github.com/rivo/tview"
 
 func (a *tuiApp) buildSubscriptionsPage() builtPage {
+	stackedActions := a.stackActionButtons()
 	updateAll := a.actionButton(a.t("subs.btn.updateAll"), a.updateAllSubscriptionsAction)
 	updateSelected := a.actionButton(a.t("subs.btn.updateSelected"), a.updateSelectedSubscriptionAction)
-	actions := buttonRow(updateAll, updateSelected)
+	actions := buttonStrip(stackedActions, updateAll, updateSelected)
 	body := splitContent(
-		false,
+		a.stackPageColumns(),
 		wrapPanel(a.t("subs.panel.list"), a.subscriptionsList),
 		wrapPanel(a.t("subs.panel.selected"), a.subscriptionDetail),
 		5,
 		6,
 	)
-	actionsHeight := actionBlockHeight(false, 2)
+	actionsHeight := actionBlockHeight(stackedActions, 2)
 	actionsContentHeight := 1 + 1 + actionsHeight
 	actionsPanel := tview.NewFlex().SetDirection(tview.FlexRow)
 	actionsPanel.AddItem(newMutedText(a.t("subs.desc")), 1, 0, false)
