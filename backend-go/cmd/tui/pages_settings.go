@@ -74,6 +74,10 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 		struct {
 			primitive tview.Primitive
 			height    int
+		}{primitive: a.settingsLocalProxyMode, height: 1},
+		struct {
+			primitive tview.Primitive
+			height    int
 		}{primitive: a.settingsProxyExcept, height: 1},
 		struct {
 			primitive tview.Primitive
@@ -137,7 +141,7 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 		primitivesToFocusables(a.settingsLanguage, a.settingsCoreEngine, a.settingsLogLevel, a.settingsSkipCert),
 		primitivesToFocusables(a.settingsTunName, a.settingsTunMode, a.settingsTunMtu, a.settingsTunAutoRoute, a.settingsTunStrict),
 		primitivesToFocusables(a.settingsDNSMode, a.settingsDNSList),
-		primitivesToFocusables(a.settingsProxyMode, a.settingsProxyExcept),
+		primitivesToFocusables(a.settingsProxyMode, a.settingsLocalProxyMode, a.settingsProxyExcept),
 		buttonsToFocusables(proxyUsersDetect, proxyUsersDefault),
 		buttonsToFocusables(proxyUsersAddAll, proxyUsersSelect),
 		primitivesToFocusables(a.settingsProxyUsers),
@@ -149,7 +153,7 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 		primitivesToFocusables(a.settingsLanguage, a.settingsCoreEngine, a.settingsLogLevel, a.settingsSkipCert),
 		primitivesToFocusables(a.settingsTunName, a.settingsTunMode, a.settingsTunMtu, a.settingsTunAutoRoute, a.settingsTunStrict),
 		primitivesToFocusables(a.settingsDNSMode, a.settingsDNSList),
-		primitivesToFocusables(a.settingsProxyMode, a.settingsProxyExcept),
+		primitivesToFocusables(a.settingsProxyMode, a.settingsLocalProxyMode, a.settingsProxyExcept),
 		buttonsToFocusables(proxyUsersDetect, proxyUsersDefault),
 		buttonsToFocusables(proxyUsersAddAll, proxyUsersSelect),
 		primitivesToFocusables(a.settingsProxyUsers),

@@ -238,6 +238,7 @@ type RoutingRule struct {
 type RoutingDiagnostics struct {
 	Mode                string                   `json:"mode"`
 	DomainStrategy      string                   `json:"domainStrategy"`
+	LocalProxyMode      string                   `json:"localProxyMode,omitempty"`
 	TunMode             string                   `json:"tunMode"`
 	TunEnabled          bool                     `json:"tunEnabled"`
 	TunTakeoverActive   bool                     `json:"tunTakeoverActive"`
@@ -279,12 +280,14 @@ type RoutingTestRequest struct {
 	Target   string `json:"target"`
 	Protocol string `json:"protocol,omitempty"`
 	Port     int    `json:"port,omitempty"`
+	InboundTag string `json:"inboundTag,omitempty"`
 }
 
 // RoutingTestResult is the result of a routing simulation for a target.
 type RoutingTestResult struct {
 	Target       string `json:"target"`
 	Type         string `json:"type"`
+	InboundTag   string `json:"inboundTag,omitempty"`
 	MatchedRule  string `json:"matchedRule,omitempty"`
 	MatchedValue string `json:"matchedValue,omitempty"`
 	Outbound     string `json:"outbound"`
@@ -292,6 +295,7 @@ type RoutingTestResult struct {
 	RuleIndex    int    `json:"ruleIndex,omitempty"`
 	Protocol     string `json:"protocol,omitempty"`
 	Port         int    `json:"port,omitempty"`
+	ResolvedIPs  []string `json:"resolvedIps,omitempty"`
 	Note         string `json:"note,omitempty"`
 }
 

@@ -116,6 +116,7 @@ func DefaultConfig() map[string]interface{} {
 		"tunHijackDefaultRouteExplicit": false,
 		"tunStrictRoute":                false,
 		"systemProxyMode":               "forced_clear",
+		"localProxyMode":                "follow-routing",
 		"systemProxyExceptions":         "",
 		"systemProxyUsers":              []interface{}{},
 		"coreAutoRestart":               true,
@@ -199,6 +200,7 @@ func normalizeConfigMap(cfg map[string]interface{}) map[string]interface{} {
 		normalized["tunHijackDefaultRouteExplicit"] = false
 	}
 	normalized["systemProxyMode"] = normalizeSystemProxyMode(asString(normalized["systemProxyMode"]))
+	normalized["localProxyMode"] = normalizeLocalProxyMode(asString(normalized["localProxyMode"]))
 	normalized["systemProxyUsers"] = normalizeStringSliceValue(normalized["systemProxyUsers"])
 	if tunMode == "off" {
 		if asString(normalized["tunStack"]) == "" {
@@ -271,6 +273,17 @@ func normalizeSystemProxyMode(mode string) string {
 		return "pac"
 	default:
 		return "forced_clear"
+	}
+}
+
+func normalizeLocalProxyMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", "follow-routing", "follow_routing", "routing", "default":
+		return "follow-routing"
+	case "force-proxy", "force_proxy", "proxy", "always-proxy":
+		return "force-proxy"
+	default:
+		return "follow-routing"
 	}
 }
 

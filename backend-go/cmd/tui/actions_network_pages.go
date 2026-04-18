@@ -40,6 +40,18 @@ func (a *tuiApp) reloadOverviewAction(context.Context) error {
 	return a.reloadOverview()
 }
 
+func (a *tuiApp) reloadNetworkAction(context.Context) error {
+	a.resetNetworkRoutingForm()
+	var errs []error
+	if err := a.reloadOverview(); err != nil {
+		errs = append(errs, err)
+	}
+	if err := a.reloadNetwork(); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
 func (a *tuiApp) applySystemProxyAction(ctx context.Context) error {
 	cfg := a.copyConfig()
 	_, err := a.client.ApplySystemProxy(ctx, stringValue(cfg, "systemProxyMode"), stringValue(cfg, "systemProxyExceptions"))
@@ -344,6 +356,9 @@ func (a *tuiApp) saveRoutingModeAction(ctx context.Context) error {
 
 	routing := a.copyRouting()
 	routing.Mode = mode
+	if a.pendingNetworkPreset() != "" {
+		routing.Rules = nil
+	}
 	strategy := strings.TrimSpace(a.networkDomainStrategy.Text())
 	if strategy != "" {
 		switch strategy {
@@ -398,6 +413,7 @@ func (a *tuiApp) applyRoutingPresetToForm(preset string) {
 		a.networkDomainStrategy.SetText(domainStrategy, a.app)
 		a.networkLocalBypass.SetText(strconv.FormatBool(localBypass), a.app)
 	})
+	a.storePendingNetworkPreset(strings.TrimSpace(preset))
 	a.markNetworkRoutingDirty()
 	a.setFooter(a.t(footerKey))
 }
@@ -423,11 +439,28 @@ func (a *tuiApp) selectRoutingCustomAction(context.Context) error {
 }
 
 func (a *tuiApp) setNetworkRoutingMode(mode string) {
-	a.markNetworkRoutingDirty()
+	a.markNetworkRoutingDirtyFromManualEdit()
 	a.runUI(func(app *tview.Application) {
 		a.networkRoutingMode.SetText(mode, app)
 	})
 	a.setFooter(a.tf("footer.routing.targetMode", mode))
+}
+
+func (a *tuiApp) resetNetworkRoutingForm() {
+	a.clearNetworkRoutingDirty()
+	a.refreshWidgets()
+}
+
+func (a *tuiApp) storePendingNetworkPreset(preset string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.networkPresetApplied = preset
+}
+
+func (a *tuiApp) pendingNetworkPreset() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.networkPresetApplied
 }
 
 func (a *tuiApp) saveConfigAction(ctx context.Context) error {
@@ -448,6 +481,7 @@ func (a *tuiApp) saveConfigAction(ctx context.Context) error {
 		"dnsMode":               strings.TrimSpace(a.settingsDNSMode.Text()),
 		"dnsList":               splitCSV(a.settingsDNSList.Text()),
 		"systemProxyMode":       strings.TrimSpace(a.settingsProxyMode.Text()),
+		"localProxyMode":        strings.TrimSpace(a.settingsLocalProxyMode.Text()),
 		"systemProxyExceptions": strings.TrimSpace(a.settingsProxyExcept.Text()),
 		"systemProxyUsers":      splitCSV(a.settingsProxyUsers.Text()),
 	}

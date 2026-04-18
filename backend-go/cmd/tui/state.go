@@ -252,6 +252,8 @@ func (a *tuiApp) formatNetworkSummary() string {
 	if localBypassText != "" {
 		targetLocalBypass = parseBoolText(localBypassText)
 	}
+	currentPreset := a.routingPresetLabel(routingPresetKey(a.routing))
+	targetPreset := a.routingPresetLabel(a.targetRoutingPreset())
 	lines := []string{
 		a.t("state.network.availability"),
 		fmt.Sprintf("  %s: %t", a.t("state.label.available"), a.availability.Available),
@@ -259,6 +261,8 @@ func (a *tuiApp) formatNetworkSummary() string {
 		fmt.Sprintf("  %s: %s", a.t("state.label.message"), emptyFallback(a.availability.Message, a.t("state.none"))),
 		"",
 		a.t("state.network.routing"),
+		fmt.Sprintf("  %s: %s", a.t("state.label.currentPreset"), currentPreset),
+		fmt.Sprintf("  %s: %s", a.t("state.label.targetPreset"), targetPreset),
 		fmt.Sprintf("  %s: %s", a.t("state.label.currentMode"), a.routing.Mode),
 		fmt.Sprintf("  %s: %s", a.t("state.label.targetMode"), targetMode),
 		fmt.Sprintf("  %s: %s", a.t("state.label.currentDomainStrategy"), a.routing.DomainStrategy),
@@ -287,6 +291,75 @@ func (a *tuiApp) formatNetworkSummary() string {
 	return strings.Join(lines, "\n")
 }
 
+func routingPresetKey(routing RoutingConfig) string {
+	localBypass := true
+	if routing.LocalBypassEnabled != nil {
+		localBypass = *routing.LocalBypassEnabled
+	}
+	if len(routing.Rules) > 0 {
+		return ""
+	}
+	switch routing.Mode {
+	case "global":
+		if routing.DomainStrategy == "IPIfNonMatch" && localBypass {
+			return "global"
+		}
+	case "bypass_cn":
+		if routing.DomainStrategy == "IPIfNonMatch" && localBypass {
+			return "bypass_cn"
+		}
+	case "direct":
+		if routing.DomainStrategy == "AsIs" && localBypass {
+			return "direct"
+		}
+	}
+	return ""
+}
+
+func (a *tuiApp) targetRoutingPreset() string {
+	if preset := strings.TrimSpace(a.pendingNetworkPreset()); preset != "" {
+		return preset
+	}
+	targetMode := strings.ToLower(strings.TrimSpace(a.networkRoutingMode.Text()))
+	if targetMode == "" {
+		targetMode = a.routing.Mode
+	}
+	targetStrategy := strings.TrimSpace(a.networkDomainStrategy.Text())
+	if targetStrategy == "" {
+		targetStrategy = a.routing.DomainStrategy
+	}
+	targetLocalBypass := true
+	if a.routing.LocalBypassEnabled != nil {
+		targetLocalBypass = *a.routing.LocalBypassEnabled
+	}
+	if localBypassText := strings.TrimSpace(a.networkLocalBypass.Text()); localBypassText != "" {
+		targetLocalBypass = parseBoolText(localBypassText)
+	}
+	if len(a.routing.Rules) > 0 {
+		return ""
+	}
+	return routingPresetKey(RoutingConfig{
+		Mode:           targetMode,
+		DomainStrategy: targetStrategy,
+		LocalBypassEnabled: func(v bool) *bool {
+			return &v
+		}(targetLocalBypass),
+	})
+}
+
+func (a *tuiApp) routingPresetLabel(preset string) string {
+	switch preset {
+	case "global":
+		return a.t("dropdown.routing.preset.global")
+	case "bypass_cn":
+		return a.t("dropdown.routing.preset.bypassCN")
+	case "direct":
+		return a.t("dropdown.routing.preset.direct")
+	default:
+		return a.t("state.none")
+	}
+}
+
 func (a *tuiApp) formatRoutingTestResult() string {
 	if strings.TrimSpace(a.routingTest.Target) == "" {
 		return a.t("state.routingTest.empty")
@@ -295,10 +368,12 @@ func (a *tuiApp) formatRoutingTestResult() string {
 		a.t("state.routingTest.title"),
 		fmt.Sprintf("  %s: %s", a.t("state.label.target"), a.routingTest.Target),
 		fmt.Sprintf("  %s: %s", a.t("state.label.type"), emptyFallback(a.routingTest.Type, a.t("state.unknown"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.inboundTag"), emptyFallback(a.routingTest.InboundTag, a.t("state.none"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.protocol"), emptyFallback(a.routingTest.Protocol, "tcp")),
 		fmt.Sprintf("  %s: %d", a.t("state.label.port"), a.routingTest.Port),
 		fmt.Sprintf("  %s: %s", a.t("state.label.matchedRule"), emptyFallback(a.routingTest.MatchedRule, a.t("state.default"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.matchedValue"), emptyFallback(a.routingTest.MatchedValue, a.t("state.none"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.resolvedIps"), emptyFallback(strings.Join(a.routingTest.ResolvedIPs, ","), a.t("state.none"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.outbound"), a.outboundLabel(emptyFallback(a.routingTest.Outbound, "proxy"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.action"), a.outboundLabel(emptyFallback(a.routingTest.Action, "proxy"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.note"), emptyFallback(a.routingTest.Note, a.t("state.none"))),
@@ -417,6 +492,7 @@ func (a *tuiApp) formatSettingsSummary() string {
 		fmt.Sprintf("  %s: %s", a.t("state.label.dnsMode"), emptyFallback(stringValue(a.config, "dnsMode"), "UseSystemDNS")),
 		fmt.Sprintf("  %s: %s", a.t("state.label.dnsList"), emptyFallback(strings.Join(toStringSlice(a.config["dnsList"]), ","), a.t("state.none"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.systemProxyMode"), emptyFallback(stringValue(a.config, "systemProxyMode"), a.t("state.unset"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.localProxyMode"), emptyFallback(stringValue(a.config, "localProxyMode"), "follow-routing")),
 		fmt.Sprintf("  %s: %s", a.t("state.label.systemProxyExceptions"), emptyFallback(stringValue(a.config, "systemProxyExceptions"), a.t("state.none"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.systemProxyUsers"), emptyFallback(strings.Join(toStringSlice(a.config["systemProxyUsers"]), ","), a.t("state.autoDetect"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.proxyUserCandidates"), emptyFallback(a.proxyUsersStatus, a.t("state.notLoaded"))),

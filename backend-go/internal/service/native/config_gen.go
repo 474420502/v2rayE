@@ -175,7 +175,7 @@ func generateXrayConfig(
 		"outbounds": outbounds,
 		"routing": map[string]interface{}{
 			"domainStrategy": routingDomainStrategy(routing),
-			"rules":          buildRoutingRules(routing, hasGeoIP, hasGeoSite),
+			"rules":          buildRoutingRulesWithConfig(cfg, routing, hasGeoIP, hasGeoSite),
 		},
 	}
 	if dnsCfg := buildDNSConfig(cfg); dnsCfg != nil {
@@ -183,6 +183,16 @@ func generateXrayConfig(
 	}
 
 	return json.MarshalIndent(xrayCfg, "", "  ")
+}
+
+func localProxyTrafficMode(cfg map[string]interface{}) string {
+	mode := strings.ToLower(strings.TrimSpace(strCfg(cfg, "localProxyMode", "follow-routing")))
+	switch mode {
+	case "force-proxy", "force_proxy", "proxy", "always-proxy":
+		return "force-proxy"
+	default:
+		return "follow-routing"
+	}
 }
 
 func effectiveTunInboundAutoRoute(cfg map[string]interface{}) bool {
@@ -533,6 +543,10 @@ func buildStreamSettings(transport *domain.TransportConfig, skipCertVerify bool)
 }
 
 func buildRoutingRules(routing domain.RoutingConfig, hasGeoIP, hasGeoSite bool) []interface{} {
+	return buildRoutingRulesWithConfig(nil, routing, hasGeoIP, hasGeoSite)
+}
+
+func buildRoutingRulesWithConfig(cfg map[string]interface{}, routing domain.RoutingConfig, hasGeoIP, hasGeoSite bool) []interface{} {
 	var rules []interface{}
 	var defaultRules []interface{}
 
@@ -557,6 +571,14 @@ func buildRoutingRules(routing domain.RoutingConfig, hasGeoIP, hasGeoSite bool) 
 				"outboundTag": "direct",
 			},
 		)
+	}
+
+	if localProxyTrafficMode(cfg) == "force-proxy" {
+		rules = append(rules, map[string]interface{}{
+			"type":        "field",
+			"inboundTag":  []string{"http", "socks"},
+			"outboundTag": "proxy",
+		})
 	}
 
 	switch routing.Mode {

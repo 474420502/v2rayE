@@ -2,6 +2,9 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	tcell "github.com/gdamore/tcell/v2"
@@ -199,5 +202,229 @@ func TestDropdownDialogWidth_HasReasonableMinimum(t *testing.T) {
 	width := dropdownDialogWidth("S", "H", []string{"x"}, 0)
 	if width < 40 {
 		t.Fatalf("expected minimum width >= 40, got %d", width)
+	}
+}
+
+func TestSetActivePage_EnteringNetworkClearsStagedRoutingState(t *testing.T) {
+	a := newTUI(context.Background(), nil)
+	_ = a.build()
+	a.page = pageDashboard
+	a.networkRoutingDirty = true
+
+	a.setActivePage(pageNetwork)
+
+	if a.networkRoutingDirty {
+		t.Fatal("expected entering network page to clear staged routing state")
+	}
+}
+
+func TestSetActivePage_StayingOnNetworkKeepsStagedRoutingState(t *testing.T) {
+	a := newTUI(context.Background(), nil)
+	_ = a.build()
+	a.page = pageNetwork
+	a.networkRoutingDirty = true
+
+	a.setActivePage(pageNetwork)
+
+	if !a.networkRoutingDirty {
+		t.Fatal("expected reselecting current network page to preserve staged routing state")
+	}
+}
+
+func TestRoutingPresetKey_RequiresExactPresetShape(t *testing.T) {
+	trueValue := true
+	tests := []struct {
+		name    string
+		routing RoutingConfig
+		want    string
+	}{
+		{
+			name: "global preset exact match",
+			routing: RoutingConfig{
+				Mode:               "global",
+				DomainStrategy:     "IPIfNonMatch",
+				LocalBypassEnabled: &trueValue,
+			},
+			want: "global",
+		},
+		{
+			name: "custom rules prevent preset match",
+			routing: RoutingConfig{
+				Mode:               "global",
+				DomainStrategy:     "IPIfNonMatch",
+				LocalBypassEnabled: &trueValue,
+				Rules: []RoutingRule{{
+					ID:       "rule-1",
+					Type:     "domain",
+					Values:   []string{"example.com"},
+					Outbound: "direct",
+				}},
+			},
+			want: "",
+		},
+		{
+			name: "direct preset exact match",
+			routing: RoutingConfig{
+				Mode:               "direct",
+				DomainStrategy:     "AsIs",
+				LocalBypassEnabled: &trueValue,
+			},
+			want: "direct",
+		},
+		{
+			name: "wrong strategy does not match preset",
+			routing: RoutingConfig{
+				Mode:               "direct",
+				DomainStrategy:     "IPIfNonMatch",
+				LocalBypassEnabled: &trueValue,
+			},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := routingPresetKey(tt.routing); got != tt.want {
+				t.Fatalf("expected preset %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestTargetRoutingPreset_UsesPendingPresetEvenWithExistingCustomRules(t *testing.T) {
+	falseValue := false
+	a := newTUI(context.Background(), nil)
+	_ = a.build()
+	a.routing = RoutingConfig{
+		Mode:               "custom",
+		DomainStrategy:     "IPOnDemand",
+		LocalBypassEnabled: &falseValue,
+		Rules: []RoutingRule{{
+			ID:       "rule-1",
+			Type:     "domain",
+			Values:   []string{"example.com"},
+			Outbound: "direct",
+		}},
+	}
+
+	a.applyRoutingPresetToForm("global")
+
+	if got := a.targetRoutingPreset(); got != "global" {
+		t.Fatalf("expected staged preset to be global, got %q", got)
+	}
+}
+
+func TestSaveRoutingModeAction_PresetClearsExistingCustomRules(t *testing.T) {
+	falseValue := false
+	var saved RoutingConfig
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/api/routing":
+			if err := json.NewDecoder(r.Body).Decode(&saved); err != nil {
+				t.Fatalf("decode request body: %v", err)
+			}
+			writeTestEnvelope(t, w, saved)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/routing":
+			writeTestEnvelope(t, w, saved)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/routing/diagnostics":
+			writeTestEnvelope(t, w, RoutingDiagnostics{})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/routing/hits":
+			writeTestEnvelope(t, w, RoutingHitStats{})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	a := newTUI(context.Background(), newAPIClient(server.URL, ""))
+	_ = a.build()
+	a.routing = RoutingConfig{
+		Mode:               "custom",
+		DomainStrategy:     "IPOnDemand",
+		LocalBypassEnabled: &falseValue,
+		Rules: []RoutingRule{{
+			ID:       "rule-1",
+			Type:     "domain",
+			Values:   []string{"example.com"},
+			Outbound: "direct",
+		}},
+	}
+
+	a.applyRoutingPresetToForm("global")
+
+	if err := a.saveRoutingModeAction(context.Background()); err != nil {
+		t.Fatalf("save routing mode: %v", err)
+	}
+	if len(saved.Rules) != 0 {
+		t.Fatalf("expected preset save to clear custom rules, got %d rule(s)", len(saved.Rules))
+	}
+	if saved.Mode != "global" {
+		t.Fatalf("expected saved mode global, got %q", saved.Mode)
+	}
+	if saved.DomainStrategy != "IPIfNonMatch" {
+		t.Fatalf("expected saved domain strategy IPIfNonMatch, got %q", saved.DomainStrategy)
+	}
+	if saved.LocalBypassEnabled == nil || !*saved.LocalBypassEnabled {
+		t.Fatal("expected saved local bypass to be true")
+	}
+}
+
+func TestMarkNetworkRoutingDirtyFromManualEdit_ClearsPendingPreset(t *testing.T) {
+	a := newTUI(context.Background(), nil)
+	_ = a.build()
+	a.applyRoutingPresetToForm("global")
+
+	a.markNetworkRoutingDirtyFromManualEdit()
+
+	if got := a.pendingNetworkPreset(); got != "" {
+		t.Fatalf("expected pending preset to be cleared after manual edit, got %q", got)
+	}
+}
+
+func TestBuildNetworkPage_FocusGroupsFollowSeparatedVisualFlow(t *testing.T) {
+	a := newTUI(context.Background(), nil)
+	_ = a.build()
+	built := a.buildNetworkPage()
+
+	if len(built.focusGroups) != 7 {
+		t.Fatalf("expected 7 focus groups, got %d", len(built.focusGroups))
+	}
+	if len(built.focusGroups[0]) != 1 {
+		t.Fatalf("expected check action group size 1, got %d", len(built.focusGroups[0]))
+	}
+	if built.focusGroups[1][0] != a.networkPresetSelect {
+		t.Fatal("expected preset dropdown to be second focus group")
+	}
+	if len(built.focusGroups[2]) != 3 {
+		t.Fatalf("expected routing form group size 3, got %d", len(built.focusGroups[2]))
+	}
+	if built.focusGroups[2][0] != a.networkRoutingMode || built.focusGroups[2][1] != a.networkDomainStrategy || built.focusGroups[2][2] != a.networkLocalBypass {
+		t.Fatal("expected routing form fields to stay together before system proxy actions")
+	}
+	if len(built.focusGroups[3]) != 2 {
+		t.Fatalf("expected system proxy group size 2, got %d", len(built.focusGroups[3]))
+	}
+	applyBtn, ok := built.focusGroups[3][0].(*tview.Button)
+	if !ok || applyBtn.GetLabel() != a.t("network.btn.applyProxy") {
+		t.Fatal("expected system proxy apply button after routing form group")
+	}
+	clearBtn, ok := built.focusGroups[3][1].(*tview.Button)
+	if !ok || clearBtn.GetLabel() != a.t("network.btn.clearProxy") {
+		t.Fatal("expected system proxy clear button in same group")
+	}
+	if built.focusGroups[6][0] != a.networkTestTarget || built.focusGroups[6][1] != a.networkTestPort {
+		t.Fatal("expected route test inputs to stay in final focus group")
+	}
+}
+
+func writeTestEnvelope(t *testing.T, w http.ResponseWriter, data any) {
+	t.Helper()
+	payload, err := json.Marshal(data)
+	if err != nil {
+		t.Fatalf("marshal envelope payload: %v", err)
+	}
+	if err := json.NewEncoder(w).Encode(apiEnvelope{Code: 0, Message: "ok", Data: payload}); err != nil {
+		t.Fatalf("encode envelope: %v", err)
 	}
 }

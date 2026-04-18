@@ -50,12 +50,7 @@ func (a *tuiApp) refreshWidgetsWithLists(refreshProfiles, refreshSubscriptions b
 			if !a.networkRoutingDirty {
 				a.setInteractiveText(app, a.networkRoutingMode, a.routing.Mode)
 				if a.networkPresetSelect != nil {
-					preset := ""
-					switch a.routing.Mode {
-					case "global", "bypass_cn", "direct":
-						preset = a.routing.Mode
-					}
-					a.setInteractiveText(app, a.networkPresetSelect, preset)
+					a.setInteractiveText(app, a.networkPresetSelect, routingPresetKey(a.routing))
 				}
 				a.setInteractiveText(app, a.networkDomainStrategy, a.routing.DomainStrategy)
 				localBypass := true
@@ -84,6 +79,7 @@ func (a *tuiApp) refreshWidgetsWithLists(refreshProfiles, refreshSubscriptions b
 				a.setInteractiveText(app, a.settingsDNSMode, stringValue(a.config, "dnsMode"))
 				a.setInteractiveText(app, a.settingsDNSList, strings.Join(toStringSlice(a.config["dnsList"]), ","))
 				a.setInteractiveText(app, a.settingsProxyMode, stringValue(a.config, "systemProxyMode"))
+				a.setInteractiveText(app, a.settingsLocalProxyMode, stringValue(a.config, "localProxyMode"))
 				a.setInteractiveText(app, a.settingsProxyExcept, stringValue(a.config, "systemProxyExceptions"))
 				a.setInteractiveText(app, a.settingsProxyUsers, strings.Join(toStringSlice(a.config["systemProxyUsers"]), ","))
 				a.settingsFormLoaded = true
@@ -343,9 +339,17 @@ func (a *tuiApp) markNetworkRoutingDirty() {
 	a.mu.Unlock()
 }
 
+func (a *tuiApp) markNetworkRoutingDirtyFromManualEdit() {
+	a.mu.Lock()
+	a.networkRoutingDirty = true
+	a.networkPresetApplied = ""
+	a.mu.Unlock()
+}
+
 func (a *tuiApp) clearNetworkRoutingDirty() {
 	a.mu.Lock()
 	a.networkRoutingDirty = false
+	a.networkPresetApplied = ""
 	a.mu.Unlock()
 }
 

@@ -79,6 +79,7 @@ type tuiApp struct {
 	settingsDirty       bool
 	settingsFormLoaded  bool
 	networkRoutingDirty bool
+	networkPresetApplied string
 	profileEditDirty    bool
 	profileEditLoaded   bool
 	profileEditForID    string
@@ -164,6 +165,7 @@ type tuiApp struct {
 	settingsTunAutoRoute   *dropdownWidget
 	settingsTunStrict      *dropdownWidget
 	settingsProxyMode      *dropdownWidget
+	settingsLocalProxyMode *dropdownWidget
 	settingsProxyExcept    *inputWidget
 	settingsProxyUsers     *inputWidget
 	settingsCoreEngine     *dropdownWidget

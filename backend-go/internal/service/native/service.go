@@ -1353,6 +1353,7 @@ func (s *Service) GetRoutingDiagnostics() domain.RoutingDiagnostics {
 	diag := domain.RoutingDiagnostics{
 		Mode:             rc.Mode,
 		DomainStrategy:   routingDomainStrategy(rc),
+		LocalProxyMode:   localProxyTrafficMode(cfg),
 		TunMode:          tunModeFromConfig(cfg),
 		TunEnabled:       tunModeFromConfig(cfg) != "off",
 		HasGeoIP:         hasGeoIP,
@@ -1417,7 +1418,7 @@ func (s *Service) GetRoutingDiagnostics() domain.RoutingDiagnostics {
 	}
 
 	if len(diag.Rules) == 0 {
-		for _, r := range buildRoutingRules(rc, hasGeoIP, hasGeoSite) {
+		for _, r := range buildRoutingRulesWithConfig(cfg, rc, hasGeoIP, hasGeoSite) {
 			if m, ok := r.(map[string]interface{}); ok {
 				diag.Rules = append(diag.Rules, m)
 			}

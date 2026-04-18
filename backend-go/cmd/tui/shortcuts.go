@@ -79,8 +79,21 @@ func pageForShortcut(shortcut rune) string {
 }
 
 func (a *tuiApp) setActivePage(page string) {
+	previous := a.page
 	a.page = page
+	enteringNetwork := previous != pageNetwork && page == pageNetwork
+	if enteringNetwork {
+		a.clearNetworkRoutingDirty()
+	}
 	a.syncPages()
+	if enteringNetwork {
+		a.refreshWidgets()
+		if a.client != nil {
+			go func() {
+				_ = a.reloadNetworkAction(a.ctx)
+			}()
+		}
+	}
 	a.footerStatus = fmt.Sprintf(a.t("status.page"), pageDisplayName(page))
 	a.setFooter(a.footerStatus)
 }

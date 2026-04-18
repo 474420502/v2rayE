@@ -1,24 +1,44 @@
 package native
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"v2raye/backend-go/internal/domain"
+
+	xrayrouter "github.com/xtls/xray-core/app/router"
+	"github.com/xtls/xray-core/common/platform/filesystem"
+	"google.golang.org/protobuf/proto"
 )
+
+var routingLookupIPAddr = func(ctx context.Context, host string) ([]net.IPAddr, error) {
+	return net.DefaultResolver.LookupIPAddr(ctx, host)
+}
+
+var geoIPMatcherCache struct {
+	mu       sync.RWMutex
+	matchers map[string]xrayrouter.GeoIPMatcher
+}
 
 func (s *Service) TestRouting(req domain.RoutingTestRequest) domain.RoutingTestResult {
 	target := strings.TrimSpace(req.Target)
 	protocol := strings.TrimSpace(req.Protocol)
+	inboundTag := strings.TrimSpace(req.InboundTag)
 	if protocol == "" {
 		protocol = "tcp"
 	}
+	routingCfg := s.loadRoutingConfig()
+	strategy := routingDomainStrategy(routingCfg)
 	result := domain.RoutingTestResult{
 		Target:   target,
 		Protocol: protocol,
 		Port:     req.Port,
+		InboundTag: inboundTag,
 		Outbound: "proxy",
 		Action:   "proxy",
 		Type:     inferRoutingTargetType(target),
@@ -30,31 +50,79 @@ func (s *Service) TestRouting(req domain.RoutingTestRequest) domain.RoutingTestR
 	}
 
 	rules := s.GetRoutingDiagnostics().Rules
+	deferred := make([]deferredIPRule, 0, len(rules))
 	for idx, rule := range rules {
-		matchedValue, outbound, ok := matchRoutingRule(host, port, protocol, rule)
-		if !ok {
+		match := matchRoutingRule(host, port, protocol, inboundTag, strategy, rule)
+		if match.deferIP {
+			deferred = append(deferred, deferredIPRule{index: idx, rule: rule})
+			continue
+		}
+		if !match.ok {
 			continue
 		}
 		result.RuleIndex = idx + 1
 		result.MatchedRule = routingRuleName(rule, idx)
-		result.MatchedValue = matchedValue
-		result.Outbound = outbound
-		result.Action = outbound
+		result.MatchedValue = match.matchedValue
+		result.Outbound = match.outbound
+		result.Action = match.outbound
 		if note, _ := rule["type"].(string); note != "" {
 			result.Note = note
+		}
+		if match.note != "" {
+			result.Note = appendRoutingNote(result.Note, match.note)
 		}
 		return result
 	}
 
-	rc := s.loadRoutingConfig()
-	if rc.Mode == "direct" {
+	if len(deferred) > 0 {
+		resolvedIPs, err := resolveRoutingIPs(host)
+		if err != nil {
+			result.Note = appendRoutingNote(result.Note, fmt.Sprintf("IP-based routing check skipped: %v", err))
+		} else if len(resolvedIPs) > 0 {
+			result.ResolvedIPs = resolvedIPs
+			for _, entry := range deferred {
+				match := matchRoutingRuleAgainstResolvedIPs(resolvedIPs, port, protocol, inboundTag, entry.rule)
+				if !match.ok {
+					continue
+				}
+				result.RuleIndex = entry.index + 1
+				result.MatchedRule = routingRuleName(entry.rule, entry.index)
+				result.MatchedValue = match.matchedValue
+				result.Outbound = match.outbound
+				result.Action = match.outbound
+				if note, _ := entry.rule["type"].(string); note != "" {
+					result.Note = note
+				}
+				result.Note = appendRoutingNote(result.Note, fmt.Sprintf("matched resolved IP using %s", strategy))
+				if match.note != "" {
+					result.Note = appendRoutingNote(result.Note, match.note)
+				}
+				return result
+			}
+		}
+	}
+
+	if routingCfg.Mode == "direct" {
 		result.Outbound = "direct"
 		result.Action = "direct"
 		result.Note = "default direct mode"
 		return result
 	}
-	result.Note = "no explicit rule matched; default outbound applied"
+	result.Note = appendRoutingNote(result.Note, "no explicit rule matched; default outbound applied")
 	return result
+}
+
+type deferredIPRule struct {
+	index int
+	rule  map[string]interface{}
+}
+
+type routingRuleMatch struct {
+	matchedValue string
+	outbound     string
+	note         string
+	ok           bool
+	deferIP      bool
 }
 
 func inferRoutingTargetType(target string) string {
@@ -88,7 +156,158 @@ func parseRoutingTarget(target string, fallbackPort int) (string, int) {
 	return target, fallbackPort
 }
 
-func matchRoutingRule(host string, port int, protocol string, rule map[string]interface{}) (string, string, bool) {
+func matchRoutingRule(host string, port int, protocol string, inboundTag string, domainStrategy string, rule map[string]interface{}) routingRuleMatch {
+	outbound := routingRuleOutbound(rule)
+	matchedIndicators := make([]string, 0, 4)
+
+	if matched, specified, ok := ruleMatchesInboundTag(inboundTag, rule["inboundTag"]); specified {
+		if !ok {
+			return routingRuleMatch{}
+		}
+		matchedIndicators = append(matchedIndicators, matched)
+	}
+	if matched, specified, ok := ruleMatchesProtocol(protocol, rule["network"]); specified {
+		if !ok {
+			return routingRuleMatch{}
+		}
+		matchedIndicators = append(matchedIndicators, matched)
+	}
+	if matched, specified, ok := ruleMatchesProtocol(protocol, rule["protocol"]); specified {
+		if !ok {
+			return routingRuleMatch{}
+		}
+		matchedIndicators = append(matchedIndicators, matched)
+	}
+	if matched, specified, ok := ruleMatchesPort(port, rule["port"]); specified {
+		if !ok {
+			return routingRuleMatch{}
+		}
+		matchedIndicators = append(matchedIndicators, matched)
+	}
+
+	hasDomain := hasRoutingValues(rule["domain"])
+	hasIP := hasRoutingValues(rule["ip"])
+	hostIP := net.ParseIP(strings.TrimSpace(host))
+	strategy := strings.ToLower(strings.TrimSpace(domainStrategy))
+
+	if hostIP != nil {
+		if hasDomain {
+			return routingRuleMatch{}
+		}
+		if hasIP {
+			matched, ok := ruleMatchesIP(host, rule["ip"])
+			if !ok {
+				return routingRuleMatch{}
+			}
+			matchedIndicators = append(matchedIndicators, matched)
+		}
+		return buildRoutingRuleMatch(matchedIndicators, outbound, "")
+	}
+
+	if hasDomain {
+		matched, ok := ruleMatchesDomain(host, rule["domain"])
+		if !ok {
+			if !hasIP {
+				return routingRuleMatch{}
+			}
+			if strategy != "ipifnonmatch" && strategy != "ipondemand" {
+				return routingRuleMatch{}
+			}
+		} else {
+			matchedIndicators = append(matchedIndicators, matched)
+			if !hasIP {
+				return buildRoutingRuleMatch(matchedIndicators, outbound, "")
+			}
+		}
+	}
+
+	if hasIP {
+		switch strategy {
+		case "ipondemand":
+			resolvedIPs, err := resolveRoutingIPs(host)
+			if err != nil {
+				return routingRuleMatch{}
+			}
+			match := matchRoutingRuleAgainstResolvedIPs(resolvedIPs, port, protocol, inboundTag, rule)
+			if !match.ok {
+				return routingRuleMatch{}
+			}
+			match.note = appendRoutingNote(match.note, "matched resolved IP using IPOnDemand")
+			return match
+		case "ipifnonmatch":
+			return routingRuleMatch{deferIP: true}
+		default:
+			return routingRuleMatch{}
+		}
+	}
+
+	return buildRoutingRuleMatch(matchedIndicators, outbound, "")
+}
+
+
+func matchRoutingRuleAgainstResolvedIPs(resolvedIPs []string, port int, protocol string, inboundTag string, rule map[string]interface{}) routingRuleMatch {
+	if len(resolvedIPs) == 0 {
+		return routingRuleMatch{}
+	}
+	outbound := routingRuleOutbound(rule)
+	matchedIndicators := make([]string, 0, 4)
+
+	if matched, specified, ok := ruleMatchesInboundTag(inboundTag, rule["inboundTag"]); specified {
+		if !ok {
+			return routingRuleMatch{}
+		}
+		matchedIndicators = append(matchedIndicators, matched)
+	}
+	if matched, specified, ok := ruleMatchesProtocol(protocol, rule["network"]); specified {
+		if !ok {
+			return routingRuleMatch{}
+		}
+		matchedIndicators = append(matchedIndicators, matched)
+	}
+	if matched, specified, ok := ruleMatchesProtocol(protocol, rule["protocol"]); specified {
+		if !ok {
+			return routingRuleMatch{}
+		}
+		matchedIndicators = append(matchedIndicators, matched)
+	}
+	if matched, specified, ok := ruleMatchesPort(port, rule["port"]); specified {
+		if !ok {
+			return routingRuleMatch{}
+		}
+		matchedIndicators = append(matchedIndicators, matched)
+	}
+	if hasRoutingValues(rule["domain"]) {
+		return routingRuleMatch{}
+	}
+	if !hasRoutingValues(rule["ip"]) {
+		return buildRoutingRuleMatch(matchedIndicators, outbound, "")
+	}
+	for _, ip := range resolvedIPs {
+		matched, ok := ruleMatchesIP(ip, rule["ip"])
+		if !ok {
+			continue
+		}
+		return buildRoutingRuleMatch(append(matchedIndicators, matched), outbound, ip)
+	}
+	return routingRuleMatch{}
+}
+
+func buildRoutingRuleMatch(indicators []string, outbound string, resolvedIP string) routingRuleMatch {
+	if len(indicators) == 0 {
+		return routingRuleMatch{}
+	}
+	match := routingRuleMatch{
+		matchedValue: indicators[len(indicators)-1],
+		outbound:     outbound,
+		ok:           true,
+	}
+	if resolvedIP != "" {
+		match.note = "resolved IP: " + resolvedIP
+	}
+	return match
+}
+
+func routingRuleOutbound(rule map[string]interface{}) string {
 	outbound, _ := rule["outboundTag"].(string)
 	if outbound == "" {
 		outbound, _ = rule["outbound"].(string)
@@ -96,40 +315,93 @@ func matchRoutingRule(host string, port int, protocol string, rule map[string]in
 	if outbound == "" {
 		outbound = "proxy"
 	}
-
-	if !ruleMatchesProtocol(protocol, rule["network"]) {
-		return "", "", false
-	}
-	if matched, ok := ruleMatchesPort(port, rule["port"]); ok {
-		return matched, outbound, true
-	}
-	if matched, ok := ruleMatchesDomain(host, rule["domain"]); ok {
-		return matched, outbound, true
-	}
-	if matched, ok := ruleMatchesIP(host, rule["ip"]); ok {
-		return matched, outbound, true
-	}
-	return "", "", false
+	return outbound
 }
 
-func ruleMatchesProtocol(protocol string, raw interface{}) bool {
+func resolveRoutingIPs(host string) ([]string, error) {
+	host = strings.TrimSpace(host)
+	if host == "" || net.ParseIP(host) != nil {
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	addrs, err := routingLookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	resolved := make([]string, 0, len(addrs))
+	seen := make(map[string]struct{}, len(addrs))
+	for _, addr := range addrs {
+		ip := addr.IP.String()
+		if ip == "" {
+			continue
+		}
+		if _, ok := seen[ip]; ok {
+			continue
+		}
+		seen[ip] = struct{}{}
+		resolved = append(resolved, ip)
+	}
+	return resolved, nil
+}
+
+func appendRoutingNote(current string, next string) string {
+	next = strings.TrimSpace(next)
+	if next == "" {
+		return current
+	}
+	current = strings.TrimSpace(current)
+	if current == "" {
+		return next
+	}
+	if strings.Contains(current, next) {
+		return current
+	}
+	return current + "; " + next
+}
+
+func hasRoutingValues(raw interface{}) bool {
+	return len(routingToStringSlice(raw)) > 0
+}
+
+func ruleMatchesProtocol(protocol string, raw interface{}) (string, bool, bool) {
 	values := routingToStringSlice(raw)
 	if len(values) == 0 {
-		return true
+		return "", false, true
 	}
 	for _, value := range values {
 		if strings.EqualFold(strings.TrimSpace(value), protocol) {
-			return true
+			return value, true, true
 		}
 	}
-	return false
+	return "", true, false
 }
 
-func ruleMatchesPort(port int, raw interface{}) (string, bool) {
-	if port <= 0 {
-		return "", false
+func ruleMatchesInboundTag(inboundTag string, raw interface{}) (string, bool, bool) {
+	values := routingToStringSlice(raw)
+	if len(values) == 0 {
+		return "", false, true
 	}
-	for _, value := range routingToStringSlice(raw) {
+	if inboundTag == "" {
+		return "", true, false
+	}
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), inboundTag) {
+			return value, true, true
+		}
+	}
+	return "", true, false
+}
+
+func ruleMatchesPort(port int, raw interface{}) (string, bool, bool) {
+	values := routingToStringSlice(raw)
+	if len(values) == 0 {
+		return "", false, true
+	}
+	if port <= 0 {
+		return "", true, false
+	}
+	for _, value := range values {
 		value = strings.TrimSpace(value)
 		if value == "" {
 			continue
@@ -139,15 +411,15 @@ func ruleMatchesPort(port int, raw interface{}) (string, bool) {
 			start, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
 			end, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
 			if err1 == nil && err2 == nil && port >= start && port <= end {
-				return value, true
+				return value, true, true
 			}
 			continue
 		}
 		if parsed, err := strconv.Atoi(value); err == nil && parsed == port {
-			return value, true
+			return value, true, true
 		}
 	}
-	return "", false
+	return "", true, false
 }
 
 func ruleMatchesDomain(host string, raw interface{}) (string, bool) {
@@ -198,14 +470,16 @@ func ruleMatchesIP(host string, raw interface{}) (string, bool) {
 		candidate := strings.ToLower(strings.TrimSpace(value))
 		switch {
 		case candidate == "geoip:private":
-			if ip.IsPrivate() || ip.IsLoopback() {
+			if geoIPCodeMatches(ip, "PRIVATE") || ip.IsPrivate() || ip.IsLoopback() {
 				return value, true
 			}
 		case candidate == "geoip:cn":
-			for _, cidr := range builtinCNIPs {
-				if _, network, err := net.ParseCIDR(cidr); err == nil && network.Contains(ip) {
-					return value, true
-				}
+			if geoIPCodeMatches(ip, "CN") || builtinCNIPContains(ip) {
+				return value, true
+			}
+		case strings.HasPrefix(candidate, "geoip:"):
+			if geoIPCodeMatches(ip, strings.TrimPrefix(candidate, "geoip:")) {
+				return value, true
 			}
 		case strings.Contains(candidate, "/"):
 			if _, network, err := net.ParseCIDR(candidate); err == nil && network.Contains(ip) {
@@ -216,6 +490,69 @@ func ruleMatchesIP(host string, raw interface{}) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func geoIPCodeMatches(ip net.IP, code string) bool {
+	matcher, ok := loadGeoIPMatcher(code)
+	if !ok || matcher == nil {
+		return false
+	}
+	return matcher.Match(ip)
+}
+
+func loadGeoIPMatcher(code string) (xrayrouter.GeoIPMatcher, bool) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if code == "" {
+		return nil, false
+	}
+
+	geoIPMatcherCache.mu.RLock()
+	if matcher := geoIPMatcherCache.matchers[code]; matcher != nil {
+		geoIPMatcherCache.mu.RUnlock()
+		return matcher, true
+	}
+	geoIPMatcherCache.mu.RUnlock()
+
+	data, err := filesystem.ReadAsset("geoip.dat")
+	if err != nil {
+		return nil, false
+	}
+	var list xrayrouter.GeoIPList
+	if err := proto.Unmarshal(data, &list); err != nil {
+		return nil, false
+	}
+	for _, entry := range list.Entry {
+		if entry == nil || !strings.EqualFold(entry.CountryCode, code) {
+			continue
+		}
+		matcher, err := xrayrouter.BuildOptimizedGeoIPMatcher(entry)
+		if err != nil {
+			return nil, false
+		}
+		geoIPMatcherCache.mu.Lock()
+		if geoIPMatcherCache.matchers == nil {
+			geoIPMatcherCache.matchers = make(map[string]xrayrouter.GeoIPMatcher)
+		}
+		geoIPMatcherCache.matchers[code] = matcher
+		geoIPMatcherCache.mu.Unlock()
+		return matcher, true
+	}
+	return nil, false
+}
+
+func builtinCNIPContains(ip net.IP) bool {
+	for _, cidr := range builtinCNIPs {
+		if _, network, err := net.ParseCIDR(cidr); err == nil && network.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func resetGeoIPMatcherCache() {
+	geoIPMatcherCache.mu.Lock()
+	defer geoIPMatcherCache.mu.Unlock()
+	geoIPMatcherCache.matchers = nil
 }
 
 func routingToStringSlice(raw interface{}) []string {

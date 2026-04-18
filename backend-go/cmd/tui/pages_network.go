@@ -17,7 +17,7 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 		return wrapPanel(title, content)
 	}
 
-	checkBtn := a.actionButton(a.t("network.btn.check"), a.reloadOverviewAction)
+	checkBtn := a.actionButton(a.t("network.btn.check"), a.reloadNetworkAction)
 	applyProxy := a.actionButton(a.t("network.btn.applyProxy"), a.applySystemProxyAction)
 	clearProxy := a.actionButton(a.t("network.btn.clearProxy"), a.clearSystemProxyAction)
 	saveRouting := a.actionButton(a.t("network.btn.saveRouting"), a.saveRoutingModeAction)
@@ -46,10 +46,6 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 			primitive tview.Primitive
 			height    int
 		}{primitive: a.networkPresetSelect, height: 1},
-		struct {
-			primitive tview.Primitive
-			height    int
-		}{primitive: proxyActionsRow, height: proxyActionsHeight},
 	)
 
 	routingPanel := buildGroupPanel(
@@ -66,6 +62,14 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 			primitive tview.Primitive
 			height    int
 		}{primitive: a.networkLocalBypass, height: 1},
+	)
+
+	systemProxyPanel := buildGroupPanel(
+		a.t("network.group.systemProxy"),
+		struct {
+			primitive tview.Primitive
+			height    int
+		}{primitive: proxyActionsRow, height: proxyActionsHeight},
 	)
 
 	toolsPanel := buildGroupPanel(
@@ -92,6 +96,8 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 	leftColumn.AddItem(verticalSpacer(1), 1, 0, false)
 	leftColumn.AddItem(routingPanel, 0, 4, false)
 	leftColumn.AddItem(verticalSpacer(1), 1, 0, false)
+	leftColumn.AddItem(systemProxyPanel, 0, 2, false)
+	leftColumn.AddItem(verticalSpacer(1), 1, 0, false)
 	leftColumn.AddItem(toolsPanel, 0, 3, false)
 
 	rightColumn := tview.NewFlex().SetDirection(tview.FlexRow)
@@ -107,8 +113,8 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 		focusables: joinFocusables(
 			buttonsToFocusables(checkBtn),
 			primitivesToFocusables(a.networkPresetSelect),
-			buttonsToFocusables(applyProxy, clearProxy),
 			primitivesToFocusables(a.networkRoutingMode, a.networkDomainStrategy, a.networkLocalBypass),
+			buttonsToFocusables(applyProxy, clearProxy),
 			buttonsToFocusables(saveRouting, geoUpdate),
 			buttonsToFocusables(repairTun, routeTest),
 			primitivesToFocusables(a.networkTestTarget, a.networkTestPort),
@@ -116,8 +122,8 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 		focusGroups: [][]tview.Primitive{
 			buttonsToFocusables(checkBtn),
 			primitivesToFocusables(a.networkPresetSelect),
-			buttonsToFocusables(applyProxy, clearProxy),
 			primitivesToFocusables(a.networkRoutingMode, a.networkDomainStrategy, a.networkLocalBypass),
+			buttonsToFocusables(applyProxy, clearProxy),
 			buttonsToFocusables(saveRouting, geoUpdate),
 			buttonsToFocusables(repairTun, routeTest),
 			primitivesToFocusables(a.networkTestTarget, a.networkTestPort),

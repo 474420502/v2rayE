@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"v2raye/backend-go/cmd/tui/components"
 
 	tcell "github.com/gdamore/tcell/v2"
@@ -138,25 +139,29 @@ func (a *tuiApp) build() tview.Primitive {
 		if a.fieldTrackingSuspended() {
 			return
 		}
+		if strings.TrimSpace(value) == "" {
+			a.resetNetworkRoutingForm()
+			return
+		}
 		a.applyRoutingPresetToForm(value)
 	})
 	a.networkRoutingMode = newDropdownWidget("", []selectOption{{Label: "global", Value: "global"}, {Label: "bypass_cn", Value: "bypass_cn"}, {Label: "direct", Value: "direct"}, {Label: "custom", Value: "custom"}}, func(string) {
 		if a.fieldTrackingSuspended() {
 			return
 		}
-		a.markNetworkRoutingDirty()
+		a.markNetworkRoutingDirtyFromManualEdit()
 	})
 	a.networkDomainStrategy = newDropdownWidget("", []selectOption{{Label: "IPIfNonMatch", Value: "IPIfNonMatch"}, {Label: "IPOnDemand", Value: "IPOnDemand"}, {Label: "AsIs", Value: "AsIs"}}, func(string) {
 		if a.fieldTrackingSuspended() {
 			return
 		}
-		a.markNetworkRoutingDirty()
+		a.markNetworkRoutingDirtyFromManualEdit()
 	})
 	a.networkLocalBypass = newDropdownWidget("", []selectOption{{Label: "true", Value: "true"}, {Label: "false", Value: "false"}}, func(string) {
 		if a.fieldTrackingSuspended() {
 			return
 		}
-		a.markNetworkRoutingDirty()
+		a.markNetworkRoutingDirtyFromManualEdit()
 	})
 	a.networkTestTarget = newInputWidget("target: ", nil)
 	a.networkTestPort = newInputWidget("port: ", nil)
@@ -192,6 +197,12 @@ func (a *tuiApp) build() tview.Primitive {
 		a.markSettingsDirty()
 	})
 	a.settingsProxyMode = newDropdownWidget("proxyMode: ", []selectOption{{Label: "forced_change", Value: "forced_change"}, {Label: "forced_clear", Value: "forced_clear"}, {Label: "pac", Value: "pac"}}, func(string) {
+		if a.fieldTrackingSuspended() {
+			return
+		}
+		a.markSettingsDirty()
+	})
+	a.settingsLocalProxyMode = newDropdownWidget("localProxyMode: ", []selectOption{{Label: "follow-routing", Value: "follow-routing"}, {Label: "force-proxy", Value: "force-proxy"}}, func(string) {
 		if a.fieldTrackingSuspended() {
 			return
 		}
@@ -349,6 +360,9 @@ func (a *tuiApp) refreshFieldLabels() {
 	if a.settingsProxyMode != nil {
 		a.settingsProxyMode.SetLabel(a.fieldLabelWithChoicesAdaptive("field.settings.proxyMode", "field.choices.settings.proxyMode"))
 	}
+	if a.settingsLocalProxyMode != nil {
+		a.settingsLocalProxyMode.SetLabel(a.fieldLabelWithChoicesAdaptive("field.settings.localProxyMode", "field.choices.settings.localProxyMode"))
+	}
 	if a.settingsProxyExcept != nil {
 		a.settingsProxyExcept.SetLabel(a.fieldLabel("field.settings.proxyExceptions"))
 	}
@@ -433,6 +447,9 @@ func (a *tuiApp) refreshDropdownLabels() {
 	}
 	if a.settingsProxyMode != nil {
 		a.settingsProxyMode.ReplaceOptions([]selectOption{{Label: a.t("dropdown.proxy.forceEnable"), Value: "forced_change"}, {Label: a.t("dropdown.proxy.forceDisable"), Value: "forced_clear"}, {Label: a.t("dropdown.proxy.pac"), Value: "pac"}})
+	}
+	if a.settingsLocalProxyMode != nil {
+		a.settingsLocalProxyMode.ReplaceOptions([]selectOption{{Label: a.t("dropdown.proxyTraffic.followRouting"), Value: "follow-routing"}, {Label: a.t("dropdown.proxyTraffic.forceProxy"), Value: "force-proxy"}})
 	}
 	if a.settingsCoreEngine != nil {
 		a.settingsCoreEngine.ReplaceOptions([]selectOption{{Label: a.t("dropdown.engine.xray"), Value: "xray-core"}})
