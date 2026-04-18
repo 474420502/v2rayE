@@ -35,13 +35,19 @@ func (a *tuiApp) buildProfilesPage() builtPage {
 	controls.AddItem(controlsActions, controlsHeight, 0, false)
 
 	root := buildPageLayout(a.t("profiles.panel.controls"), controls, controlsContentHeight, grid)
+	actionGroup := buttonsToFocusables(importURLBtn, importClipboardBtn, batchDelayBtn)
+	listGroup := primitivesToFocusables(a.profilesList)
+	detailGroup := primitivesToFocusables(a.profileDetail)
+	workflowGroup := primitivesToFocusables(a.profileEditStatus, a.profileBatchStatus)
 
 	return builtPage{
 		root:       root,
-		focusables: joinFocusables(buttonsToFocusables(importURLBtn, importClipboardBtn, batchDelayBtn), primitivesToFocusables(a.profilesList)),
+		focusables: joinFocusables(actionGroup, listGroup, detailGroup, workflowGroup),
 		focusGroups: [][]tview.Primitive{
-			buttonsToFocusables(importURLBtn, importClipboardBtn, batchDelayBtn),
-			primitivesToFocusables(a.profilesList),
+			actionGroup,
+			listGroup,
+			detailGroup,
+			workflowGroup,
 		},
 	}
 }

@@ -32,7 +32,7 @@ func (a *tuiApp) formatDashboardSummary() string {
 }
 
 func (a *tuiApp) formatDashboardStatus() string {
-	selected := a.selectedProfile()
+	selected := a.selectedProfileLocked()
 	profileName := a.t("state.none")
 	if selected != nil {
 		profileName = selected.Name
@@ -126,7 +126,7 @@ func (a *tuiApp) formatDashboardConfig() string {
 }
 
 func (a *tuiApp) formatSelectedProfile() string {
-	p := a.selectedProfile()
+	p := a.selectedProfileLocked()
 	if p == nil {
 		if len(a.batchDelay.Results) == 0 {
 			return a.t("state.profile.noSelection")
@@ -215,7 +215,7 @@ func (a *tuiApp) formatBatchDelayResults() string {
 }
 
 func (a *tuiApp) formatSelectedSubscription() string {
-	sub := a.selectedSubscription()
+	sub := a.selectedSubscriptionLocked()
 	if sub == nil {
 		return a.t("state.sub.noSelection")
 	}
@@ -500,7 +500,7 @@ func (a *tuiApp) formatSettingsSummary() string {
 		fmt.Sprintf("  %s: %s", a.t("state.label.systemProxyExceptions"), emptyFallback(stringValue(a.config, "systemProxyExceptions"), a.t("state.none"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.systemProxyUsers"), emptyFallback(strings.Join(toStringSlice(a.config["systemProxyUsers"]), ","), a.t("state.autoDetect"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.proxyUserCandidates"), emptyFallback(a.proxyUsersStatus, a.t("state.notLoaded"))),
-		fmt.Sprintf("  %s: %s", a.t("state.label.proxyUserPreview"), emptyFallback(a.proxyUserCandidatesPreview(), a.t("state.none"))),
+		fmt.Sprintf("  %s: %s", a.t("state.label.proxyUserPreview"), emptyFallback(a.proxyUserCandidatesPreviewLocked(), a.t("state.none"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.engineMode"), emptyFallback(a.status.EngineMode, a.t("state.unknown"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.coreResolved"), emptyFallback(a.status.EngineResolved, a.t("state.unknown"))),
 		fmt.Sprintf("  %s: %s", a.t("state.label.coreUptime"), formatCoreUptime(a.status)),
@@ -508,6 +508,12 @@ func (a *tuiApp) formatSettingsSummary() string {
 }
 
 func (a *tuiApp) proxyUserCandidatesPreview() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.proxyUserCandidatesPreviewLocked()
+}
+
+func (a *tuiApp) proxyUserCandidatesPreviewLocked() string {
 	if len(a.systemProxyUsers) == 0 {
 		return ""
 	}
@@ -540,18 +546,32 @@ func formatCoreUptime(status CoreStatus) string {
 }
 
 func (a *tuiApp) selectedProfile() *ProfileItem {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.selectedProfileLocked()
+}
+
+func (a *tuiApp) selectedProfileLocked() *ProfileItem {
 	for idx := range a.profiles {
 		if a.profiles[idx].ID == a.selectedProfileID {
-			return &a.profiles[idx]
+			profile := a.profiles[idx]
+			return &profile
 		}
 	}
 	return nil
 }
 
 func (a *tuiApp) selectedSubscription() *SubscriptionItem {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.selectedSubscriptionLocked()
+}
+
+func (a *tuiApp) selectedSubscriptionLocked() *SubscriptionItem {
 	for idx := range a.subscriptions {
 		if a.subscriptions[idx].ID == a.selectedSubID {
-			return &a.subscriptions[idx]
+			subscription := a.subscriptions[idx]
+			return &subscription
 		}
 	}
 	return nil
@@ -569,7 +589,29 @@ func (a *tuiApp) currentSubscriptionID() string {
 	return a.selectedSubID
 }
 
+func (a *tuiApp) subscriptionsSnapshot() []SubscriptionItem {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]SubscriptionItem(nil), a.subscriptions...)
+}
+
+func (a *tuiApp) profileIDsSnapshot() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	ids := make([]string, 0, len(a.profiles))
+	for _, profile := range a.profiles {
+		ids = append(ids, profile.ID)
+	}
+	return ids
+}
+
 func (a *tuiApp) profileLabel(profile ProfileItem) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.profileLabelLocked(profile)
+}
+
+func (a *tuiApp) profileLabelLocked(profile ProfileItem) string {
 	prefix := "  "
 	if profile.ID == a.status.CurrentProfileID {
 		prefix = "> "
@@ -580,6 +622,12 @@ func (a *tuiApp) profileLabel(profile ProfileItem) string {
 }
 
 func (a *tuiApp) sortedProfilesForDisplay() []ProfileItem {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.sortedProfilesForDisplayLocked()
+}
+
+func (a *tuiApp) sortedProfilesForDisplayLocked() []ProfileItem {
 	profiles := append([]ProfileItem(nil), a.profiles...)
 	if len(a.batchDelay.Results) == 0 {
 		return profiles

@@ -136,27 +136,38 @@ func (a *tuiApp) buildSettingsPage() builtPage {
 	root := buildPageLayout(a.t("settings.panel.quickActions"), quickActions, quickActionsContentHeight, body)
 
 	actionGroup := buttonsToFocusables(saveBtn, clearErrBtn, exitCleanupBtn)
-	contentGroup := joinFocusables(
+	generalGroup := joinFocusables(
 		primitivesToFocusables(a.settingsListenAddr, a.settingsSocksPort, a.settingsHTTPPort),
 		primitivesToFocusables(a.settingsLanguage, a.settingsCoreEngine, a.settingsLogLevel, a.settingsSkipCert),
-		primitivesToFocusables(a.settingsTunName, a.settingsTunMode, a.settingsTunMtu, a.settingsTunAutoRoute, a.settingsTunStrict),
-		primitivesToFocusables(a.settingsDNSMode, a.settingsDNSList),
-		primitivesToFocusables(a.settingsProxyMode, a.settingsLocalProxyMode, a.settingsProxyExcept),
-		buttonsToFocusables(proxyUsersDetect, proxyUsersDefault),
-		buttonsToFocusables(proxyUsersAddAll, proxyUsersSelect),
-		primitivesToFocusables(a.settingsProxyUsers),
+	)
+	proxyFieldsGroup := primitivesToFocusables(a.settingsProxyMode, a.settingsLocalProxyMode, a.settingsProxyExcept)
+	proxyDetectGroup := buttonsToFocusables(proxyUsersDetect, proxyUsersDefault)
+	proxySelectGroup := buttonsToFocusables(proxyUsersAddAll, proxyUsersSelect)
+	proxyUsersGroup := primitivesToFocusables(a.settingsProxyUsers)
+	tunGroup := primitivesToFocusables(a.settingsTunName, a.settingsTunMode, a.settingsTunMtu, a.settingsTunAutoRoute, a.settingsTunStrict)
+	dnsGroup := primitivesToFocusables(a.settingsDNSMode, a.settingsDNSList)
+	summaryGroup := primitivesToFocusables(a.settingsSummary)
+	contentGroup := joinFocusables(
+		generalGroup,
+		proxyFieldsGroup,
+		proxyDetectGroup,
+		proxySelectGroup,
+		proxyUsersGroup,
+		tunGroup,
+		dnsGroup,
+		summaryGroup,
 	)
 
 	focusGroups := [][]tview.Primitive{
 		actionGroup,
-		primitivesToFocusables(a.settingsListenAddr, a.settingsSocksPort, a.settingsHTTPPort),
-		primitivesToFocusables(a.settingsLanguage, a.settingsCoreEngine, a.settingsLogLevel, a.settingsSkipCert),
-		primitivesToFocusables(a.settingsTunName, a.settingsTunMode, a.settingsTunMtu, a.settingsTunAutoRoute, a.settingsTunStrict),
-		primitivesToFocusables(a.settingsDNSMode, a.settingsDNSList),
-		primitivesToFocusables(a.settingsProxyMode, a.settingsLocalProxyMode, a.settingsProxyExcept),
-		buttonsToFocusables(proxyUsersDetect, proxyUsersDefault),
-		buttonsToFocusables(proxyUsersAddAll, proxyUsersSelect),
-		primitivesToFocusables(a.settingsProxyUsers),
+		generalGroup,
+		proxyFieldsGroup,
+		proxyDetectGroup,
+		proxySelectGroup,
+		proxyUsersGroup,
+		tunGroup,
+		dnsGroup,
+		summaryGroup,
 	}
 
 	return builtPage{

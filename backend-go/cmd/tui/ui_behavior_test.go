@@ -388,8 +388,8 @@ func TestBuildNetworkPage_FocusGroupsFollowSeparatedVisualFlow(t *testing.T) {
 	_ = a.build()
 	built := a.buildNetworkPage()
 
-	if len(built.focusGroups) != 7 {
-		t.Fatalf("expected 7 focus groups, got %d", len(built.focusGroups))
+	if len(built.focusGroups) != 9 {
+		t.Fatalf("expected 9 focus groups, got %d", len(built.focusGroups))
 	}
 	if len(built.focusGroups[0]) != 1 {
 		t.Fatalf("expected check action group size 1, got %d", len(built.focusGroups[0]))
@@ -416,6 +416,60 @@ func TestBuildNetworkPage_FocusGroupsFollowSeparatedVisualFlow(t *testing.T) {
 	}
 	if built.focusGroups[6][0] != a.networkTestTarget || built.focusGroups[6][1] != a.networkTestPort {
 		t.Fatal("expected route test inputs to stay in final focus group")
+	}
+	if built.focusGroups[7][0] != a.networkSummary {
+		t.Fatal("expected diagnostics summary to stay reachable after edit controls")
+	}
+	if built.focusGroups[8][0] != a.networkTestResult {
+		t.Fatal("expected route test result panel to be the final focus group")
+	}
+}
+
+func TestBuildSettingsPage_FocusGroupsFollowPrimaryEditorFlow(t *testing.T) {
+	a := newTUI(context.Background(), nil)
+	_ = a.build()
+	built := a.buildSettingsPage()
+
+	if len(built.focusGroups) != 9 {
+		t.Fatalf("expected 9 focus groups, got %d", len(built.focusGroups))
+	}
+	if built.focusGroups[1][0] != a.settingsListenAddr {
+		t.Fatal("expected general editor fields to start immediately after quick actions")
+	}
+	if built.focusGroups[2][0] != a.settingsProxyMode || built.focusGroups[2][1] != a.settingsLocalProxyMode {
+		t.Fatal("expected proxy traffic controls to stay together in one group")
+	}
+	if built.focusGroups[8][0] != a.settingsSummary {
+		t.Fatal("expected settings summary to remain reachable at the end of focus flow")
+	}
+}
+
+func TestBuildProfilesPage_FocusFlowIncludesReadOnlyPanels(t *testing.T) {
+	a := newTUI(context.Background(), nil)
+	_ = a.build()
+	built := a.buildProfilesPage()
+
+	if len(built.focusGroups) != 4 {
+		t.Fatalf("expected 4 focus groups, got %d", len(built.focusGroups))
+	}
+	if built.focusGroups[2][0] != a.profileDetail {
+		t.Fatal("expected selected profile detail panel to be reachable by keyboard")
+	}
+	if built.focusGroups[3][0] != a.profileEditStatus || built.focusGroups[3][1] != a.profileBatchStatus {
+		t.Fatal("expected workflow status widgets to stay together at the end of focus flow")
+	}
+}
+
+func TestBuildSubscriptionsPage_FocusFlowIncludesDetailPanel(t *testing.T) {
+	a := newTUI(context.Background(), nil)
+	_ = a.build()
+	built := a.buildSubscriptionsPage()
+
+	if len(built.focusGroups) != 3 {
+		t.Fatalf("expected 3 focus groups, got %d", len(built.focusGroups))
+	}
+	if built.focusGroups[2][0] != a.subscriptionDetail {
+		t.Fatal("expected subscription detail panel to be reachable by keyboard")
 	}
 }
 

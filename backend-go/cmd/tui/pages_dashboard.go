@@ -29,16 +29,21 @@ func (a *tuiApp) buildDashboardPage() builtPage {
 	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
 	actionsPanel.AddItem(actions, actionsHeight, 0, false)
 	root := buildPageLayout(a.t("common.actions"), actionsPanel, actionsContentHeight, grid)
+	actionGroup := buttonsToFocusables(start, stop, restart, refresh)
+	statusGroup := primitivesToFocusables(a.dashboardStatus)
+	telemetryGroup := primitivesToFocusables(a.dashboardTelemetry)
+	configGroup := primitivesToFocusables(a.dashboardConfig)
+	eventsGroup := primitivesToFocusables(a.dashboardEvents)
 
 	return builtPage{
 		root:       root,
-		focusables: buttonsToFocusables(start, stop, restart, refresh),
+		focusables: joinFocusables(actionGroup, statusGroup, telemetryGroup, configGroup, eventsGroup),
 		focusGroups: [][]tview.Primitive{
-			buttonsToFocusables(start, stop, restart, refresh),
-			primitivesToFocusables(a.dashboardStatus),
-			primitivesToFocusables(a.dashboardTelemetry),
-			primitivesToFocusables(a.dashboardConfig),
-			primitivesToFocusables(a.dashboardEvents),
+			actionGroup,
+			statusGroup,
+			telemetryGroup,
+			configGroup,
+			eventsGroup,
 		},
 	}
 }

@@ -13,10 +13,10 @@ func (a *tuiApp) refreshProfilesList() {
 		a.profilesList.AddItem("No profiles available", "", 0, nil)
 		return
 	}
-	profiles := a.sortedProfilesForDisplay()
+	profiles := a.sortedProfilesForDisplayLocked()
 	selectedIndex := 0
 	for idx, profile := range profiles {
-		label := fmt.Sprintf("%2d. %s", idx+1, a.profileLabel(profile))
+		label := fmt.Sprintf("%2d. %s", idx+1, a.profileLabelLocked(profile))
 		if profile.ID == a.selectedProfileID {
 			selectedIndex = idx
 		}

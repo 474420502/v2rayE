@@ -107,26 +107,39 @@ func (a *tuiApp) buildNetworkPage() builtPage {
 
 	body := splitContent(false, leftColumn, rightColumn, 5, 6)
 	root := buildPageLayout(a.t("common.actions"), actionsPanel, actionsPanelHeight, body)
+	checkGroup := buttonsToFocusables(checkBtn)
+	presetGroup := primitivesToFocusables(a.networkPresetSelect)
+	routingGroup := primitivesToFocusables(a.networkRoutingMode, a.networkDomainStrategy, a.networkLocalBypass)
+	systemProxyGroup := buttonsToFocusables(applyProxy, clearProxy)
+	toolsPrimaryGroup := buttonsToFocusables(saveRouting, geoUpdate)
+	toolsSecondaryGroup := buttonsToFocusables(repairTun, routeTest)
+	testInputGroup := primitivesToFocusables(a.networkTestTarget, a.networkTestPort)
+	diagnosticsGroup := primitivesToFocusables(a.networkSummary)
+	testResultGroup := primitivesToFocusables(a.networkTestResult)
 
 	return builtPage{
 		root: root,
 		focusables: joinFocusables(
-			buttonsToFocusables(checkBtn),
-			primitivesToFocusables(a.networkPresetSelect),
-			primitivesToFocusables(a.networkRoutingMode, a.networkDomainStrategy, a.networkLocalBypass),
-			buttonsToFocusables(applyProxy, clearProxy),
-			buttonsToFocusables(saveRouting, geoUpdate),
-			buttonsToFocusables(repairTun, routeTest),
-			primitivesToFocusables(a.networkTestTarget, a.networkTestPort),
+			checkGroup,
+			presetGroup,
+			routingGroup,
+			systemProxyGroup,
+			toolsPrimaryGroup,
+			toolsSecondaryGroup,
+			testInputGroup,
+			diagnosticsGroup,
+			testResultGroup,
 		),
 		focusGroups: [][]tview.Primitive{
-			buttonsToFocusables(checkBtn),
-			primitivesToFocusables(a.networkPresetSelect),
-			primitivesToFocusables(a.networkRoutingMode, a.networkDomainStrategy, a.networkLocalBypass),
-			buttonsToFocusables(applyProxy, clearProxy),
-			buttonsToFocusables(saveRouting, geoUpdate),
-			buttonsToFocusables(repairTun, routeTest),
-			primitivesToFocusables(a.networkTestTarget, a.networkTestPort),
+			checkGroup,
+			presetGroup,
+			routingGroup,
+			systemProxyGroup,
+			toolsPrimaryGroup,
+			toolsSecondaryGroup,
+			testInputGroup,
+			diagnosticsGroup,
+			testResultGroup,
 		},
 	}
 }

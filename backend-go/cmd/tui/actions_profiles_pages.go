@@ -992,12 +992,7 @@ func (a *tuiApp) deleteSelectedProfileAction(ctx context.Context) error {
 }
 
 func (a *tuiApp) batchDelayProfilesAction(ctx context.Context) error {
-	ids := make([]string, 0, len(a.profiles))
-	a.mu.Lock()
-	for _, profile := range a.profiles {
-		ids = append(ids, profile.ID)
-	}
-	a.mu.Unlock()
+	ids := a.profileIDsSnapshot()
 	a.storeBatchDelayState(true, nil)
 	a.refreshWidgets()
 	if len(ids) == 0 {

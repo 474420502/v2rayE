@@ -129,7 +129,7 @@ func (a *tuiApp) refreshDashboardWidgets(app *tview.Application) {
 }
 
 func (a *tuiApp) syncProfileEditorFromSelection(app *tview.Application) {
-	selected := a.selectedProfile()
+	selected := a.selectedProfileLocked()
 	a.withSuspendedFieldTracking(func() {
 		if selected == nil {
 			a.profileEditName.SetText("", app)

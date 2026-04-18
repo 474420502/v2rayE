@@ -594,10 +594,11 @@ func (a *tuiApp) onSubscriptionSelectionChanged(index int) {
 	if a.suspendListSelection.Load() {
 		return
 	}
-	if index < 0 || index >= len(a.subscriptions) {
+	subscriptions := a.subscriptionsSnapshot()
+	if index < 0 || index >= len(subscriptions) {
 		return
 	}
-	selected := a.subscriptions[index]
+	selected := subscriptions[index]
 	a.mu.Lock()
 	if a.selectedSubID == selected.ID {
 		a.mu.Unlock()

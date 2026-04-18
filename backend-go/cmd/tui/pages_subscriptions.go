@@ -20,12 +20,16 @@ func (a *tuiApp) buildSubscriptionsPage() builtPage {
 	actionsPanel.AddItem(verticalSpacer(1), 1, 0, false)
 	actionsPanel.AddItem(actions, actionsHeight, 0, false)
 	root := buildPageLayout(a.t("common.actions"), actionsPanel, actionsContentHeight, body)
+	actionGroup := buttonsToFocusables(updateAll, updateSelected)
+	listGroup := primitivesToFocusables(a.subscriptionsList)
+	detailGroup := primitivesToFocusables(a.subscriptionDetail)
 	return builtPage{
 		root:       root,
-		focusables: joinFocusables(buttonsToFocusables(updateAll, updateSelected), primitivesToFocusables(a.subscriptionsList)),
+		focusables: joinFocusables(actionGroup, listGroup, detailGroup),
 		focusGroups: [][]tview.Primitive{
-			buttonsToFocusables(updateAll, updateSelected),
-			primitivesToFocusables(a.subscriptionsList),
+			actionGroup,
+			listGroup,
+			detailGroup,
 		},
 	}
 }
