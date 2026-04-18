@@ -17,6 +17,16 @@ v2rayE 是一个 Linux 优先的本地代理控制平面，目标是把常用的
 
 项目现在更接近“本地代理控制台 + TUN/VPN 工作台”，而不是单纯的 Web 面板。
 
+## v0.1.3 发布重点
+
+`v0.1.3` 主要聚焦在终端主路径稳定性和使用体验收敛：
+
+- TUI 启动路径增加后台初始化保护，避免卡在 `initial load`
+- Network summary 与路由预设相关死锁已清理，锁内 helper 约束进一步统一
+- 新增 `localProxyMode`，显式本地代理流量可切换为 `follow-routing` / `force-proxy`
+- TUI `Dashboard / Network / Settings / Logs / Profiles / Subscriptions` 页面统一切到响应式布局，窄屏和紧凑终端下不再依赖固定双栏
+- 页面焦点流和分组顺序重新整理，读写区块都能按视觉顺序通过键盘访问
+
 ## 第一版包含什么
 
 - 统一可执行文件，默认进入 TUI，带 `--server` 可切换到后台服务模式
@@ -110,19 +120,19 @@ sudo ./scripts/tun-health-check.sh
 ### 本地构建 `.deb`
 
 ```bash
-./scripts/build-deb.sh 0.1.0
+./scripts/build-deb.sh 0.1.3
 ```
 
 输出路径类似：
 
 ```bash
-dist/v2raye_0.1.0_amd64.deb
+dist/v2raye_0.1.3_amd64.deb
 ```
 
 ### 安装
 
 ```bash
-sudo apt install ./dist/v2raye_0.1.0_amd64.deb
+sudo apt install ./dist/v2raye_0.1.3_amd64.deb
 ```
 
 ### 卸载
@@ -221,9 +231,9 @@ sudo systemctl enable --now v2raye-server
 发布方式：
 
 ```bash
-git tag v0.1.0
+git tag v0.1.3
 git push origin master
-git push origin v0.1.0
+git push origin v0.1.3
 ```
 
 触发后，GitHub Actions 会自动：
@@ -236,15 +246,13 @@ git push origin v0.1.0
 
 如果只是想手动测试工作流，也可以在 GitHub Actions 页面用 `workflow_dispatch` 手动输入版本号触发。
 
-## 建议的第一版版本号
+## 当前推荐版本
 
-建议直接从：
+当前建议使用：
 
-- `v0.1.0`
+- `v0.1.3`
 
-开始。
-
-这个版本适合作为“统一入口 + TUI 主路径 + Linux TUN 稳定化 + Debian 发布链路”的第一版基线。
+这个版本适合作为“统一入口 + TUI 主路径 + Linux TUN 稳定化 + 响应式终端布局 + Debian 发布链路”的当前基线。
 
 ## 当前限制
 

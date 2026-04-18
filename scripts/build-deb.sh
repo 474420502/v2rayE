@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PKG_NAME="v2raye"
-RAW_VERSION="${1:-${PKG_VERSION:-0.1.0}}"
+RAW_VERSION="${1:-${PKG_VERSION:-0.1.3}}"
 PKG_VERSION="${RAW_VERSION#v}"
 PKG_ARCH="${PKG_ARCH:-$(dpkg --print-architecture)}"
 PKG_MAINTAINER="${PKG_MAINTAINER:-474420502 <474420502@users.noreply.github.com>}"

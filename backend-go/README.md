@@ -62,7 +62,7 @@ sudo ./scripts/tun-health-check.sh
 在项目根目录执行：
 
 ```bash
-./scripts/build-deb.sh 0.1.0
+./scripts/build-deb.sh 0.1.3
 ```
 
 输出路径：`dist/v2raye_<version>_<arch>.deb`
@@ -70,7 +70,7 @@ sudo ./scripts/tun-health-check.sh
 安装/卸载：
 
 ```bash
-sudo apt install ./dist/v2raye_0.1.0_amd64.deb
+sudo apt install ./dist/v2raye_0.1.3_amd64.deb
 sudo apt remove v2raye
 sudo apt purge v2raye
 ```
