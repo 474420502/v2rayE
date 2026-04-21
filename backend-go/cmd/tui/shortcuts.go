@@ -22,6 +22,12 @@ type pageTab struct {
 	shortcut rune
 }
 
+type pageTransition struct {
+	previous        string
+	current         string
+	enteringNetwork bool
+}
+
 func tuiPageTabs() []pageTab {
 	return []pageTab{
 		{key: pageDashboard, shortcut: '1'},
@@ -35,7 +41,7 @@ func tuiPageTabs() []pageTab {
 
 func (a *tuiApp) handleShortcut(key *tcell.EventKey) bool {
 	if page := pageForShortcut(key.Rune()); page != "" {
-		a.setActivePage(page)
+		a.navigateToPage(page)
 		return true
 	}
 
@@ -78,24 +84,43 @@ func pageForShortcut(shortcut rune) string {
 	return ""
 }
 
+func (a *tuiApp) navigateToPage(page string) {
+	a.setActivePage(page)
+}
+
 func (a *tuiApp) setActivePage(page string) {
-	previous := a.page
+	a.withUISwitch(func() {
+		transition := a.commitActivePage(page)
+		a.runPageEntryEffects(transition)
+	})
+}
+
+func (a *tuiApp) commitActivePage(page string) pageTransition {
+	transition := pageTransition{
+		previous:        a.page,
+		current:         page,
+		enteringNetwork: a.page != pageNetwork && page == pageNetwork,
+	}
 	a.page = page
-	enteringNetwork := previous != pageNetwork && page == pageNetwork
-	if enteringNetwork {
+	if transition.enteringNetwork {
 		a.clearNetworkRoutingDirty()
 	}
 	a.syncPages()
-	if enteringNetwork {
-		a.refreshWidgets()
-		if a.client != nil {
-			go func() {
-				_ = a.reloadNetworkAction(a.ctx)
-			}()
-		}
-	}
 	a.footerStatus = fmt.Sprintf(a.t("status.page"), pageDisplayName(page))
 	a.setFooter(a.footerStatus)
+	return transition
+}
+
+func (a *tuiApp) runPageEntryEffects(transition pageTransition) {
+	if !transition.enteringNetwork {
+		return
+	}
+	a.refreshWidgets()
+	if a.client != nil {
+		go func() {
+			_ = a.reloadNetworkAction(a.ctx)
+		}()
+	}
 }
 
 func (a *tuiApp) shiftActivePage(delta int) {
@@ -111,7 +136,7 @@ func (a *tuiApp) shiftActivePage(delta int) {
 		}
 	}
 	next := (index + delta + len(tabs)) % len(tabs)
-	a.setActivePage(tabs[next].key)
+	a.navigateToPage(tabs[next].key)
 }
 
 func footerText(page, status string) string {

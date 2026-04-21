@@ -14,7 +14,7 @@ func (a *tuiApp) build() tview.Primitive {
 	a.footer.SetWrap(false)
 	a.pageHolder = tview.NewPages()
 	a.sidebar = components.NewSidebar(nil, func(page string) {
-		a.setActivePage(page)
+		a.navigateToPage(page)
 	}, nil)
 
 	// 设置侧边栏的初始状态

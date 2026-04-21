@@ -1131,6 +1131,12 @@ func (a *tuiApp) tf(key string, args ...any) string {
 }
 
 func (a *tuiApp) setUILanguage(lang string) {
+	a.withUISwitch(func() {
+		a.setUILanguageUnlocked(lang)
+	})
+}
+
+func (a *tuiApp) setUILanguageUnlocked(lang string) {
 	normalized := normalizeUILanguage(lang)
 	a.mu.Lock()
 	current := normalizeUILanguage(a.uiLanguage)
@@ -1170,7 +1176,12 @@ func (a *tuiApp) applyConfiguredUILanguage(config map[string]any) {
 	if !ok {
 		return
 	}
+	a.withUISwitch(func() {
+		a.applyConfiguredUILanguageUnlocked(lang)
+	})
+}
 
+func (a *tuiApp) applyConfiguredUILanguageUnlocked(lang string) {
 	a.mu.Lock()
 	current := normalizeUILanguage(a.uiLanguage)
 	a.uiLanguage = lang
@@ -1199,21 +1210,56 @@ func (a *tuiApp) toggleUILanguageAction(context.Context) error {
 	lang := a.uiLanguage
 	a.mu.Unlock()
 	if normalizeUILanguage(lang) == uiLangZH {
-		a.setUILanguage(uiLangEN)
+		return a.persistUILanguage(context.Background(), uiLangEN)
 	} else {
-		a.setUILanguage(uiLangZH)
+		return a.persistUILanguage(context.Background(), uiLangZH)
 	}
-	return nil
 }
 
 func (a *tuiApp) selectUILanguageEnglishAction(context.Context) error {
-	a.setUILanguage(uiLangEN)
+	if err := a.persistUILanguage(context.Background(), uiLangEN); err != nil {
+		return err
+	}
 	a.setFooter(a.t("settings.lang.footer.en"))
 	return nil
 }
 
 func (a *tuiApp) selectUILanguageChineseAction(context.Context) error {
-	a.setUILanguage(uiLangZH)
+	if err := a.persistUILanguage(context.Background(), uiLangZH); err != nil {
+		return err
+	}
 	a.setFooter(a.t("settings.lang.footer.zh"))
 	return nil
+}
+
+func (a *tuiApp) persistUILanguage(ctx context.Context, lang string) error {
+	var persistErr error
+	a.withUISwitch(func() {
+		normalized := normalizeUILanguage(lang)
+		a.mu.Lock()
+		current := normalizeUILanguage(a.uiLanguage)
+		a.mu.Unlock()
+		if current == normalized {
+			return
+		}
+		if a.client == nil {
+			a.setUILanguageUnlocked(normalized)
+			return
+		}
+		payload := a.copyConfig()
+		payload["uiLanguage"] = normalized
+		updated, err := a.client.UpdateConfig(ctx, payload)
+		if err != nil {
+			persistErr = err
+			return
+		}
+		if len(updated) > 0 {
+			if configured, ok := configuredUILanguageFromConfig(updated); ok {
+				a.applyConfiguredUILanguageUnlocked(configured)
+				return
+			}
+		}
+		a.setUILanguageUnlocked(normalized)
+	})
+	return persistErr
 }

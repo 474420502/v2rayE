@@ -334,7 +334,7 @@ func buildPageLayout(headerTitle string, header tview.Primitive, headerContentHe
 func deriveLayoutMode(cols, rows int) string {
 	if cols > 0 {
 		switch {
-		case cols < 140:
+		case cols < 110:
 			return layoutModeNarrow
 		case cols < 170:
 			if rows > 0 && rows < 26 {
@@ -388,6 +388,14 @@ func (a *tuiApp) syncViewportLayout(cols, rows int) {
 		a.layoutMode = nextMode
 	}
 
+	if a.layoutMode != prevMode || prevCols != cols || prevRows != rows {
+		a.runUI(func(app *tview.Application) {
+			a.doSyncViewportLayout(prevCols, prevRows, prevMode, cols, rows)
+		})
+	}
+}
+
+func (a *tuiApp) doSyncViewportLayout(prevCols, prevRows int, prevMode string, cols, rows int) {
 	if a.layoutMode != prevMode {
 		a.updateSidebarMode()
 		a.refreshFieldLabels()

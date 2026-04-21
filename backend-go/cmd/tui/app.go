@@ -17,6 +17,7 @@ type tuiApp struct {
 
 	app *tview.Application
 	mu  sync.Mutex
+	switchMu sync.Mutex
 
 	page       string
 	uiLanguage string

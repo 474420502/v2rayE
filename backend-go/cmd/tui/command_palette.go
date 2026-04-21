@@ -144,12 +144,12 @@ func (a *tuiApp) paletteActions() []paletteAction {
 	}
 
 	actions := []paletteAction{
-		{main: a.tf("palette.main.goPage", a.t("page.dashboard")), secondary: a.tf("palette.secondary.switchPage", 1), run: func() { a.setActivePage(pageDashboard) }},
-		{main: a.tf("palette.main.goPage", a.t("page.profiles")), secondary: a.tf("palette.secondary.switchPage", 2), run: func() { a.setActivePage(pageProfiles) }},
-		{main: a.tf("palette.main.goPage", a.t("page.subscriptions")), secondary: a.tf("palette.secondary.switchPage", 3), run: func() { a.setActivePage(pageSubscriptions) }},
-		{main: a.tf("palette.main.goPage", a.t("page.network")), secondary: a.tf("palette.secondary.switchPage", 4), run: func() { a.setActivePage(pageNetwork) }},
-		{main: a.tf("palette.main.goPage", a.t("page.settings")), secondary: a.tf("palette.secondary.switchPage", 5), run: func() { a.setActivePage(pageSettings) }},
-		{main: a.tf("palette.main.goPage", a.t("page.logs")), secondary: a.tf("palette.secondary.switchPage", 6), run: func() { a.setActivePage(pageLogs) }},
+		{main: a.tf("palette.main.goPage", a.t("page.dashboard")), secondary: a.tf("palette.secondary.switchPage", 1), run: func() { a.navigateToPage(pageDashboard) }},
+		{main: a.tf("palette.main.goPage", a.t("page.profiles")), secondary: a.tf("palette.secondary.switchPage", 2), run: func() { a.navigateToPage(pageProfiles) }},
+		{main: a.tf("palette.main.goPage", a.t("page.subscriptions")), secondary: a.tf("palette.secondary.switchPage", 3), run: func() { a.navigateToPage(pageSubscriptions) }},
+		{main: a.tf("palette.main.goPage", a.t("page.network")), secondary: a.tf("palette.secondary.switchPage", 4), run: func() { a.navigateToPage(pageNetwork) }},
+		{main: a.tf("palette.main.goPage", a.t("page.settings")), secondary: a.tf("palette.secondary.switchPage", 5), run: func() { a.navigateToPage(pageSettings) }},
+		{main: a.tf("palette.main.goPage", a.t("page.logs")), secondary: a.tf("palette.secondary.switchPage", 6), run: func() { a.navigateToPage(pageLogs) }},
 		{main: a.t("palette.main.refreshAll"), secondary: a.t("palette.secondary.refreshAll"), run: runAction(a.t("action.refresh"), a.refreshAllAction)},
 		{main: a.t("palette.main.coreStart"), secondary: a.t("palette.secondary.coreStart"), run: runAction(a.t("dashboard.btn.start"), a.startCoreAction)},
 		{main: a.t("palette.main.coreStop"), secondary: a.t("palette.secondary.coreStop"), run: runAction(a.t("dashboard.btn.stop"), a.stopCoreAction)},

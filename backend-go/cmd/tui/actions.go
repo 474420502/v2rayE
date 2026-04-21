@@ -8,6 +8,12 @@ import (
 	"github.com/rivo/tview"
 )
 
+func (a *tuiApp) withUISwitch(run func()) {
+	a.switchMu.Lock()
+	defer a.switchMu.Unlock()
+	run()
+}
+
 func (a *tuiApp) attachApp(app *tview.Application) {
 	a.app = app
 	app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {

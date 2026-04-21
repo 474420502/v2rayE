@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -45,7 +47,8 @@ func TestDeriveLayoutMode_UsesResponsiveThresholds(t *testing.T) {
 	}{
 		{name: "wide", cols: 180, rows: 40, want: layoutModeWide},
 		{name: "compact", cols: 150, rows: 40, want: layoutModeCompact},
-		{name: "narrow by width", cols: 120, rows: 40, want: layoutModeNarrow},
+		{name: "compact at common window width", cols: 120, rows: 40, want: layoutModeCompact},
+		{name: "narrow by width", cols: 100, rows: 40, want: layoutModeNarrow},
 		{name: "narrow by short height", cols: 160, rows: 24, want: layoutModeNarrow},
 	}
 
@@ -530,6 +533,92 @@ func TestMarkBackgroundWorkStarted_OnlyOnce(t *testing.T) {
 	}
 	if a.markBackgroundWorkStarted() {
 		t.Fatal("expected second background-work mark to be ignored")
+	}
+}
+
+func TestWithUISwitch_SerializesConcurrentTransitions(t *testing.T) {
+	t.Parallel()
+
+	a := newTUI(context.Background(), nil)
+	var active int32
+	var maxActive int32
+
+	run := func() {
+		a.withUISwitch(func() {
+			current := atomic.AddInt32(&active, 1)
+			defer atomic.AddInt32(&active, -1)
+			for {
+				seen := atomic.LoadInt32(&maxActive)
+				if current <= seen || atomic.CompareAndSwapInt32(&maxActive, seen, current) {
+					break
+				}
+			}
+			time.Sleep(25 * time.Millisecond)
+		})
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		run()
+	}()
+	go func() {
+		defer wg.Done()
+		run()
+	}()
+	wg.Wait()
+
+	if got := atomic.LoadInt32(&maxActive); got != 1 {
+		t.Fatalf("max concurrent UI switches = %d, want 1", got)
+	}
+}
+
+func TestSelectUILanguageChineseAction_PersistsBeforeApplyingUIState(t *testing.T) {
+	t.Parallel()
+
+	config := map[string]any{"uiLanguage": uiLangEN}
+	var savedPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/api/config":
+			if err := json.NewDecoder(r.Body).Decode(&savedPayload); err != nil {
+				t.Fatalf("decode request body: %v", err)
+			}
+			for key, value := range savedPayload {
+				config[key] = value
+			}
+			writeTestEnvelope(t, w, config)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	a := newTUI(context.Background(), newAPIClient(server.URL, ""))
+	_ = a.build()
+	a.config = map[string]any{"uiLanguage": uiLangEN}
+	a.uiLanguage = uiLangEN
+	setGlobalUILanguage(uiLangEN)
+
+	if err := a.selectUILanguageChineseAction(context.Background()); err != nil {
+		t.Fatalf("selectUILanguageChineseAction() error = %v", err)
+	}
+	if got := normalizeUILanguage(stringValue(savedPayload, "uiLanguage")); got != uiLangZH {
+		t.Fatalf("saved uiLanguage = %q, want %q", got, uiLangZH)
+	}
+	if got := normalizeUILanguage(a.uiLanguage); got != uiLangZH {
+		t.Fatalf("app uiLanguage = %q, want %q", got, uiLangZH)
+	}
+	if got := currentGlobalUILanguage(); got != uiLangZH {
+		t.Fatalf("global uiLanguage = %q, want %q", got, uiLangZH)
+	}
+	if got := normalizeUILanguage(stringValue(a.copyConfig(), "uiLanguage")); got != uiLangZH {
+		t.Fatalf("stored config uiLanguage = %q, want %q", got, uiLangZH)
+	}
+	if got := a.footerStatus; got != a.t("settings.lang.footer.zh") {
+		t.Fatalf("footerStatus = %q, want %q", got, a.t("settings.lang.footer.zh"))
 	}
 }
 
