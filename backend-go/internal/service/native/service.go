@@ -41,8 +41,10 @@ type Service struct {
 	xrayCore *managedXrayCore
 
 	mu            sync.Mutex
+	switchMu      sync.Mutex
 	proc          *exec.Cmd
 	running       bool
+	starting      bool // true while StartCore is executing; prevents concurrent double-starts
 	trackedPID    int
 	lastError     string
 	lastErrorAt   string
@@ -58,6 +60,8 @@ type Service struct {
 	watchdogRestartAttempts  int
 	watchdogRestartScheduled bool
 	watchdogRestarting       bool
+	restartCoreHook          func() domain.CoreStatus
+	stopCoreHook             func() domain.CoreStatus
 }
 
 // New creates a native Service using the given storage and xray binary path.
@@ -96,17 +100,34 @@ func (s *Service) CoreStatus() domain.CoreStatus {
 }
 
 func (s *Service) StartCore() domain.CoreStatus {
+	// ── Phase 1: claim the start slot (brief critical section) ───────────────
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.ensureGeoDataAssetEnv()
-
 	if s.running {
 		s.checkProcExited()
 		if s.running {
-			return s.buildStatus()
+			st := s.buildStatus()
+			s.mu.Unlock()
+			return st
 		}
 	}
+	if s.starting {
+		// Another goroutine is already mid-start; return current status without blocking.
+		st := s.buildStatus()
+		s.mu.Unlock()
+		return st
+	}
+	s.starting = true
+	s.mu.Unlock()
 
+	// Clear the starting flag on every exit path.
+	defer func() {
+		s.mu.Lock()
+		s.starting = false
+		s.mu.Unlock()
+	}()
+
+	// ── Phase 2: prepare config — slow I/O, no mu needed ─────────────────────
 	cfg := s.loadConfig()
 	routing := s.loadRoutingConfig()
 	needGeoSite, needGeoIP := routingGeoDataRequirements(routing)
@@ -131,9 +152,12 @@ func (s *Service) StartCore() domain.CoreStatus {
 
 	profile, err := s.findProfile(state.CurrentProfileID)
 	if err != nil {
+		s.mu.Lock()
 		s.setCoreError(err.Error())
+		st := s.buildStatus()
+		s.mu.Unlock()
 		log.Printf("[native] StartCore: no selected profile (%v)", err)
-		return s.buildStatus()
+		return st
 	}
 	if state.CurrentProfileID != profile.ID {
 		state.CurrentProfileID = profile.ID
@@ -147,9 +171,12 @@ func (s *Service) StartCore() domain.CoreStatus {
 			log.Printf("[native] StartCore: clear stale TUN policy routing failed: %v", err)
 		}
 		if err := s.cleanupStaleTunInterface(cfg); err != nil {
+			s.mu.Lock()
 			s.setCoreError(err.Error())
+			st := s.buildStatus()
+			s.mu.Unlock()
 			log.Printf("[native] StartCore: stale TUN cleanup failed: %v", err)
-			return s.buildStatus()
+			return st
 		}
 		iface, err := detectDefaultRouteInterface()
 		if err != nil {
@@ -162,21 +189,29 @@ func (s *Service) StartCore() domain.CoreStatus {
 	data, err := generateXrayConfig(profile, cfg, routing)
 	if err != nil {
 		log.Printf("[native] StartCore: config gen failed: %v", err)
-		return s.buildStatus()
+		return s.CoreStatus()
 	}
 	configPath, err := writeConfigToFile(data, s.dataDir)
 	if err != nil {
 		log.Printf("[native] StartCore: write config failed: %v", err)
-		return s.buildStatus()
+		return s.CoreStatus()
 	}
 
 	xrayCore, err := startManagedXrayCore(data, s.logs)
 	if err != nil {
+		s.mu.Lock()
 		s.setCoreError(annotateTunStartError(err, cfg))
+		st := s.buildStatus()
+		s.mu.Unlock()
 		log.Printf("[native] StartCore: xray-core start failed: %v", err)
-		return s.buildStatus()
+		return st
 	}
 
+	// ── Phase 3: commit running state (brief critical section) ───────────────
+	statsPort := intCfg(cfg, "statsPort", 10085)
+	stats := newStatsTracker(statsPort)
+
+	s.mu.Lock()
 	s.xrayCore = xrayCore
 	s.running = true
 	s.watchdogRestartAttempts = 0
@@ -186,25 +221,30 @@ func (s *Service) StartCore() domain.CoreStatus {
 	s.degraded = false
 	s.lastEngine = resolved
 	s.coreStartedAt = time.Now().UTC()
+	s.stats = stats
+	s.mu.Unlock()
 
+	// Post-commit setup outside the lock: clear logs, start stats, TUN, proxy.
 	s.logs.clear()
+	stats.reset()
+	stats.start()
 
-	statsPort := intCfg(cfg, "statsPort", 10085)
-	s.stats = newStatsTracker(statsPort)
-	s.stats.reset()
-	s.stats.start()
-
+	// ── Phase 4: post-start routing and proxy — slow, no mu needed ───────────
 	if shouldManageTunTraffic(cfg) {
 		if err := s.setupManagedTunRouting(cfg, &profile); err != nil {
 			log.Printf("[native] StartCore: TUN route setup failed (first attempt): %v", err)
 			_ = s.cleanupStaleTunInterface(cfg)
 			if retryErr := s.setupManagedTunRouting(cfg, &profile); retryErr != nil {
 				log.Printf("[native] StartCore: TUN route setup failed (retry): %v", retryErr)
+				s.mu.Lock()
 				s.degraded = true
 				s.setCoreError(fmt.Sprintf("TUN 接管失败，核心已降级为仅本地代理可用: %s", retryErr.Error()))
+				s.mu.Unlock()
 				s.logs.AppLog("warning", fmt.Sprintf("tun route takeover failed; core kept running: %v", retryErr))
 			} else {
+				s.mu.Lock()
 				s.degraded = false
+				s.mu.Unlock()
 				s.logs.AppLog("info", "tun route takeover recovered after stale cleanup retry")
 			}
 		}
@@ -212,13 +252,15 @@ func (s *Service) StartCore() domain.CoreStatus {
 
 	if err := s.applyConfiguredSystemProxyOnCoreStart(cfg); err != nil {
 		log.Printf("[native] StartCore: apply system proxy failed: %v", err)
+		s.mu.Lock()
 		s.setCoreError(err.Error())
+		s.mu.Unlock()
 	}
 
 	log.Printf("[native] core started in managed xray-core mode with config=%s", configPath)
 	s.logs.AppLog("info", fmt.Sprintf("core started (engine=%s, profile=%s)", resolved, profile.Name))
 	_ = s.saveState(true)
-	return s.buildStatus()
+	return s.CoreStatus()
 }
 
 func (s *Service) StopCore() domain.CoreStatus {
@@ -271,6 +313,52 @@ func (s *Service) RestartCore() domain.CoreStatus {
 	s.StopCore()
 	time.Sleep(200 * time.Millisecond)
 	return s.StartCore()
+}
+
+func (s *Service) restartCoreForRuntimeChange() {
+	s.mu.Lock()
+	running := s.running
+	s.mu.Unlock()
+	if !running {
+		return
+	}
+	s.switchMu.Lock()
+	defer s.switchMu.Unlock()
+	if !s.running {
+		return
+	}
+	if s.restartCoreHook != nil {
+		s.restartCoreHook()
+		return
+	}
+	s.RestartCore()
+}
+
+func (s *Service) stopOrRestartCoreForSelectionChange(nextSelectedID string) {
+	s.mu.Lock()
+	running := s.running
+	s.mu.Unlock()
+	if !running {
+		return
+	}
+	s.switchMu.Lock()
+	defer s.switchMu.Unlock()
+	if !s.running {
+		return
+	}
+	if nextSelectedID == "" {
+		if s.stopCoreHook != nil {
+			s.stopCoreHook()
+			return
+		}
+		s.StopCore()
+		return
+	}
+	if s.restartCoreHook != nil {
+		s.restartCoreHook()
+		return
+	}
+	s.RestartCore()
 }
 
 func (s *Service) ClearCoreError() domain.CoreStatus {
@@ -393,18 +481,8 @@ func (s *Service) DeleteProfiles(ids []string) error {
 		}
 	}
 
-	s.mu.Lock()
-	running := s.running
-	s.mu.Unlock()
-	if running && selectedRemoved {
-		go func() {
-			time.Sleep(100 * time.Millisecond)
-			if nextSelectedID == "" {
-				s.StopCore()
-				return
-			}
-			s.RestartCore()
-		}()
+	if selectedRemoved {
+		s.stopOrRestartCoreForSelectionChange(nextSelectedID)
 	}
 
 	return nil
@@ -419,15 +497,7 @@ func (s *Service) SelectProfile(id string) error {
 	if err := s.store.SaveState(state); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	running := s.running
-	s.mu.Unlock()
-	if running {
-		go func() {
-			time.Sleep(100 * time.Millisecond)
-			s.RestartCore()
-		}()
-	}
+	s.restartCoreForRuntimeChange()
 	return nil
 }
 
@@ -1296,15 +1366,7 @@ func (s *Service) UpdateConfig(next map[string]interface{}) map[string]interface
 	if previousTunMode != "off" && nextTunMode == "off" {
 		s.clearTunRouting()
 	}
-	s.mu.Lock()
-	running := s.running
-	s.mu.Unlock()
-	if running {
-		go func() {
-			time.Sleep(100 * time.Millisecond)
-			s.RestartCore()
-		}()
-	}
+	s.restartCoreForRuntimeChange()
 	return cfg
 }
 
@@ -1329,15 +1391,7 @@ func (s *Service) UpdateRoutingConfig(rc domain.RoutingConfig) domain.RoutingCon
 	if err := s.store.SaveRoutingConfig(rc); err != nil {
 		log.Printf("[native] UpdateRoutingConfig: %v", err)
 	}
-	s.mu.Lock()
-	running := s.running
-	s.mu.Unlock()
-	if running {
-		go func() {
-			time.Sleep(100 * time.Millisecond)
-			s.RestartCore()
-		}()
-	}
+	s.restartCoreForRuntimeChange()
 	return rc
 }
 
