@@ -17,15 +17,14 @@ v2rayE 是一个 Linux 优先的本地代理控制平面，目标是把常用的
 
 项目现在更接近“本地代理控制台 + TUN/VPN 工作台”，而不是单纯的 Web 面板。
 
-## v0.1.3 发布重点
+## v0.1.4 发布重点
 
-`v0.1.3` 主要聚焦在终端主路径稳定性和使用体验收敛：
+`v0.1.4` 主要聚焦在运行时切换稳定性、误操作防护和重复导入收敛：
 
-- TUI 启动路径增加后台初始化保护，避免卡在 `initial load`
-- Network summary 与路由预设相关死锁已清理，锁内 helper 约束进一步统一
-- 新增 `localProxyMode`，显式本地代理流量可切换为 `follow-routing` / `force-proxy`
-- TUI `Dashboard / Network / Settings / Logs / Profiles / Subscriptions` 页面统一切到响应式布局，窄屏和紧凑终端下不再依赖固定双栏
-- 页面焦点流和分组顺序重新整理，读写区块都能按视觉顺序通过键盘访问
+- `native` 服务对并发启动、运行时重启和配置切换做了进一步串行化，降低节点/路由/配置切换时的状态漂移窗口
+- TUI 页面切换和语言切换经过专门的 UI 切换锁保护，后台刷新存在时的导航行为更稳定
+- 节点删除升级为“显示摘要 + 输入 `DELETE` 二次确认”，减少误删
+- 重复导入节点现在只会去掉“完全相同”的项；IP/地址不同仍视为不同节点，连续点导入也不会把同一条节点刷出很多份
 
 ## 第一版包含什么
 
@@ -120,19 +119,19 @@ sudo ./scripts/tun-health-check.sh
 ### 本地构建 `.deb`
 
 ```bash
-./scripts/build-deb.sh 0.1.3
+./scripts/build-deb.sh 0.1.4
 ```
 
 输出路径类似：
 
 ```bash
-dist/v2raye_0.1.3_amd64.deb
+dist/v2raye_0.1.4_amd64.deb
 ```
 
 ### 安装
 
 ```bash
-sudo apt install ./dist/v2raye_0.1.3_amd64.deb
+sudo apt install ./dist/v2raye_0.1.4_amd64.deb
 ```
 
 ### 卸载
@@ -231,9 +230,9 @@ sudo systemctl enable --now v2raye-server
 发布方式：
 
 ```bash
-git tag v0.1.3
+git tag v0.1.4
 git push origin master
-git push origin v0.1.3
+git push origin v0.1.4
 ```
 
 触发后，GitHub Actions 会自动：
@@ -250,9 +249,9 @@ git push origin v0.1.3
 
 当前建议使用：
 
-- `v0.1.3`
+- `v0.1.4`
 
-这个版本适合作为“统一入口 + TUI 主路径 + Linux TUN 稳定化 + 响应式终端布局 + Debian 发布链路”的当前基线。
+这个版本适合作为“统一入口 + 运行时切换稳定化 + TUI 删除防误触 + 精确重复导入去重 + Debian 发布链路”的当前基线。
 
 ## 当前限制
 

@@ -16,15 +16,14 @@ The first release baseline is now centered on:
 
 This project is closer to a local proxy workstation and TUN/VPN control console than to a browser-first web panel.
 
-## v0.1.3 highlights
+## v0.1.4 highlights
 
-`v0.1.3` focuses on stabilizing the terminal-first path and making the TUI behave correctly under real terminal constraints:
+`v0.1.4` focuses on runtime-switch stability, safer destructive actions, and tighter duplicate-import handling:
 
-- guarded TUI background startup so the app no longer gets stuck on `initial load`
-- cleaned up Network summary and routing-preset lock interactions to remove re-entrant deadlock paths
-- introduced `localProxyMode` so explicit local HTTP/SOCKS traffic can choose `follow-routing` or `force-proxy`
-- moved major TUI pages onto one responsive layout system so compact and narrow terminals no longer depend on a fixed wide-screen two-column layout
-- refined focus flow and grouping so both read-only and editable panels are reachable by keyboard in visual order
+- the `native` service now hardens concurrent start, restart, and runtime switch paths so profile, routing, and config changes are applied with less state skew
+- TUI page switches and language switches are serialized through a dedicated UI switch lock, making navigation more stable while background refresh is active
+- profile deletion now requires a visible summary plus a typed `DELETE` confirmation to reduce accidental removal
+- repeated imports now dedupe only exact duplicates; profiles with different IP/address values remain distinct, while repeated clicks no longer flood the list with the same entry
 
 ## What the first release includes
 
@@ -119,19 +118,19 @@ The check covers:
 ### Build a local `.deb`
 
 ```bash
-./scripts/build-deb.sh 0.1.3
+./scripts/build-deb.sh 0.1.4
 ```
 
 Expected output:
 
 ```bash
-dist/v2raye_0.1.3_amd64.deb
+dist/v2raye_0.1.4_amd64.deb
 ```
 
 ### Install
 
 ```bash
-sudo apt install ./dist/v2raye_0.1.3_amd64.deb
+sudo apt install ./dist/v2raye_0.1.4_amd64.deb
 ```
 
 ### Remove
@@ -230,9 +229,9 @@ The repository now includes:
 Release flow:
 
 ```bash
-git tag v0.1.3
+git tag v0.1.4
 git push origin master
-git push origin v0.1.3
+git push origin v0.1.4
 ```
 
 After the tag is pushed, GitHub Actions will automatically:
@@ -249,9 +248,9 @@ The workflow also supports manual `workflow_dispatch` runs with an explicit vers
 
 Use:
 
-- `v0.1.3`
+- `v0.1.4`
 
-It is the current baseline for the unified entrypoint, TUI-first flow, Linux TUN hardening, responsive terminal layout, and Debian release pipeline.
+It is the current baseline for the unified entrypoint, hardened runtime switching, safer TUI deletion, exact-duplicate import dedupe, and the Debian release pipeline.
 
 ## Current limits
 
