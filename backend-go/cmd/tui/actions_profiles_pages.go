@@ -44,10 +44,13 @@ func (a *tuiApp) openProfileDeleteConfirmDialog() {
 		}
 
 		message := tview.NewTextView()
-		message.SetTextAlign(tview.AlignCenter)
+		message.SetTextAlign(tview.AlignLeft)
 		displayName := emptyFallback(selected.Name, selected.ID)
 		message.SetText(a.tf("dialog.profile.delete.body", displayName, strings.ToLower(strings.TrimSpace(selected.Protocol)), strings.TrimSpace(selected.Address), selected.Port, selected.ID))
 		message.SetTextColor(tcell.ColorWhite)
+		a.profileDeleteConfirm.SetLabel(a.t("dialog.profile.delete.inputLabel"))
+		a.profileDeleteConfirm.SetPlaceholder("DELETE")
+		a.profileDeleteConfirm.SetText("", app)
 
 		confirmBtn := tview.NewButton(a.t("dialog.common.delete"))
 		cancelBtn := tview.NewButton(a.t("dialog.common.cancel"))
@@ -58,25 +61,89 @@ func (a *tuiApp) openProfileDeleteConfirmDialog() {
 			btn.SetBackgroundColorActivated(tcell.ColorYellow)
 		}
 
+		navItems := []tview.Primitive{a.profileDeleteConfirm, confirmBtn, cancelBtn}
+		focusMove := func(delta int) {
+			current := app.GetFocus()
+			index := 0
+			for i, item := range navItems {
+				if item == current {
+					index = i
+					break
+				}
+			}
+			index = (index + delta + len(navItems)) % len(navItems)
+			app.SetFocus(navItems[index])
+		}
+
+		a.profileDeleteConfirm.SetDoneFunc(func(key tcell.Key) {
+			switch key {
+			case tcell.KeyEnter:
+				a.submitProfileDeleteConfirmation(app)
+			case tcell.KeyEsc:
+				a.closeProfileDeleteConfirmDialog()
+			}
+		})
+		a.profileDeleteConfirm.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+			switch event.Key() {
+			case tcell.KeyEsc:
+				a.closeProfileDeleteConfirmDialog()
+				return nil
+			case tcell.KeyDown, tcell.KeyTAB:
+				app.SetFocus(confirmBtn)
+				return nil
+			case tcell.KeyBacktab:
+				app.SetFocus(cancelBtn)
+				return nil
+			default:
+				return event
+			}
+		})
+
 		confirmBtn.SetSelectedFunc(func() {
-			a.closeProfileDeleteConfirmDialog()
-			go a.runAction("delete profile", a.deleteSelectedProfileAction)
+			a.submitProfileDeleteConfirmation(app)
 		})
 		cancelBtn.SetSelectedFunc(func() {
 			a.closeProfileDeleteConfirmDialog()
 		})
+		for _, btn := range []*tview.Button{confirmBtn, cancelBtn} {
+			btn.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+				switch event.Key() {
+				case tcell.KeyEsc:
+					a.closeProfileDeleteConfirmDialog()
+					return nil
+				case tcell.KeyLeft:
+					focusMove(-1)
+					return nil
+				case tcell.KeyRight, tcell.KeyTAB:
+					focusMove(1)
+					return nil
+				case tcell.KeyBacktab:
+					focusMove(-1)
+					return nil
+				case tcell.KeyUp, tcell.KeyDown:
+					app.SetFocus(a.profileDeleteConfirm)
+					return nil
+				default:
+					return event
+				}
+			})
+		}
 
 		container := tview.NewFlex().SetDirection(tview.FlexRow)
 		container.SetBorder(true)
 		container.SetTitle(" " + a.t("dialog.profile.delete.title") + " ")
 		container.AddItem(message, 0, 1, false)
 		container.AddItem(verticalSpacer(1), 1, 0, false)
-		container.AddItem(buttonRow(confirmBtn, cancelBtn), 1, 0, true)
+		container.AddItem(newMutedText(a.t("dialog.profile.delete.keywordHint")), 1, 0, false)
+		container.AddItem(verticalSpacer(1), 1, 0, false)
+		container.AddItem(a.profileDeleteConfirm, 1, 0, true)
+		container.AddItem(verticalSpacer(1), 1, 0, false)
+		container.AddItem(buttonRow(confirmBtn, cancelBtn), 1, 0, false)
 
 		a.profileDeletePrev = app.GetFocus()
-		a.pageHolder.AddPage(profileDeleteConfirmPage, centeredPrimitive(container, 72, 12), true, true)
+		a.pageHolder.AddPage(profileDeleteConfirmPage, centeredPrimitive(container, 76, 15), true, true)
 		a.profileDeleteVisible.Store(true)
-		app.SetFocus(confirmBtn)
+		app.SetFocus(a.profileDeleteConfirm)
 		a.setFooter(a.t("footer.profile.delete.confirmHint"))
 	})
 }
@@ -88,6 +155,7 @@ func (a *tuiApp) closeProfileDeleteConfirmDialog() {
 		}
 		a.pageHolder.RemovePage(profileDeleteConfirmPage)
 		a.profileDeleteVisible.Store(false)
+		a.profileDeleteConfirm.SetText("", app)
 		if a.profileDeletePrev != nil {
 			app.SetFocus(a.profileDeletePrev)
 		} else if len(a.focusables) > 0 {
@@ -96,6 +164,22 @@ func (a *tuiApp) closeProfileDeleteConfirmDialog() {
 		a.profileDeletePrev = nil
 		a.setFooter(a.tf("status.page", pageDisplayName(a.page)))
 	})
+}
+
+func (a *tuiApp) submitProfileDeleteConfirmation(app *tview.Application) {
+	if a.profileDeleteConfirm == nil || !profileDeleteConfirmationAccepted(a.profileDeleteConfirm.GetText()) {
+		a.setFooter(a.t("footer.profile.delete.keywordMismatch"))
+		if app != nil && a.profileDeleteConfirm != nil {
+			app.SetFocus(a.profileDeleteConfirm)
+		}
+		return
+	}
+	a.closeProfileDeleteConfirmDialog()
+	go a.runAction("delete profile", a.deleteSelectedProfileAction)
+}
+
+func profileDeleteConfirmationAccepted(text string) bool {
+	return strings.EqualFold(strings.TrimSpace(text), "DELETE")
 }
 
 func (a *tuiApp) openProfileActionsMenu() {

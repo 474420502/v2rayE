@@ -642,6 +642,18 @@ func (s *Service) ImportProfileFromURI(uri string) (domain.ProfileItem, error) {
 	if err != nil {
 		return domain.ProfileItem{}, err
 	}
+	profiles := s.loadProfiles()
+	if index := findEquivalentImportedProfileIndex(profiles, p); index >= 0 {
+		p.ID = profiles[index].ID
+		p.SubID = profiles[index].SubID
+		p.SubName = profiles[index].SubName
+		p.SortOrder = profiles[index].SortOrder
+		profiles[index] = p
+		if err := s.store.SaveProfiles(profiles); err != nil {
+			return domain.ProfileItem{}, fmt.Errorf("save profiles: %w", err)
+		}
+		return p, nil
+	}
 	return s.CreateProfile(p)
 }
 
@@ -770,6 +782,7 @@ func (s *Service) UpdateSubscriptionByID(id string) error {
 	if err != nil {
 		return fmt.Errorf("fetch subscription: %w", err)
 	}
+	profiles = dedupeImportedProfiles(profiles)
 
 	existing := s.loadProfiles()
 	kept := existing[:0]
@@ -1513,6 +1526,59 @@ func normalizeRoutingRuleMaps(raw interface{}) []map[string]interface{} {
 		}
 	}
 	return rules
+}
+
+func dedupeImportedProfiles(profiles []domain.ProfileItem) []domain.ProfileItem {
+	if len(profiles) < 2 {
+		return profiles
+	}
+	result := make([]domain.ProfileItem, 0, len(profiles))
+	indexByKey := make(map[string]int, len(profiles))
+	for _, profile := range profiles {
+		key, err := importedProfileDedupKey(profile)
+		if err != nil {
+			result = append(result, profile)
+			continue
+		}
+		if index, ok := indexByKey[key]; ok {
+			result[index] = profile
+			continue
+		}
+		indexByKey[key] = len(result)
+		result = append(result, profile)
+	}
+	return result
+}
+
+func findEquivalentImportedProfileIndex(profiles []domain.ProfileItem, candidate domain.ProfileItem) int {
+	candidateKey, err := importedProfileDedupKey(candidate)
+	if err != nil {
+		return -1
+	}
+	for index, profile := range profiles {
+		profileKey, keyErr := importedProfileDedupKey(profile)
+		if keyErr != nil {
+			continue
+		}
+		if profileKey == candidateKey {
+			return index
+		}
+	}
+	return -1
+}
+
+func importedProfileDedupKey(profile domain.ProfileItem) (string, error) {
+	normalized := profile
+	normalized.ID = ""
+	normalized.DelayMs = 0
+	normalized.SubID = ""
+	normalized.SubName = ""
+	normalized.SortOrder = 0
+	payload, err := json.Marshal(normalized)
+	if err != nil {
+		return "", err
+	}
+	return string(payload), nil
 }
 
 // ─── Stats ────────────────────────────────────────────────────────────────────

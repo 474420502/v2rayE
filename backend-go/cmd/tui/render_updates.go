@@ -168,7 +168,9 @@ func (a *tuiApp) syncProfileEditorFromSelection(app *tview.Application) {
 			a.profileEditH2Host.SetText("", app)
 			a.profileEditGRPCSvc.SetText("", app)
 			a.profileEditGRPCMode.SetText("", app)
-			a.profileDeleteConfirm.SetText("", app)
+			if !a.profileDeleteVisible.Load() {
+				a.profileDeleteConfirm.SetText("", app)
+			}
 			a.profileEditForID = ""
 			a.profileEditLoaded = true
 			a.profileEditDirty = false
@@ -274,7 +276,9 @@ func (a *tuiApp) syncProfileEditorFromSelection(app *tview.Application) {
 			a.profileEditGRPCSvc.SetText("", app)
 			a.profileEditGRPCMode.SetText("", app)
 		}
-		a.profileDeleteConfirm.SetText("", app)
+		if !a.profileDeleteVisible.Load() {
+			a.profileDeleteConfirm.SetText("", app)
+		}
 		a.profileEditForID = selected.ID
 		a.profileEditLoaded = true
 		a.profileEditDirty = false

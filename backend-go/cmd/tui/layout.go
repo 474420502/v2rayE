@@ -130,7 +130,7 @@ func (a *tuiApp) build() tview.Primitive {
 		a.markProfileEditDirty()
 	})
 	a.profileEditTuicALPN = newInputWidget("tuic.alpn(csv): ", a.profileEditChanged)
-	a.profileDeleteConfirm = newInputWidget("delete confirm (type DELETE): ", nil)
+	a.profileDeleteConfirm = newInputWidget("", nil)
 	a.profilesList = newListWidget()
 	a.subscriptionDetail = readOnlyEditor("Select a subscription to inspect.")
 	a.subscriptionsList = newListWidget()

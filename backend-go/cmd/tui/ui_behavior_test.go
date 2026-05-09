@@ -61,6 +61,27 @@ func TestDeriveLayoutMode_UsesResponsiveThresholds(t *testing.T) {
 	}
 }
 
+func TestProfileDeleteConfirmationAccepted(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{name: "exact keyword", input: "DELETE", want: true},
+		{name: "case insensitive", input: "delete", want: true},
+		{name: "trim spaces", input: "  DELETE  ", want: true},
+		{name: "reject other text", input: "REMOVE", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := profileDeleteConfirmationAccepted(tt.input); got != tt.want {
+				t.Fatalf("profileDeleteConfirmationAccepted(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestUpdateSidebarMode_UsesCompactAndHiddenSidebar(t *testing.T) {
 	compact := newTUI(context.Background(), nil)
 	compact.layoutMode = layoutModeCompact
