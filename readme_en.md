@@ -16,14 +16,15 @@ The first release baseline is now centered on:
 
 This project is closer to a local proxy workstation and TUN/VPN control console than to a browser-first web panel.
 
-## v0.1.4 highlights
+## v0.1.5 highlights
 
-`v0.1.4` focuses on runtime-switch stability, safer destructive actions, and tighter duplicate-import handling:
+`v0.1.5` focuses on backend storage reliability, core-lifecycle concurrency, and subscription auto-update:
 
-- the `native` service now hardens concurrent start, restart, and runtime switch paths so profile, routing, and config changes are applied with less state skew
-- TUI page switches and language switches are serialized through a dedicated UI switch lock, making navigation more stable while background refresh is active
-- profile deletion now requires a visible summary plus a typed `DELETE` confirmation to reduce accidental removal
-- repeated imports now dedupe only exact duplicates; profiles with different IP/address values remain distinct, while repeated clicks no longer flood the list with the same entry
+- the storage layer (profiles / subscriptions / config / routing / state) now uses in-memory caching plus atomic writes (temp file + fsync + rename); batch delay testing no longer rewrites the whole file per profile
+- core start/stop/restart in the `native` service is fully serialized through `coreOpMu`, fixing a potential self-deadlock when an unexpectedly exited core is cleaned up; a failed restart no longer leaves a stale TUN default route or system proxy behind
+- new subscription auto-update: refreshes on an `autoUpdateMinutes` schedule with a 10-minute failure backoff persisted to state, so a broken URL is not re-attempted immediately after a service restart
+- TUN policy-rule cleanup now enumerates and deletes only matching rules instead of probing every priority slot, avoiding thousands of `ip rule del` subprocess calls
+- the dead `xrayCmd` config key and parameter are removed; the core engine is now solely decided by the `coreEngine` config
 
 ## What the first release includes
 
@@ -118,19 +119,19 @@ The check covers:
 ### Build a local `.deb`
 
 ```bash
-./scripts/build-deb.sh 0.1.4
+./scripts/build-deb.sh 0.1.5
 ```
 
 Expected output:
 
 ```bash
-dist/v2raye_0.1.4_amd64.deb
+dist/v2raye_0.1.5_amd64.deb
 ```
 
 ### Install
 
 ```bash
-sudo apt install ./dist/v2raye_0.1.4_amd64.deb
+sudo apt install ./dist/v2raye_0.1.5_amd64.deb
 ```
 
 ### Remove
@@ -229,9 +230,9 @@ The repository now includes:
 Release flow:
 
 ```bash
-git tag v0.1.4
+git tag v0.1.5
 git push origin master
-git push origin v0.1.4
+git push origin v0.1.5
 ```
 
 After the tag is pushed, GitHub Actions will automatically:
@@ -248,9 +249,9 @@ The workflow also supports manual `workflow_dispatch` runs with an explicit vers
 
 Use:
 
-- `v0.1.4`
+- `v0.1.5`
 
-It is the current baseline for the unified entrypoint, hardened runtime switching, safer TUI deletion, exact-duplicate import dedupe, and the Debian release pipeline.
+It is the current baseline for storage-layer caching and atomic writes, hardened core-lifecycle concurrency, subscription auto-update, and the Debian release pipeline.
 
 ## Current limits
 

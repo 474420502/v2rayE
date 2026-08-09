@@ -17,14 +17,15 @@ v2rayE 是一个 Linux 优先的本地代理控制平面，目标是把常用的
 
 项目现在更接近“本地代理控制台 + TUN/VPN 工作台”，而不是单纯的 Web 面板。
 
-## v0.1.4 发布重点
+## v0.1.5 发布重点
 
-`v0.1.4` 主要聚焦在运行时切换稳定性、误操作防护和重复导入收敛：
+`v0.1.5` 主要聚焦在后端存储可靠性、核心生命周期并发收敛和订阅自动更新：
 
-- `native` 服务对并发启动、运行时重启和配置切换做了进一步串行化，降低节点/路由/配置切换时的状态漂移窗口
-- TUI 页面切换和语言切换经过专门的 UI 切换锁保护，后台刷新存在时的导航行为更稳定
-- 节点删除升级为“显示摘要 + 输入 `DELETE` 二次确认”，减少误删
-- 重复导入节点现在只会去掉“完全相同”的项；IP/地址不同仍视为不同节点，连续点导入也不会把同一条节点刷出很多份
+- 存储层（profiles / subscriptions / config / routing / state）改为内存缓存 + 原子落盘（临时文件 + fsync + 重命名），批量测速不再每个节点全文件读写一次
+- `native` 服务核心启动/停止/重启全部经 `coreOpMu` 串行化，修复核心意外退出清理时可能自死锁的问题，失败重启不再残留 TUN 默认路由和系统代理
+- 新增订阅自动更新：按 `autoUpdateMinutes` 周期刷新，失败退避 10 分钟且持久化到 state，服务重启后不会立刻重打坏链接
+- TUN 策略路由清理从逐个优先级探测改为枚举后精确删除，避免一次性拉起上千次 `ip rule del`
+- 移除已无用的 `xrayCmd` 配置键与参数，核心引擎统一由 `coreEngine` 配置决定
 
 ## 第一版包含什么
 
@@ -119,19 +120,19 @@ sudo ./scripts/tun-health-check.sh
 ### 本地构建 `.deb`
 
 ```bash
-./scripts/build-deb.sh 0.1.4
+./scripts/build-deb.sh 0.1.5
 ```
 
 输出路径类似：
 
 ```bash
-dist/v2raye_0.1.4_amd64.deb
+dist/v2raye_0.1.5_amd64.deb
 ```
 
 ### 安装
 
 ```bash
-sudo apt install ./dist/v2raye_0.1.4_amd64.deb
+sudo apt install ./dist/v2raye_0.1.5_amd64.deb
 ```
 
 ### 卸载
@@ -230,9 +231,9 @@ sudo systemctl enable --now v2raye-server
 发布方式：
 
 ```bash
-git tag v0.1.4
+git tag v0.1.5
 git push origin master
-git push origin v0.1.4
+git push origin v0.1.5
 ```
 
 触发后，GitHub Actions 会自动：
@@ -249,9 +250,9 @@ git push origin v0.1.4
 
 当前建议使用：
 
-- `v0.1.4`
+- `v0.1.5`
 
-这个版本适合作为“统一入口 + 运行时切换稳定化 + TUI 删除防误触 + 精确重复导入去重 + Debian 发布链路”的当前基线。
+这个版本适合作为“存储层缓存与原子写 + 核心生命周期并发收敛 + 订阅自动更新 + Debian 发布链路”的当前基线。
 
 ## 当前限制
 
