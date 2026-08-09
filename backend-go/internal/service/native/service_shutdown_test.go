@@ -21,7 +21,7 @@ func TestShutdownCorePreservesRestoreIntent(t *testing.T) {
 		t.Fatalf("SaveState() error = %v", err)
 	}
 
-	svc := New(dataDir, "xray", store)
+	svc := New(dataDir, store)
 	svc.ShutdownCore()
 
 	state, err := store.LoadState()
@@ -49,7 +49,7 @@ func TestStopCoreClearsRestoreIntent(t *testing.T) {
 		t.Fatalf("SaveState() error = %v", err)
 	}
 
-	svc := New(dataDir, "xray", store)
+	svc := New(dataDir, store)
 	svc.StopCore()
 
 	state, err := store.LoadState()

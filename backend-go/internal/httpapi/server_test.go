@@ -55,7 +55,7 @@ func TestConfigUpdatePersistsAcrossServiceInstances(t *testing.T) {
 		t.Fatalf("create store: %v", err)
 	}
 
-	serviceA := native.New(dataDir, "xray", store)
+	serviceA := native.New(dataDir, store)
 	serverA := New("", "", serviceA)
 	tsA := httptest.NewServer(serverA.httpServer.Handler)
 	defer tsA.Close()
@@ -73,7 +73,7 @@ func TestConfigUpdatePersistsAcrossServiceInstances(t *testing.T) {
 		t.Fatalf("PUT /api/config expected code=0, got %d", putEnv.Code)
 	}
 
-	serviceB := native.New(dataDir, "xray", store)
+	serviceB := native.New(dataDir, store)
 	serverB := New("", "", serviceB)
 	tsB := httptest.NewServer(serverB.httpServer.Handler)
 	defer tsB.Close()
@@ -489,7 +489,7 @@ func TestBackendRejectsPublicClientByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}
-	svc := native.New(dataDir, "xray", store)
+	svc := native.New(dataDir, store)
 	server := New("", "", svc)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
@@ -517,7 +517,7 @@ func TestBackendAllowsPublicClientWhenConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}
-	svc := native.New(dataDir, "xray", store)
+	svc := native.New(dataDir, store)
 	server := New("", "", svc, WithPublicAccessAllowed())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
@@ -539,7 +539,7 @@ func newNativeTestServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}
-	svc := native.New(dataDir, "xray", store)
+	svc := native.New(dataDir, store)
 	server := New("", "", svc)
 	return httptest.NewServer(server.httpServer.Handler)
 }

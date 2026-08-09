@@ -108,7 +108,7 @@ func newRoutingTestService(t *testing.T) *Service {
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}
-	return New(t.TempDir(), "xray", store)
+	return New(t.TempDir(), store)
 }
 
 func writeTestGeoIPAsset(dir string, entries ...*xrayrouter.GeoIP) error {

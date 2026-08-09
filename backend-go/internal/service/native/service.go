@@ -33,16 +33,16 @@ const (
 
 var lookupIPForTunBypass = net.LookupIP
 
-// Service implements service.BackendService by managing a real Xray process.
+// Service implements service.BackendService by managing an embedded Xray instance.
 type Service struct {
 	store    *storage.Store
 	dataDir  string
-	xrayCmd  string
 	xrayCore *managedXrayCore
 
-	mu            sync.Mutex
-	switchMu      sync.Mutex
-	proc          *exec.Cmd
+	mu       sync.Mutex // protects runtime state below
+	switchMu sync.Mutex // serializes profile/config switches (restart-on-change)
+	coreOpMu sync.Mutex // serializes core lifecycle operations (start/stop/restart)
+	proc     *exec.Cmd
 	running       bool
 	starting      bool // true while StartCore is executing; prevents concurrent double-starts
 	trackedPID    int
@@ -57,6 +57,8 @@ type Service struct {
 
 	tunRestoreRoutes []string
 
+	autoUpdateAttempts map[string]time.Time // sub ID -> last auto-update attempt (failure backoff)
+
 	watchdogRestartAttempts  int
 	watchdogRestartScheduled bool
 	watchdogRestarting       bool
@@ -64,16 +66,16 @@ type Service struct {
 	stopCoreHook             func() domain.CoreStatus
 }
 
-// New creates a native Service using the given storage and xray binary path.
-func New(dataDir, xrayCmd string, store *storage.Store) *Service {
+// New creates a native Service using the given storage.
+func New(dataDir string, store *storage.Store) *Service {
 	svc := &Service{
 		store:   store,
 		dataDir: dataDir,
-		xrayCmd: xrayCmd,
 		logs:    newLogBroker(),
 	}
 	svc.ensureGeoDataAssetEnv()
 	go svc.watchdogLoop()
+	go svc.autoUpdateLoop()
 	return svc
 }
 
@@ -94,21 +96,42 @@ func (s *Service) ensureGeoDataAssetEnv() {
 
 func (s *Service) CoreStatus() domain.CoreStatus {
 	s.mu.Lock()
+	needCleanup := s.checkProcExitedLocked()
+	s.mu.Unlock()
+	if needCleanup {
+		s.cleanupAfterCoreExit()
+	}
+	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.checkProcExited()
 	return s.buildStatus()
 }
 
+// StartCore serializes core lifecycle operations and starts the embedded core.
 func (s *Service) StartCore() domain.CoreStatus {
+	s.coreOpMu.Lock()
+	defer s.coreOpMu.Unlock()
+	return s.startCore()
+}
+
+func (s *Service) startCore() domain.CoreStatus {
 	// ── Phase 1: claim the start slot (brief critical section) ───────────────
 	s.mu.Lock()
 	s.ensureGeoDataAssetEnv()
 	if s.running {
-		s.checkProcExited()
+		needCleanup := s.checkProcExitedLocked()
 		if s.running {
 			st := s.buildStatus()
 			s.mu.Unlock()
 			return st
+		}
+		if needCleanup {
+			// The previous core exited while we were not watching. Clean up
+			// its external state (TUN routes, system proxy) before starting a
+			// replacement so a failed restart does not leave the machine
+			// without its default route or with a stale system proxy.
+			s.mu.Unlock()
+			s.cleanupAfterCoreExitLocked()
+			s.mu.Lock()
 		}
 	}
 	if s.starting {
@@ -189,12 +212,12 @@ func (s *Service) StartCore() domain.CoreStatus {
 	data, err := generateXrayConfig(profile, cfg, routing)
 	if err != nil {
 		log.Printf("[native] StartCore: config gen failed: %v", err)
-		return s.CoreStatus()
+		return s.statusForLifecycleOp()
 	}
 	configPath, err := writeConfigToFile(data, s.dataDir)
 	if err != nil {
 		log.Printf("[native] StartCore: write config failed: %v", err)
-		return s.CoreStatus()
+		return s.statusForLifecycleOp()
 	}
 
 	xrayCore, err := startManagedXrayCore(data, s.logs)
@@ -222,12 +245,15 @@ func (s *Service) StartCore() domain.CoreStatus {
 	s.lastEngine = resolved
 	s.coreStartedAt = time.Now().UTC()
 	s.stats = stats
-	s.mu.Unlock()
-
-	// Post-commit setup outside the lock: clear logs, start stats, TUN, proxy.
-	s.logs.clear()
+	// Start the stats poller inside the commit critical section so a
+	// concurrent stopCore cannot shut down the tracker between assignment
+	// and start (which would leak an unobservable polling goroutine).
 	stats.reset()
 	stats.start()
+	s.mu.Unlock()
+
+	// Post-commit setup outside the lock: clear logs, TUN, proxy.
+	s.logs.clear()
 
 	// ── Phase 4: post-start routing and proxy — slow, no mu needed ───────────
 	if shouldManageTunTraffic(cfg) {
@@ -260,16 +286,20 @@ func (s *Service) StartCore() domain.CoreStatus {
 	log.Printf("[native] core started in managed xray-core mode with config=%s", configPath)
 	s.logs.AppLog("info", fmt.Sprintf("core started (engine=%s, profile=%s)", resolved, profile.Name))
 	_ = s.saveState(true)
-	return s.CoreStatus()
+	return s.statusForLifecycleOp()
 }
 
 func (s *Service) StopCore() domain.CoreStatus {
+	s.coreOpMu.Lock()
+	defer s.coreOpMu.Unlock()
 	return s.stopCore(true, true)
 }
 
 // ShutdownCore stops the core during process teardown without changing the
 // persisted restore intent. Explicit user-driven stops should use StopCore.
 func (s *Service) ShutdownCore() domain.CoreStatus {
+	s.coreOpMu.Lock()
+	defer s.coreOpMu.Unlock()
 	return s.stopCore(false, true)
 }
 
@@ -306,13 +336,15 @@ func (s *Service) stopCore(clearRestoreState, resetWatchdog bool) domain.CoreSta
 	if clearRestoreState {
 		_ = s.saveState(false)
 	}
-	return s.CoreStatus()
+	return s.statusForLifecycleOp()
 }
 
 func (s *Service) RestartCore() domain.CoreStatus {
-	s.StopCore()
+	s.coreOpMu.Lock()
+	defer s.coreOpMu.Unlock()
+	s.stopCore(true, true)
 	time.Sleep(200 * time.Millisecond)
-	return s.StartCore()
+	return s.startCore()
 }
 
 func (s *Service) restartCoreForRuntimeChange() {
@@ -502,7 +534,15 @@ func (s *Service) SelectProfile(id string) error {
 }
 
 func (s *Service) TestProfileDelay(id string) domain.DelayTestResult {
-	return s.testProfileDelayWithTimeout(id, 10000)
+	p, err := s.GetProfile(id)
+	if err != nil {
+		return domain.DelayTestResult{Message: "profile not found"}
+	}
+	result := measureProfileDelay(p, 10000)
+	if result.Available {
+		s.updateStoredProfileDelay(id, result.DelayMs)
+	}
+	return result
 }
 
 func (s *Service) BatchTestProfileDelay(ids []string, timeoutMs, limit int) domain.BatchDelayTestResult {
@@ -531,14 +571,21 @@ func (s *Service) BatchTestProfileDelay(ids []string, timeoutMs, limit int) doma
 	sem := make(chan struct{}, limit)
 	var wg sync.WaitGroup
 
+	// Snapshot profiles once: batch testing must not do one full-file
+	// read-modify-write per profile (O(N²) I/O for large subscriptions).
+	profilesByID := make(map[string]domain.ProfileItem, len(trimmedIDs))
+	for _, p := range s.loadProfiles() {
+		profilesByID[p.ID] = p
+	}
+
 	for idx, id := range trimmedIDs {
 		wg.Add(1)
+		sem <- struct{}{} // bound goroutine count before spawning
 		go func(index int, profileID string) {
 			defer wg.Done()
-			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			result := s.batchDelayResult(profileID, timeoutMs)
+			result := s.batchDelayResult(profileID, timeoutMs, profilesByID)
 			results[index] = result
 		}(idx, id)
 	}
@@ -552,13 +599,9 @@ func (s *Service) BatchTestProfileDelay(ids []string, timeoutMs, limit int) doma
 		}
 	}
 	if len(delayByID) > 0 {
-		profiles := s.loadProfiles()
-		for i := range profiles {
-			if delay, ok := delayByID[profiles[i].ID]; ok {
-				profiles[i].DelayMs = delay
-			}
-		}
-		_ = s.store.SaveProfiles(profiles)
+		// Single atomic load-modify-save: a per-profile read-modify-write
+		// would be O(N²) I/O and could race with subscription updates.
+		_ = s.store.UpdateProfileDelays(delayByID)
 	}
 
 	sort.Slice(results, func(i, j int) bool {
@@ -589,11 +632,10 @@ func (s *Service) BatchTestProfileDelay(ids []string, timeoutMs, limit int) doma
 	}
 }
 
-func (s *Service) testProfileDelayWithTimeout(id string, timeoutMs int) domain.DelayTestResult {
-	p, err := s.GetProfile(id)
-	if err != nil {
-		return domain.DelayTestResult{Message: "profile not found"}
-	}
+// measureProfileDelay performs the TCP handshake timing for a single profile.
+// It is a pure measurement with no persistence; callers decide when to store
+// the result so batch testing avoids one full-file read-modify-write per node.
+func measureProfileDelay(p domain.ProfileItem, timeoutMs int) domain.DelayTestResult {
 	if p.Address == "" || p.Port <= 0 {
 		return domain.DelayTestResult{Message: "invalid address/port"}
 	}
@@ -605,25 +647,23 @@ func (s *Service) testProfileDelayWithTimeout(id string, timeoutMs int) domain.D
 		return domain.DelayTestResult{Available: false, Message: err.Error()}
 	}
 	conn.Close()
-
-	profiles := s.loadProfiles()
-	for i := range profiles {
-		if profiles[i].ID == id {
-			profiles[i].DelayMs = elapsed
-		}
-	}
-	_ = s.store.SaveProfiles(profiles)
-
 	return domain.DelayTestResult{Available: true, DelayMs: elapsed}
 }
 
-func (s *Service) batchDelayResult(id string, timeoutMs int) domain.ProfileDelayResult {
-	p, err := s.GetProfile(id)
-	if err != nil {
+// updateStoredProfileDelay persists a single profile's latest delay via the
+// store's atomic composite op (never a separate load-modify-save, which would
+// race with subscription updates).
+func (s *Service) updateStoredProfileDelay(id string, delayMs int) {
+	_ = s.store.UpdateProfileDelay(id, delayMs)
+}
+
+func (s *Service) batchDelayResult(id string, timeoutMs int, profilesByID map[string]domain.ProfileItem) domain.ProfileDelayResult {
+	p, ok := profilesByID[id]
+	if !ok {
 		return domain.ProfileDelayResult{ProfileID: id, Available: false, Error: "profile not found", Message: "profile not found"}
 	}
 
-	result := s.testProfileDelayWithTimeout(id, timeoutMs)
+	result := measureProfileDelay(p, timeoutMs)
 	out := domain.ProfileDelayResult{
 		ProfileID: id,
 		Name:      p.Name,
@@ -1377,7 +1417,11 @@ func (s *Service) UpdateConfig(next map[string]interface{}) map[string]interface
 		log.Printf("[native] UpdateConfig: %v", err)
 	}
 	if previousTunMode != "off" && nextTunMode == "off" {
+		// Serialize with lifecycle ops: setupManagedTunRouting runs under
+		// coreOpMu inside startCore and must not interleave with cleanup.
+		s.coreOpMu.Lock()
 		s.clearTunRouting()
+		s.coreOpMu.Unlock()
 	}
 	s.restartCoreForRuntimeChange()
 	return cfg
@@ -1624,13 +1668,17 @@ func (s *Service) RepairTunAndRestart() domain.TunRepairResult {
 
 	result.WasRunning = s.CoreStatus().Running
 
-	// Ensure stale routes/devices are cleaned before relaunch.
+	// Ensure stale routes/devices are cleaned before relaunch. Serialize with
+	// lifecycle ops so TUN commands never interleave with setupTunRouting.
+	s.coreOpMu.Lock()
 	s.clearTunRouting()
 	if err := s.cleanupStaleTunInterface(cfg); err != nil {
+		s.coreOpMu.Unlock()
 		result.Error = err.Error()
 		result.Message = "TUN 残留清理失败"
 		return result
 	}
+	s.coreOpMu.Unlock()
 
 	if result.WasRunning {
 		st := s.RestartCore()
@@ -1689,20 +1737,62 @@ func (s *Service) SubscribeCoreLogs() (<-chan domain.LogLine, func()) {
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-func (s *Service) checkProcExited() {
+// checkProcExitedLocked detects an unexpectedly exited core and resets
+// in-memory state. It must be called with s.mu held. It returns true when the
+// core died and external cleanup (TUN routes, system proxy) is required.
+func (s *Service) checkProcExitedLocked() bool {
 	if s.xrayCore != nil && !s.xrayCore.IsRunning() {
 		s.xrayCore = nil
 		s.running = false
 		s.degraded = false
 		s.coreStartedAt = time.Time{}
 		s.setCoreError("xray-core instance exited")
-		s.clearTunRouting()
-		s.clearSystemProxyOnCoreStop()
 		if s.stats != nil {
 			s.stats.shutdown()
 			s.stats = nil
 		}
+		return true
 	}
+	return false
+}
+
+// cleanupAfterCoreExit tears down external state after an unexpected core
+// exit. It runs outside s.mu (subprocess calls must never hold the service
+// mutex) and re-checks running state so it never wipes the routes of a core
+// that started while it was waiting for the lifecycle lock.
+func (s *Service) cleanupAfterCoreExit() {
+	s.coreOpMu.Lock()
+	defer s.coreOpMu.Unlock()
+	s.cleanupAfterCoreExitLocked()
+}
+
+// cleanupAfterCoreExitLocked is the body of cleanupAfterCoreExit for callers
+// that already hold coreOpMu (startCore/stopCore), where re-acquiring the
+// lifecycle lock would deadlock.
+func (s *Service) cleanupAfterCoreExitLocked() {
+	s.mu.Lock()
+	running := s.running
+	s.mu.Unlock()
+	if running {
+		return
+	}
+	s.clearTunRouting()
+	s.clearSystemProxyOnCoreStop()
+}
+
+// statusForLifecycleOp returns the current status for callers that already
+// hold coreOpMu. It performs post-exit cleanup inline instead of going through
+// CoreStatus, which would re-acquire coreOpMu and deadlock if the core died.
+func (s *Service) statusForLifecycleOp() domain.CoreStatus {
+	s.mu.Lock()
+	needCleanup := s.checkProcExitedLocked()
+	s.mu.Unlock()
+	if needCleanup {
+		s.cleanupAfterCoreExitLocked()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buildStatus()
 }
 
 func (s *Service) watchdogLoop() {
@@ -1713,21 +1803,94 @@ func (s *Service) watchdogLoop() {
 	}
 }
 
+// ─── Subscription auto-update ───────────────────────────────────────────────
+
+func (s *Service) autoUpdateLoop() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.runDueAutoUpdates()
+	}
+}
+
+// runDueAutoUpdates refreshes enabled subscriptions whose autoUpdateMinutes
+// interval has elapsed since their last update. Failed attempts are backed off
+// in memory so a broken subscription URL is not hammered every minute.
+func (s *Service) runDueAutoUpdates() {
+	subs := s.loadSubscriptions()
+	now := time.Now()
+	for _, sub := range subs {
+		if !sub.Enabled || sub.AutoUpdateMinutes <= 0 {
+			continue
+		}
+		due := true
+		if updatedAt, err := time.Parse(time.RFC3339, sub.UpdatedAt); err == nil {
+			due = now.Sub(updatedAt) >= time.Duration(sub.AutoUpdateMinutes)*time.Minute
+		}
+		if !due {
+			continue
+		}
+		if last, ok := s.lastAutoUpdateAttempt(sub.ID); ok && now.Sub(last) < 10*time.Minute {
+			continue
+		}
+		s.markAutoUpdateAttempt(sub.ID, now)
+		log.Printf("[native] auto update subscription %s (%s)", sub.ID, sub.Remarks)
+		if err := s.UpdateSubscriptionByID(sub.ID); err != nil {
+			log.Printf("[native] auto update subscription %s failed: %v", sub.ID, err)
+		}
+	}
+}
+
+func (s *Service) lastAutoUpdateAttempt(id string) (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if t, ok := s.autoUpdateAttempts[id]; ok {
+		return t, true
+	}
+	// Hydrate from persisted state (e.g. after a restart).
+	state := s.loadState()
+	if raw, ok := state.LastAutoUpdateAttempts[id]; ok {
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			if s.autoUpdateAttempts == nil {
+				s.autoUpdateAttempts = make(map[string]time.Time)
+			}
+			s.autoUpdateAttempts[id] = t
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func (s *Service) markAutoUpdateAttempt(id string, at time.Time) {
+	s.mu.Lock()
+	if s.autoUpdateAttempts == nil {
+		s.autoUpdateAttempts = make(map[string]time.Time)
+	}
+	s.autoUpdateAttempts[id] = at
+	s.mu.Unlock()
+
+	// Persist so a broken subscription URL is not re-attempted immediately
+	// after a service restart.
+	state := s.loadState()
+	if state.LastAutoUpdateAttempts == nil {
+		state.LastAutoUpdateAttempts = make(map[string]string)
+	}
+	state.LastAutoUpdateAttempts[id] = at.UTC().Format(time.RFC3339)
+	_ = s.store.SaveState(state)
+}
+
 func (s *Service) watchdogTick() {
 	s.mu.Lock()
 	wasRunning := s.running
-	s.checkProcExited()
+	needCleanup := s.checkProcExitedLocked()
 	reason, restartWhileRunning := s.watchdogRestartPlanLocked(wasRunning)
-	if reason == "" {
-		s.mu.Unlock()
-		return
+	if reason != "" && !s.watchdogRestarting && !s.watchdogRestartScheduled {
+		s.scheduleAutoRestartLocked(reason, restartWhileRunning)
 	}
-	if s.watchdogRestarting || s.watchdogRestartScheduled {
-		s.mu.Unlock()
-		return
-	}
-	s.scheduleAutoRestartLocked(reason, restartWhileRunning)
 	s.mu.Unlock()
+	if needCleanup {
+		s.cleanupAfterCoreExit()
+	}
 }
 
 func (s *Service) watchdogRestartPlanLocked(wasRunning bool) (string, bool) {
@@ -1799,10 +1962,14 @@ func (s *Service) runScheduledAutoRestart(delay time.Duration, attempt int, rest
 	s.mu.Unlock()
 
 	log.Printf("[native] watchdog: auto restart attempt=%d starting", attempt)
+	// Hold the lifecycle lock so this restart cannot interleave with a
+	// user-driven start/stop from the API.
+	s.coreOpMu.Lock()
 	if restartWhileRunning {
 		s.stopCore(false, false)
 	}
-	st := s.StartCore()
+	st := s.startCore()
+	s.coreOpMu.Unlock()
 
 	s.mu.Lock()
 	s.watchdogRestarting = false
@@ -2124,8 +2291,11 @@ func (s *Service) setupTunRouting(cfg map[string]interface{}) error {
 	if out, err := exec.Command("ip", "route", "replace", "default", "dev", tunName).CombinedOutput(); err != nil {
 		return fmt.Errorf("replace default route with %s failed: %w (%s)", tunName, err, strings.TrimSpace(string(out)))
 	}
+	s.mu.Lock()
 	s.tunRestoreRoutes = append([]string(nil), restoreRoutes...)
-	s.persistTunRestoreRoutes(s.tunRestoreRoutes, tunName)
+	memRoutes := append([]string(nil), s.tunRestoreRoutes...)
+	s.mu.Unlock()
+	s.persistTunRestoreRoutes(memRoutes, tunName)
 	return nil
 }
 
@@ -2210,7 +2380,9 @@ func (s *Service) installTunPolicyRoutingForFamily(family, tunName string, bypas
 
 func (s *Service) clearTunRouting() {
 	if runtime.GOOS != "linux" || !hasCommand("ip") {
+		s.mu.Lock()
 		s.tunRestoreRoutes = nil
+		s.mu.Unlock()
 		s.persistTunRestoreRoutes(nil, "")
 		return
 	}
@@ -2219,7 +2391,11 @@ func (s *Service) clearTunRouting() {
 	if err := s.clearManagedTunPolicyRouting(cfg, &tunName); err != nil {
 		log.Printf("[native] clear managed TUN policy routing failed: %v", err)
 	}
-	routes := sanitizeTunRestoreRoutes(s.tunRestoreRoutes, tunName)
+	s.mu.Lock()
+	memRoutes := append([]string(nil), s.tunRestoreRoutes...)
+	s.tunRestoreRoutes = nil
+	s.mu.Unlock()
+	routes := sanitizeTunRestoreRoutes(memRoutes, tunName)
 	if len(routes) == 0 {
 		routes = sanitizeTunRestoreRoutes(s.loadPersistedTunRestoreRoutes(), tunName)
 	}
@@ -2248,7 +2424,9 @@ func (s *Service) clearTunRouting() {
 	if out, err := exec.Command("ip", "link", "del", "dev", tunName).CombinedOutput(); err == nil {
 		_ = out
 	}
+	s.mu.Lock()
 	s.tunRestoreRoutes = nil
+	s.mu.Unlock()
 	s.persistTunRestoreRoutes(nil, tunName)
 }
 
@@ -2542,14 +2720,38 @@ func (s *Service) clearManagedTunPolicyRouting(cfg map[string]interface{}, tunNa
 func clearManagedTunPolicyRoutingForFamily(family, tunName string) error {
 	label := routeFamilyLabel(family)
 	var firstErr error
-	for priority := tunPolicyRulePriorityMin; priority <= tunPolicyRulePriorityMax; priority++ {
-		if out, err := exec.Command("ip", family, "rule", "del", "priority", fmt.Sprintf("%d", priority)).CombinedOutput(); err != nil { //nolint:gosec
-			msg := strings.ToLower(strings.TrimSpace(string(out)))
-			if msg == "" || strings.Contains(msg, "not found") || strings.Contains(msg, "cannot find") || strings.Contains(msg, "no such file") || strings.Contains(msg, "no such process") {
+
+	// Enumerate existing rules once and delete only the ones in our priority
+	// window. Probing every priority slot with `ip rule del` would spawn up to
+	// 1000 subprocesses per family and freeze the service mutex for seconds.
+	out, err := exec.Command("ip", family, "rule", "show").CombinedOutput() //nolint:gosec
+	if err != nil {
+		if firstErr == nil {
+			firstErr = fmt.Errorf("list %s TUN policy rules: %w (%s)", label, err, strings.TrimSpace(string(out)))
+		}
+	} else {
+		for _, line := range strings.Split(string(out), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
 				continue
 			}
-			if firstErr == nil {
-				firstErr = fmt.Errorf("delete %s TUN policy rule priority %d: %w (%s)", label, priority, err, strings.TrimSpace(string(out)))
+			fields := strings.Fields(line)
+			if len(fields) < 2 || !strings.HasSuffix(fields[0], ":") {
+				continue
+			}
+			prio, parseErr := strconv.Atoi(strings.TrimSuffix(fields[0], ":"))
+			if parseErr != nil || prio < tunPolicyRulePriorityMin || prio > tunPolicyRulePriorityMax {
+				continue
+			}
+			delOut, delErr := exec.Command("ip", family, "rule", "del", "priority", fmt.Sprintf("%d", prio)).CombinedOutput() //nolint:gosec
+			if delErr != nil {
+				msg := strings.ToLower(strings.TrimSpace(string(delOut)))
+				if msg == "" || strings.Contains(msg, "not found") || strings.Contains(msg, "cannot find") || strings.Contains(msg, "no such file") || strings.Contains(msg, "no such process") {
+					continue
+				}
+				if firstErr == nil {
+					firstErr = fmt.Errorf("delete %s TUN policy rule priority %d: %w (%s)", label, prio, delErr, strings.TrimSpace(string(delOut)))
+				}
 			}
 		}
 	}

@@ -339,4 +339,8 @@ type PersistentState struct {
 	CoreType          string `json:"coreType,omitempty"`
 	CoreShouldRestore bool   `json:"coreShouldRestore,omitempty"`
 	UpdatedAt         string `json:"updatedAt,omitempty"`
+	// LastAutoUpdateAttempts maps subscription ID to the RFC3339 timestamp of
+	// the last auto-update attempt, persisted so a broken subscription URL is
+	// not re-attempted immediately after a service restart.
+	LastAutoUpdateAttempts map[string]string `json:"lastAutoUpdateAttempts,omitempty"`
 }
