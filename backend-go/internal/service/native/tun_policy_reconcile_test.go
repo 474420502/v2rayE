@@ -18,10 +18,10 @@ func TestBuildTunPolicyBypassRulesKeepsBareHostRoutes(t *testing.T) {
 		"192.168.124.0/24 dev enp9s0 proto kernel scope link src 192.168.124.8 metric 100",
 	}, map[string]interface{}{
 		"dnsList": []interface{}{"1.1.1.1"},
-	}, &domain.ProfileItem{Address: "62.171.181.252"})
+	}, &domain.ProfileItem{Address: "198.51.100.10"})
 
 	want := map[string]bool{
-		"62.171.181.252/32": true,
+		"198.51.100.10/32": true,
 		"1.1.1.1/32":        true,
 		"10.88.0.1/32":      true,
 		"172.17.0.0/16":     true,
@@ -55,7 +55,7 @@ func TestBuildTunPolicyBypassRulesKeepsBareHostRoutesIPv6(t *testing.T) {
 const sampleIPRuleShow = `0:	from all lookup local
 100:	from all to 10.88.0.1 lookup main
 10000:	from all fwmark 0x2d11 lookup main
-10001:	from all to 62.171.181.252 lookup main
+10001:	from all to 198.51.100.10 lookup main
 10002:	from all to 1.1.1.1 lookup main
 10003:	from all to 8.8.8.8 lookup main
 10004:	from all to 172.22.0.0/16 lookup main
@@ -67,7 +67,7 @@ const sampleIPRuleShow = `0:	from all lookup local
 
 func TestParseInstalledTunPolicyBypassTargets(t *testing.T) {
 	got := parseInstalledTunPolicyBypassTargets(sampleIPRuleShow, "-4")
-	want := []string{"1.1.1.1/32", "8.8.8.8/32", "62.171.181.252/32", "172.22.0.0/16", "192.168.124.0/24"}
+	want := []string{"1.1.1.1/32", "8.8.8.8/32", "198.51.100.10/32", "172.22.0.0/16", "192.168.124.0/24"}
 	if len(got) != len(want) {
 		t.Fatalf("parsed targets = %#v, want %d entries", got, len(want))
 	}
