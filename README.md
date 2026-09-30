@@ -17,15 +17,17 @@ v2rayE 是一个 Linux 优先的本地代理控制平面，目标是把常用的
 
 项目现在更接近“本地代理控制台 + TUN/VPN 工作台”，而不是单纯的 Web 面板。
 
-## v0.1.5 发布重点
+## v0.2.0 发布重点
 
-`v0.1.5` 主要聚焦在后端存储可靠性、核心生命周期并发收敛和订阅自动更新：
+`v0.2.0` 主要聚焦在 TUN 策略路由的正确性与自愈能力，以及多实例共存时的网络安全：
 
-- 存储层（profiles / subscriptions / config / routing / state）改为内存缓存 + 原子落盘（临时文件 + fsync + 重命名），批量测速不再每个节点全文件读写一次
-- `native` 服务核心启动/停止/重启全部经 `coreOpMu` 串行化，修复核心意外退出清理时可能自死锁的问题，失败重启不再残留 TUN 默认路由和系统代理
-- 新增订阅自动更新：按 `autoUpdateMinutes` 周期刷新，失败退避 10 分钟且持久化到 state，服务重启后不会立刻重打坏链接
-- TUN 策略路由清理从逐个优先级探测改为枚举后精确删除，避免一次性拉起上千次 `ip rule del`
-- 移除已无用的 `xrayCmd` 配置键与参数，核心引擎统一由 `coreEngine` 配置决定
+- 策略路由 bypass 规则新增对账：每 30s 比对"主路由表应有的 bypass 集合"与"内核已装集合"，缺失/过期即自动重建，修复核心早于 DHCP / Docker / VPN 路由启动时 bypass 永久残缺、局域网 ICMP/UDP 被 TUN 吞掉的问题
+- `ip route show` 中的裸主机路由（如 `10.88.0.1 dev wg0 scope link`）不再被 `netip.ParsePrefix` 静默丢弃，统一归一化为 `/32`、`/128` 后进入 bypass 集合
+- 新增单实例数据目录锁（`flock`）：第二个服务进程直接拒绝启动，不再与在跑的实例争抢 TUN 设备与规则表
+- 拆除 TUN 前先确认没有其他 v2rayE 后端实例在运行，避免按名字 `ip link del` 删掉别人正在使用的 `xraye0`
+- 出站网卡绑定校验：配置里的 `outboundInterface` 不存在时不再写入生成配置，避免关闭 TUN 后所有出站连接绑到坏网卡
+- 诊断新增两条告警：bypass 规则与实际路由表不同步、出站绑定网卡与当前默认路由不一致
+- 规则清理增加属主校验，不再按优先级区间无差别删除其他工具安装的规则；`tun-health-check.sh` 在 systemd 部署下改用 API 重启验证，不再启动第二个实例
 
 ## 第一版包含什么
 
@@ -120,19 +122,19 @@ sudo ./scripts/tun-health-check.sh
 ### 本地构建 `.deb`
 
 ```bash
-./scripts/build-deb.sh 0.1.5
+./scripts/build-deb.sh 0.2.0
 ```
 
 输出路径类似：
 
 ```bash
-dist/v2raye_0.1.5_amd64.deb
+dist/v2raye_0.2.0_amd64.deb
 ```
 
 ### 安装
 
 ```bash
-sudo apt install ./dist/v2raye_0.1.5_amd64.deb
+sudo apt install ./dist/v2raye_0.2.0_amd64.deb
 ```
 
 ### 卸载
@@ -231,9 +233,9 @@ sudo systemctl enable --now v2raye-server
 发布方式：
 
 ```bash
-git tag v0.1.5
+git tag v0.2.0
 git push origin master
-git push origin v0.1.5
+git push origin v0.2.0
 ```
 
 触发后，GitHub Actions 会自动：
@@ -250,9 +252,9 @@ git push origin v0.1.5
 
 当前建议使用：
 
-- `v0.1.5`
+- `v0.2.0`
 
-这个版本适合作为“存储层缓存与原子写 + 核心生命周期并发收敛 + 订阅自动更新 + Debian 发布链路”的当前基线。
+这个版本适合作为“TUN 策略路由自愈对账 + 单实例安全 + 诊断告警 + Debian 发布链路”的当前基线。
 
 ## 当前限制
 

@@ -16,15 +16,17 @@ The first release baseline is now centered on:
 
 This project is closer to a local proxy workstation and TUN/VPN control console than to a browser-first web panel.
 
-## v0.1.5 highlights
+## v0.2.0 highlights
 
-`v0.1.5` focuses on backend storage reliability, core-lifecycle concurrency, and subscription auto-update:
+`v0.2.0` focuses on TUN policy-routing correctness and self-healing, plus network safety when more than one instance exists:
 
-- the storage layer (profiles / subscriptions / config / routing / state) now uses in-memory caching plus atomic writes (temp file + fsync + rename); batch delay testing no longer rewrites the whole file per profile
-- core start/stop/restart in the `native` service is fully serialized through `coreOpMu`, fixing a potential self-deadlock when an unexpectedly exited core is cleaned up; a failed restart no longer leaves a stale TUN default route or system proxy behind
-- new subscription auto-update: refreshes on an `autoUpdateMinutes` schedule with a 10-minute failure backoff persisted to state, so a broken URL is not re-attempted immediately after a service restart
-- TUN policy-rule cleanup now enumerates and deletes only matching rules instead of probing every priority slot, avoiding thousands of `ip rule del` subprocess calls
-- the dead `xrayCmd` config key and parameter are removed; the core engine is now solely decided by the `coreEngine` config
+- policy-routing bypass rules are now reconciled every 30s: the desired set (derived from the main route table) is compared against what the kernel actually has, and rebuilt when prefixes are missing or stale — a core started before DHCP / Docker / VPN routes appear no longer keeps an incomplete bypass set that swallows LAN, ICMP and UDP traffic into the TUN
+- bare host routes from `ip route show` (for example `10.88.0.1 dev wg0 scope link`) are no longer silently dropped by `netip.ParsePrefix`; they are normalized to `/32` / `/128` and kept in the bypass set
+- new single-instance data-directory lock (`flock`): a second server process is refused instead of fighting the running one over the TUN device and rule table
+- TUN teardown now checks for another running v2rayE backend first, so `ip link del` can no longer remove an `xraye0` that another instance is using
+- outbound interface validation: an `outboundInterface` that no longer exists is never written into the generated config, so turning TUN off cannot bind every outbound socket to a dead NIC
+- two new diagnostics warnings: bypass rules out of sync with the route table, and outbound sockets bound to an interface that is no longer the default route
+- rule cleanup now verifies ownership instead of deleting everything in the priority window; `tun-health-check.sh` restarts through the API under systemd instead of starting a second instance
 
 ## What the first release includes
 
@@ -119,19 +121,19 @@ The check covers:
 ### Build a local `.deb`
 
 ```bash
-./scripts/build-deb.sh 0.1.5
+./scripts/build-deb.sh 0.2.0
 ```
 
 Expected output:
 
 ```bash
-dist/v2raye_0.1.5_amd64.deb
+dist/v2raye_0.2.0_amd64.deb
 ```
 
 ### Install
 
 ```bash
-sudo apt install ./dist/v2raye_0.1.5_amd64.deb
+sudo apt install ./dist/v2raye_0.2.0_amd64.deb
 ```
 
 ### Remove
@@ -230,9 +232,9 @@ The repository now includes:
 Release flow:
 
 ```bash
-git tag v0.1.5
+git tag v0.2.0
 git push origin master
-git push origin v0.1.5
+git push origin v0.2.0
 ```
 
 After the tag is pushed, GitHub Actions will automatically:
@@ -249,9 +251,9 @@ The workflow also supports manual `workflow_dispatch` runs with an explicit vers
 
 Use:
 
-- `v0.1.5`
+- `v0.2.0`
 
-It is the current baseline for storage-layer caching and atomic writes, hardened core-lifecycle concurrency, subscription auto-update, and the Debian release pipeline.
+It is the current baseline for self-healing TUN policy routing, single-instance safety, diagnostics warnings, and the Debian release pipeline.
 
 ## Current limits
 
