@@ -372,9 +372,21 @@ check_restart_restore() {
     fi
 
     print_header "Restart Restore Check"
-    echo "restarting dev stack to verify core auto-restore"
-    V2RAYE_COUPLED_LIFECYCLE=0 "$ROOT_DIR/scripts/stop-dev.sh" >/dev/null
-    "$ROOT_DIR/scripts/start-backend.sh" >/dev/null
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet v2raye-server 2>/dev/null; then
+        # The systemd unit owns this deployment. The dev helpers below would
+        # start a second server process, which fights the unit for the API port
+        # and deletes the TUN interface out from under it, so restart the core
+        # through the API instead.
+        echo "restarting core through the API (systemd unit v2raye-server is active)"
+        api_call POST /api/core/restart >/dev/null 2>&1 || true
+    else
+        echo "restarting dev stack to verify core auto-restore"
+        V2RAYE_COUPLED_LIFECYCLE=0 "$ROOT_DIR/scripts/stop-dev.sh" >/dev/null
+        # start-backend.sh execs the server in the foreground; background it so
+        # this script can go on verifying instead of blocking forever.
+        nohup "$ROOT_DIR/scripts/start-backend.sh" >/dev/null 2>&1 &
+        disown 2>/dev/null || true
+    fi
 
     if ! poll_backend_ready; then
         fail "backend did not become healthy after restart"

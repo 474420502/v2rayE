@@ -296,6 +296,12 @@ force_cleanup_role() {
 
 stop_ok=0
 
+if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet v2raye-server 2>/dev/null; then
+    echo "[warn] v2raye-server.service is active: killing its process makes systemd restart it" >&2
+    echo "[warn] (Restart=always), which then competes with a dev backend for port ${BACKEND_PORT}." >&2
+    echo "[warn] Run 'systemctl stop v2raye-server' first if that is not intended." >&2
+fi
+
 graceful_backend_shutdown
 if stop_by_pid_file "backend" "$BACKEND_PID_FILE"; then
     stop_ok=1
