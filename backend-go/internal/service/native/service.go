@@ -59,11 +59,14 @@ type Service struct {
 
 	autoUpdateAttempts map[string]time.Time // sub ID -> last auto-update attempt (failure backoff)
 
-	watchdogRestartAttempts  int
-	watchdogRestartScheduled bool
-	watchdogRestarting       bool
-	restartCoreHook          func() domain.CoreStatus
-	stopCoreHook             func() domain.CoreStatus
+	watchdogRestartAttempts   int
+	watchdogRestartScheduled  bool
+	watchdogRestarting        bool
+	tunReconcileWarnAt        time.Time
+	tunReconcileLastDrift     string
+	resolvedOutboundInterface string
+	restartCoreHook           func() domain.CoreStatus
+	stopCoreHook              func() domain.CoreStatus
 }
 
 // New creates a native Service using the given storage.
@@ -76,6 +79,7 @@ func New(dataDir string, store *storage.Store) *Service {
 	svc.ensureGeoDataAssetEnv()
 	go svc.watchdogLoop()
 	go svc.autoUpdateLoop()
+	go svc.tunPolicyReconcileLoop()
 	return svc
 }
 
@@ -201,13 +205,16 @@ func (s *Service) startCore() domain.CoreStatus {
 			log.Printf("[native] StartCore: stale TUN cleanup failed: %v", err)
 			return st
 		}
-		iface, err := detectDefaultRouteInterface()
-		if err != nil {
-			log.Printf("[native] StartCore: detect default interface failed: %v", err)
-		} else if iface != "" {
-			cfg["outboundInterface"] = iface
-		}
 	}
+
+	// Decide which device outbound sockets may bind to. This must also run when
+	// TUN is off: the stored value can be stale (renamed/removed interface, or a
+	// config file copied from another machine) and binding every outbound to a
+	// device that no longer exists breaks all traffic.
+	resolveOutboundInterfaceForSockopt(cfg)
+	s.mu.Lock()
+	s.resolvedOutboundInterface = strings.TrimSpace(strCfg(cfg, "outboundInterface", ""))
+	s.mu.Unlock()
 
 	data, err := generateXrayConfig(profile, cfg, routing)
 	if err != nil {
@@ -1508,6 +1515,39 @@ func (s *Service) GetRoutingDiagnostics() domain.RoutingDiagnostics {
 				diag.Warning = diag.Warning + "; " + msg
 			}
 		}
+		// Only meaningful while the core is actually running: bypass rules are
+		// installed and reconciled as part of the running TUN takeover.
+		s.mu.Lock()
+		coreRunning := s.running
+		s.mu.Unlock()
+		if coreRunning {
+			if drift, err := s.tunPolicyBypassDrift(cfg, profile); err == nil && !drift.Empty() {
+				msg := fmt.Sprintf("TUN bypass rules are out of sync with the route table (%s); they are rebuilt automatically within %s", drift, tunPolicyReconcileInterval)
+				if diag.Warning == "" {
+					diag.Warning = msg
+				} else {
+					diag.Warning = diag.Warning + "; " + msg
+				}
+			}
+		}
+	}
+
+	// The running core bound its outbound sockets to the interface that owned
+	// the default route at start time. If another interface owns it now, every
+	// outbound connection keeps using the old device until the core restarts.
+	s.mu.Lock()
+	boundInterface := s.resolvedOutboundInterface
+	coreRunning := s.running
+	s.mu.Unlock()
+	if coreRunning && !shouldHijackTunDefaultRoute(cfg) {
+		if currentDevice, err := getDefaultRouteDevice(); err == nil && currentDevice != "" && boundInterface != "" && currentDevice != boundInterface {
+			msg := fmt.Sprintf("outbound sockets are bound to %s but the default route now uses %s; restart the core to rebind", boundInterface, currentDevice)
+			if diag.Warning == "" {
+				diag.Warning = msg
+			} else {
+				diag.Warning = diag.Warning + "; " + msg
+			}
+		}
 	}
 
 	if profile != nil {
@@ -2177,6 +2217,49 @@ func detectDefaultRouteInterface() (string, error) {
 	return "", nil
 }
 
+// networkInterfaceExists reports whether the named link currently exists. It is
+// a variable so tests can stub the host interface list.
+var networkInterfaceExists = func(name string) bool {
+	if strings.TrimSpace(name) == "" {
+		return false
+	}
+	if _, err := net.InterfaceByName(name); err != nil {
+		return false
+	}
+	return true
+}
+
+// resolveOutboundInterfaceForSockopt decides which device xray outbound sockets
+// bind to (sockopt.interface).
+//
+// While TUN routing is active the interface owning the current default route
+// always wins, because the outbound must not be able to re-enter the TUN. When
+// TUN is off the configured value is honored, but only when that device really
+// exists: a stale name (interface renamed, USB NIC unplugged, config copied
+// between machines) would otherwise be written into the generated config and
+// make every outbound connection fail.
+func resolveOutboundInterfaceForSockopt(cfg map[string]interface{}) {
+	configured := strings.TrimSpace(strCfg(cfg, "outboundInterface", ""))
+	if tunModeFromConfig(cfg) != "off" {
+		detected, err := detectDefaultRouteInterface()
+		switch {
+		case err != nil:
+			log.Printf("[native] resolveOutboundInterface: detect default interface failed: %v", err)
+		case detected != "":
+			cfg["outboundInterface"] = detected
+			return
+		}
+	}
+	if configured == "" {
+		return
+	}
+	if networkInterfaceExists(configured) {
+		return
+	}
+	log.Printf("[native] resolveOutboundInterface: configured outbound interface %q does not exist; ignoring it instead of binding outbound sockets to a missing device", configured)
+	delete(cfg, "outboundInterface")
+}
+
 func (s *Service) loadConfig() map[string]interface{} {
 	cfg, err := s.store.LoadConfig()
 	if err != nil {
@@ -2589,18 +2672,19 @@ func buildTunPolicyBypassRulesForFamily(mainRoutes []string, cfg map[string]inte
 	seen := make(map[string]struct{})
 	rules := make([]string, 0, len(mainRoutes)+8)
 	add := func(value string) {
-		value = strings.TrimSpace(value)
-		if value == "" {
+		// parseIPPrefixForFamily also accepts bare host addresses, which is how
+		// point-to-point/VPN routes show up in `ip route show` output
+		// (e.g. "10.88.0.1 dev wg0 scope link"). netip.ParsePrefix alone rejects
+		// those and would silently drop the route from the bypass set.
+		prefix, ok := parseIPPrefixForFamily(value, family)
+		if !ok {
 			return
 		}
-		if _, err := netip.ParsePrefix(value); err != nil {
+		if _, dup := seen[prefix]; dup {
 			return
 		}
-		if _, ok := seen[value]; ok {
-			return
-		}
-		seen[value] = struct{}{}
-		rules = append(rules, value)
+		seen[prefix] = struct{}{}
+		rules = append(rules, prefix)
 	}
 	// Add critical dynamic bypass targets first so they are kept even when rule capacity is tight.
 	if profile != nil {
@@ -2721,9 +2805,11 @@ func clearManagedTunPolicyRoutingForFamily(family, tunName string) error {
 	label := routeFamilyLabel(family)
 	var firstErr error
 
-	// Enumerate existing rules once and delete only the ones in our priority
-	// window. Probing every priority slot with `ip rule del` would spawn up to
-	// 1000 subprocesses per family and freeze the service mutex for seconds.
+	// Enumerate existing rules once and delete only the ones this service owns
+	// inside our priority window. Probing every priority slot with `ip rule del`
+	// would spawn up to 1000 subprocesses per family and freeze the service
+	// mutex for seconds; deleting by priority alone would remove rules that
+	// other tools placed in the same window.
 	out, err := exec.Command("ip", family, "rule", "show").CombinedOutput() //nolint:gosec
 	if err != nil {
 		if firstErr == nil {
@@ -2735,12 +2821,12 @@ func clearManagedTunPolicyRoutingForFamily(family, tunName string) error {
 			if line == "" {
 				continue
 			}
-			fields := strings.Fields(line)
-			if len(fields) < 2 || !strings.HasSuffix(fields[0], ":") {
+			if !isManagedTunPolicyRuleLine(line) {
 				continue
 			}
+			fields := strings.Fields(line)
 			prio, parseErr := strconv.Atoi(strings.TrimSuffix(fields[0], ":"))
-			if parseErr != nil || prio < tunPolicyRulePriorityMin || prio > tunPolicyRulePriorityMax {
+			if parseErr != nil {
 				continue
 			}
 			delOut, delErr := exec.Command("ip", family, "rule", "del", "priority", fmt.Sprintf("%d", prio)).CombinedOutput() //nolint:gosec
@@ -2757,13 +2843,321 @@ func clearManagedTunPolicyRoutingForFamily(family, tunName string) error {
 	}
 	if out, err := exec.Command("ip", family, "route", "del", "table", fmt.Sprintf("%d", tunPolicyRouteTable), "default", "dev", tunName).CombinedOutput(); err != nil { //nolint:gosec
 		msg := strings.ToLower(strings.TrimSpace(string(out)))
-		if !(msg == "" || strings.Contains(msg, "not found") || strings.Contains(msg, "cannot find") || strings.Contains(msg, "no such process")) {
+		// An absent table (very common for IPv6 without a default route) is not
+		// an error worth surfacing.
+		if !(msg == "" || strings.Contains(msg, "not found") || strings.Contains(msg, "cannot find") || strings.Contains(msg, "no such process") || strings.Contains(msg, "fib table does not exist")) {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("delete %s TUN policy route table entry: %w (%s)", label, err, strings.TrimSpace(string(out)))
 			}
 		}
 	}
 	return firstErr
+}
+
+// ─── Policy routing reconciliation ───────────────────────────────────────────
+
+// tunPolicyReconcileInterval is how often the installed bypass rules are
+// compared against the live main routing table. Bypass targets are collected
+// from the routes present when the TUN was set up, so a core started before
+// DHCP/docker/VPN routes exist keeps an incomplete set forever: LAN, ICMP and
+// UDP traffic then gets swallowed by the TUN (TCP survives because the direct
+// outbound is fwmark-tagged). A variable so tests can shrink it.
+var tunPolicyReconcileInterval = 30 * time.Second
+
+// tunPolicyReconcileWarnInterval throttles failure reports so a permanently
+// failing rebuild cannot spam the event log on every tick.
+const tunPolicyReconcileWarnInterval = 5 * time.Minute
+
+func (s *Service) tunPolicyReconcileLoop() {
+	ticker := time.NewTicker(tunPolicyReconcileInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.reconcileTunPolicyRouting()
+	}
+}
+
+// reconcileTunPolicyRouting rebuilds the managed policy-routing bypass rules
+// when they no longer match the routes in the main table (interface up/down,
+// DHCP renew, docker or VPN start, ...).
+func (s *Service) reconcileTunPolicyRouting() {
+	if runtime.GOOS != "linux" || !hasCommand("ip") {
+		return
+	}
+	cfg := s.loadConfig()
+	if tunModeFromConfig(cfg) == "off" || !shouldManageTunTraffic(cfg) {
+		return
+	}
+	if shouldHijackTunDefaultRoute(cfg) {
+		// Default-route takeover does not use policy rules.
+		return
+	}
+	s.mu.Lock()
+	busy := !s.running || s.starting
+	s.mu.Unlock()
+	if busy {
+		return
+	}
+	profile := s.pickSelectedProfile(s.loadState().CurrentProfileID)
+
+	s.coreOpMu.Lock()
+	defer s.coreOpMu.Unlock()
+
+	// Re-check under the lifecycle lock: the core may have stopped (or TUN been
+	// disabled) while we were waiting for it.
+	s.mu.Lock()
+	running := s.running
+	s.mu.Unlock()
+	if !running {
+		return
+	}
+	cfg = s.loadConfig()
+	if tunModeFromConfig(cfg) == "off" || !shouldManageTunTraffic(cfg) || shouldHijackTunDefaultRoute(cfg) {
+		return
+	}
+
+	drift, err := s.tunPolicyBypassDrift(cfg, profile)
+	if err != nil {
+		log.Printf("[native] tun policy reconcile: %v", err)
+		return
+	}
+	if drift.Empty() {
+		s.clearTunReconcileDriftSignature()
+		return
+	}
+	log.Printf("[native] tun policy reconcile: bypass rules out of sync (%s); rebuilding", drift)
+	if s.markTunReconcileDriftReported(drift.String()) {
+		s.logs.AppLog("info", fmt.Sprintf("tun bypass rules out of sync with the route table (%s); rebuilding", drift))
+	}
+	if err := s.setupTunPolicyRouting(cfg, profile); err != nil {
+		log.Printf("[native] tun policy reconcile: rebuild failed: %v", err)
+		s.warnTunPolicyReconcileFailure(err)
+		return
+	}
+	log.Printf("[native] tun policy reconcile: bypass rules rebuilt (%s)", drift)
+}
+
+// markTunReconcileDriftReported reports whether this drift signature has not
+// been surfaced yet, so a persistent mismatch cannot spam the event log.
+func (s *Service) markTunReconcileDriftReported(signature string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.tunReconcileLastDrift == signature {
+		return false
+	}
+	s.tunReconcileLastDrift = signature
+	return true
+}
+
+func (s *Service) clearTunReconcileDriftSignature() {
+	s.mu.Lock()
+	s.tunReconcileLastDrift = ""
+	s.mu.Unlock()
+}
+
+func (s *Service) warnTunPolicyReconcileFailure(err error) {
+	s.mu.Lock()
+	now := time.Now()
+	report := now.Sub(s.tunReconcileWarnAt) >= tunPolicyReconcileWarnInterval
+	if report {
+		s.tunReconcileWarnAt = now
+	}
+	s.mu.Unlock()
+	if !report {
+		return
+	}
+	s.logs.AppLog("warning", fmt.Sprintf("tun bypass rule rebuild failed: %v", err))
+}
+
+// tunPolicyBypassDrift describes how the bypass rules installed in the kernel
+// differ from the ones the current routing table calls for.
+type tunPolicyBypassDrift struct {
+	Missing []string // should be bypassed, but is not
+	Stale   []string // bypassed, but no longer matches any route
+}
+
+func (d tunPolicyBypassDrift) Empty() bool { return len(d.Missing) == 0 && len(d.Stale) == 0 }
+
+func (d tunPolicyBypassDrift) String() string {
+	parts := make([]string, 0, 2)
+	if len(d.Missing) > 0 {
+		parts = append(parts, "missing="+strings.Join(d.Missing, ","))
+	}
+	if len(d.Stale) > 0 {
+		parts = append(parts, "stale="+strings.Join(d.Stale, ","))
+	}
+	return strings.Join(parts, " ")
+}
+
+func (d tunPolicyBypassDrift) merge(other tunPolicyBypassDrift) tunPolicyBypassDrift {
+	merged := tunPolicyBypassDrift{
+		Missing: append(append([]string(nil), d.Missing...), other.Missing...),
+		Stale:   append(append([]string(nil), d.Stale...), other.Stale...),
+	}
+	sort.Strings(merged.Missing)
+	sort.Strings(merged.Stale)
+	return merged
+}
+
+// tunPolicyBypassDrift compares desired and installed bypass prefixes for every
+// address family that is currently managed.
+func (s *Service) tunPolicyBypassDrift(cfg map[string]interface{}, profile *domain.ProfileItem) (tunPolicyBypassDrift, error) {
+	drift, err := tunPolicyBypassDriftForFamily(cfg, profile, "-4")
+	if err != nil {
+		return tunPolicyBypassDrift{}, err
+	}
+	if hasIPv6DefaultRoute() {
+		drift6, err6 := tunPolicyBypassDriftForFamily(cfg, profile, "-6")
+		if err6 != nil {
+			return tunPolicyBypassDrift{}, err6
+		}
+		drift = drift.merge(drift6)
+	}
+	return drift, nil
+}
+
+func tunPolicyBypassDriftForFamily(cfg map[string]interface{}, profile *domain.ProfileItem, family string) (tunPolicyBypassDrift, error) {
+	routes, err := getIPRouteLinesForFamily(family, "main")
+	if err != nil {
+		return tunPolicyBypassDrift{}, err
+	}
+	installed, err := installedTunPolicyBypassTargets(family)
+	if err != nil {
+		return tunPolicyBypassDrift{}, err
+	}
+	desired := make(map[string]struct{})
+	for _, prefix := range buildTunPolicyBypassRulesForFamily(routes, cfg, profile, family) {
+		desired[prefix] = struct{}{}
+	}
+	return diffTunPolicyPrefixSets(desired, installed), nil
+}
+
+func diffTunPolicyPrefixSets(desired, installed map[string]struct{}) tunPolicyBypassDrift {
+	drift := tunPolicyBypassDrift{}
+	for prefix := range desired {
+		if _, ok := installed[prefix]; !ok {
+			drift.Missing = append(drift.Missing, prefix)
+		}
+	}
+	for prefix := range installed {
+		if _, ok := desired[prefix]; !ok {
+			drift.Stale = append(drift.Stale, prefix)
+		}
+	}
+	sort.Strings(drift.Missing)
+	sort.Strings(drift.Stale)
+	return drift
+}
+
+func installedTunPolicyBypassTargets(family string) (map[string]struct{}, error) {
+	out, err := exec.Command("ip", family, "rule", "show").CombinedOutput() //nolint:gosec
+	if err != nil {
+		return nil, fmt.Errorf("list %s TUN policy rules: %w (%s)", routeFamilyLabel(family), err, strings.TrimSpace(string(out)))
+	}
+	return parseInstalledTunPolicyBypassTargets(string(out), family), nil
+}
+
+// parseInstalledTunPolicyBypassTargets extracts the destination prefixes of the
+// managed bypass rules from `ip rule show` output, e.g.
+// "10005:\tfrom all to 192.168.124.0/24 lookup main". The fwmark and catch-all
+// rules carry no "to" clause and are skipped.
+func parseInstalledTunPolicyBypassTargets(output, family string) map[string]struct{} {
+	targets := make(map[string]struct{})
+	for _, line := range strings.Split(output, "\n") {
+		if _, ok := parseTunPolicyRulePriority(line); !ok {
+			continue
+		}
+		fields := strings.Fields(line)
+		if !tunPolicyRuleIsFromAll(fields) || !tunPolicyRuleLooksUpTable(fields, "main") {
+			continue
+		}
+		target, ok := tunPolicyRuleDestination(fields)
+		if !ok {
+			continue
+		}
+		if prefix, ok := parseIPPrefixForFamily(target, family); ok {
+			targets[prefix] = struct{}{}
+		}
+	}
+	return targets
+}
+
+// isManagedTunPolicyRuleLine reports whether an `ip rule show` line is one of
+// the rules this service installs inside its priority window: the fwmark escape
+// rule, a bypass rule, or the catch-all rule for our table. Rules other tools
+// keep in the same window are left untouched.
+func isManagedTunPolicyRuleLine(line string) bool {
+	if _, ok := parseTunPolicyRulePriority(line); !ok {
+		return false
+	}
+	fields := strings.Fields(line)
+	if !tunPolicyRuleIsFromAll(fields) {
+		return false
+	}
+	if tunPolicyRuleLooksUpTable(fields, strconv.Itoa(tunPolicyRouteTable)) {
+		return true
+	}
+	if !tunPolicyRuleLooksUpTable(fields, "main") {
+		return false
+	}
+	if tunPolicyRuleHasBypassMark(fields) {
+		return true
+	}
+	_, ok := tunPolicyRuleDestination(fields)
+	return ok
+}
+
+func parseTunPolicyRulePriority(line string) (int, bool) {
+	fields := strings.Fields(strings.TrimSpace(line))
+	if len(fields) < 2 || !strings.HasSuffix(fields[0], ":") {
+		return 0, false
+	}
+	priority, err := strconv.Atoi(strings.TrimSuffix(fields[0], ":"))
+	if err != nil || priority < tunPolicyRulePriorityMin || priority > tunPolicyRulePriorityMax {
+		return 0, false
+	}
+	return priority, true
+}
+
+func tunPolicyRuleIsFromAll(fields []string) bool {
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] == "from" && fields[i+1] == "all" {
+			return true
+		}
+	}
+	return false
+}
+
+func tunPolicyRuleDestination(fields []string) (string, bool) {
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] == "to" {
+			return fields[i+1], true
+		}
+	}
+	return "", false
+}
+
+func tunPolicyRuleLooksUpTable(fields []string, table string) bool {
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] == "lookup" && fields[i+1] == table {
+			return true
+		}
+	}
+	return false
+}
+
+func tunPolicyRuleHasBypassMark(fields []string) bool {
+	decimal := strconv.Itoa(tunDirectBypassMark)
+	hex := fmt.Sprintf("0x%x", tunDirectBypassMark)
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] != "fwmark" {
+			continue
+		}
+		value := fields[i+1]
+		if value == decimal || value == hex || strings.HasPrefix(value, decimal+"/") || strings.HasPrefix(value, hex+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func isManagedTunPolicyRoutingActive(cfg map[string]interface{}, tunName string) bool {
