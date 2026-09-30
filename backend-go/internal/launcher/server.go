@@ -49,6 +49,13 @@ type ServerOptions struct {
 // RunServer starts backend services and blocks until ctx is cancelled or the server exits.
 func RunServer(ctx context.Context, opts ServerOptions) error {
 	opts.DataDir = storage.ResolveDataDir(opts.DataDir)
+	// One server per data directory: a second process would fight this one for
+	// the API port, the TUN device and the policy-routing rules.
+	releaseInstanceLock, err := AcquireInstanceLock(opts.DataDir)
+	if err != nil {
+		return err
+	}
+	defer releaseInstanceLock()
 	store, err := storage.New(opts.DataDir)
 	if err != nil {
 		return err

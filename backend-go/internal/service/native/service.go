@@ -2461,12 +2461,109 @@ func (s *Service) installTunPolicyRoutingForFamily(family, tunName string, bypas
 	return nil
 }
 
+// ─── Cross-instance safety ───────────────────────────────────────────────────
+
+// listProcessPIDs and readProcessCmdline are variables so the scan below can be
+// driven from tests without depending on /proc contents.
+var (
+	listProcessPIDs    = defaultListProcessPIDs
+	readProcessCmdline = defaultReadProcessCmdline
+)
+
+// otherServerInstanceRunning reports whether a second v2rayE backend server is
+// alive. TUN teardown deletes the interface by name and flushes the shared
+// policy rules, so while another server runs we must leave that state alone
+// rather than ripping the network out from under it.
+var otherServerInstanceRunning = func() bool {
+	return scanForOtherServerInstance(listProcessPIDs(), os.Getpid(), readProcessCmdline)
+}
+
+func scanForOtherServerInstance(pids []int, self int, readCmdline func(int) ([]string, error)) bool {
+	for _, pid := range pids {
+		if pid <= 0 || pid == self {
+			continue
+		}
+		args, err := readCmdline(pid)
+		if err != nil || len(args) == 0 {
+			continue
+		}
+		if isBackendServerCommand(args) {
+			return true
+		}
+	}
+	return false
+}
+
+// isBackendServerCommand reports whether a command line belongs to a v2rayE
+// backend server. The unified binary also runs the TUI client, so a bare
+// "v2raye" process (no --server flag) must not be mistaken for an instance that
+// owns the TUN device.
+func isBackendServerCommand(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	base := filepath.Base(strings.TrimSpace(args[0]))
+	switch {
+	case strings.Contains(base, "backend-api"):
+		return true
+	case strings.Contains(base, "v2raye"):
+		for _, arg := range args[1:] {
+			if arg == "--server" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func defaultListProcessPIDs() []int {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	pids := make([]int, 0, len(entries))
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || pid <= 0 {
+			continue
+		}
+		pids = append(pids, pid)
+	}
+	return pids
+}
+
+func defaultReadProcessCmdline(pid int) ([]string, error) {
+	if runtime.GOOS != "linux" {
+		return nil, fmt.Errorf("process command line scan is only implemented on Linux")
+	}
+	raw, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
+	if err != nil {
+		return nil, err
+	}
+	text := strings.TrimRight(string(raw), "\x00")
+	if strings.TrimSpace(text) == "" {
+		return nil, nil
+	}
+	return strings.Split(text, "\x00"), nil
+}
+
 func (s *Service) clearTunRouting() {
 	if runtime.GOOS != "linux" || !hasCommand("ip") {
 		s.mu.Lock()
 		s.tunRestoreRoutes = nil
 		s.mu.Unlock()
 		s.persistTunRestoreRoutes(nil, "")
+		return
+	}
+	if otherServerInstanceRunning() {
+		// Another v2rayE server is still managing this TUN device and rule
+		// table. Tearing them down here would cut the network out from under a
+		// process that is very much alive (and wipes the shared restore intent
+		// it would need), so leave everything untouched.
+		log.Printf("[native] clearTunRouting: another v2rayE server instance is running; leaving TUN routing untouched")
 		return
 	}
 	cfg := s.loadConfig()
@@ -3356,6 +3453,13 @@ func (s *Service) cleanupStaleTunInterface(cfg map[string]interface{}) error {
 	if out, err := exec.Command("ip", "link", "show", "dev", tunName).CombinedOutput(); err != nil { //nolint:gosec
 		_ = out
 		// Device not found is expected and means no stale interface.
+		return nil
+	}
+
+	if otherServerInstanceRunning() {
+		// The interface exists and belongs to a live server instance; removing
+		// it here would tear down that instance's takeover.
+		log.Printf("[native] cleanupStaleTunInterface: another v2rayE server instance is running; keeping interface %s", tunName)
 		return nil
 	}
 
