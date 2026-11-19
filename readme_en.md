@@ -16,6 +16,15 @@ The first release baseline is now centered on:
 
 This project is closer to a local proxy workstation and TUN/VPN control console than to a browser-first web panel.
 
+## v0.2.1 highlights
+
+`v0.2.1` fixes "global" routing mode sending LAN traffic to the proxy node:
+
+- The private-network bypass (`10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `169.254/16`, `fe80::/10`, `fc00::/7`) is now emitted for every mode, not only `bypass_cn`, so the router UI, NAS and local dev servers no longer return 502/503 in global mode
+- The rule comes after user-defined rules, so an explicit `ip 192.168.x -> proxy` still wins; loopback stays owned by `localBypassEnabled`
+- `netmode` and the tray app are now in the repo (`scripts/`), with `scripts/install-netmode.sh`; the switch guard retries up to 3 times, so boot no longer rolls back to `off`
+- Two regression tests cover the global-mode LAN bypass and custom-rule precedence
+
 ## v0.2.0 highlights
 
 `v0.2.0` focuses on TUN policy-routing correctness and self-healing, plus network safety when more than one instance exists:
@@ -121,19 +130,19 @@ The check covers:
 ### Build a local `.deb`
 
 ```bash
-./scripts/build-deb.sh 0.2.0
+./scripts/build-deb.sh 0.2.1
 ```
 
 Expected output:
 
 ```bash
-dist/v2raye_0.2.0_amd64.deb
+dist/v2raye_0.2.1_amd64.deb
 ```
 
 ### Install
 
 ```bash
-sudo apt install ./dist/v2raye_0.2.0_amd64.deb
+sudo apt install ./dist/v2raye_0.2.1_amd64.deb
 ```
 
 ### Remove
@@ -232,9 +241,9 @@ The repository now includes:
 Release flow:
 
 ```bash
-git tag v0.2.0
+git tag v0.2.1
 git push origin master
-git push origin v0.2.0
+git push origin v0.2.1
 ```
 
 After the tag is pushed, GitHub Actions will automatically:
@@ -251,7 +260,7 @@ The workflow also supports manual `workflow_dispatch` runs with an explicit vers
 
 Use:
 
-- `v0.2.0`
+- `v0.2.1`
 
 It is the current baseline for self-healing TUN policy routing, single-instance safety, diagnostics warnings, and the Debian release pipeline.
 

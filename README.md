@@ -17,6 +17,15 @@ v2rayE 是一个 Linux 优先的本地代理控制平面，目标是把常用的
 
 项目现在更接近“本地代理控制台 + TUN/VPN 工作台”，而不是单纯的 Web 面板。
 
+## v0.2.1 发布重点
+
+`v0.2.1` 修复“全局代理”（`mode=global`）把内网地址也送进代理节点的问题：
+
+- 内网直连规则（`10/8`、`172.16/12`、`192.168/16`、`100.64/10`、`169.254/16`、`fe80::/10`、`fc00::/7`）不再只属于 `bypass_cn`，global / direct / custom 模式同样生成；切到全局代理后路由器后台、NAS、本机局域网服务不再 502/503
+- 该规则排在用户自定义规则之后，显式 `ip 192.168.x → proxy` 仍然优先；规则不含回环地址，`localBypassEnabled` 的语义不变
+- `netmode` 与托盘程序入库（`scripts/`），新增 `scripts/install-netmode.sh`；切换后的连通性守卫改为最多 3 次重试，开机应用默认模式不再因单次探测失败回滚到 `off`
+- 新增两个回归测试，覆盖全局模式的内网直连与自定义规则优先性
+
 ## v0.2.0 发布重点
 
 `v0.2.0` 主要聚焦在 TUN 策略路由的正确性与自愈能力，以及多实例共存时的网络安全：
@@ -122,19 +131,19 @@ sudo ./scripts/tun-health-check.sh
 ### 本地构建 `.deb`
 
 ```bash
-./scripts/build-deb.sh 0.2.0
+./scripts/build-deb.sh 0.2.1
 ```
 
 输出路径类似：
 
 ```bash
-dist/v2raye_0.2.0_amd64.deb
+dist/v2raye_0.2.1_amd64.deb
 ```
 
 ### 安装
 
 ```bash
-sudo apt install ./dist/v2raye_0.2.0_amd64.deb
+sudo apt install ./dist/v2raye_0.2.1_amd64.deb
 ```
 
 ### 卸载
@@ -233,9 +242,9 @@ sudo systemctl enable --now v2raye-server
 发布方式：
 
 ```bash
-git tag v0.2.0
+git tag v0.2.1
 git push origin master
-git push origin v0.2.0
+git push origin v0.2.1
 ```
 
 触发后，GitHub Actions 会自动：
@@ -252,9 +261,9 @@ git push origin v0.2.0
 
 当前建议使用：
 
-- `v0.2.0`
+- `v0.2.1`
 
-这个版本适合作为“TUN 策略路由自愈对账 + 单实例安全 + 诊断告警 + Debian 发布链路”的当前基线。
+这个版本适合作为“内网直连修复 + netmode 守卫重试”的当前基线（v0.2.0 的 TUN 自愈对账能力一并包含）。
 
 ## 当前限制
 
