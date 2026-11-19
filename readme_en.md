@@ -21,9 +21,9 @@ This project is closer to a local proxy workstation and TUN/VPN control console 
 `v0.2.1` fixes "global" routing mode sending LAN traffic to the proxy node:
 
 - The private-network bypass (`10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `169.254/16`, `fe80::/10`, `fc00::/7`) is now emitted for every mode, not only `bypass_cn`, so the router UI, NAS and local dev servers no longer return 502/503 in global mode
-- The rule comes after user-defined rules, so an explicit `ip 192.168.x -> proxy` still wins; loopback stays owned by `localBypassEnabled`
+- The rule sits at layer 2 of the routing model (`docs/2026-03-09-tui-migration-design.md` §4.2), ahead of the CN and user-defined rules; loopback stays owned by `localBypassEnabled`
 - `netmode` and the tray app are now in the repo (`scripts/`), with `scripts/install-netmode.sh`; the switch guard retries up to 3 times, so boot no longer rolls back to `off`
-- Two regression tests cover the global-mode LAN bypass and custom-rule precedence
+- Two regression tests cover the global-mode LAN bypass and the layer order (private bypass before user rules)
 
 ## v0.2.0 highlights
 

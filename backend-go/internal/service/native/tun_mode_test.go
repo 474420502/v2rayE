@@ -728,8 +728,10 @@ func TestBuildRoutingRulesGlobalBypassesPrivateNetworks(t *testing.T) {
 	}
 }
 
-// An explicit custom rule must still be able to send a LAN host through the node.
-func TestBuildRoutingRulesCustomRuleWinsOverPrivateBypass(t *testing.T) {
+// The design doc (docs/2026-03-09-tui-migration-design.md §4.2) puts private/LAN
+// direct at layer 2, ahead of user rules at layer 4; CN rules already behave that
+// way, so an explicit "ip 192.168.x -> proxy" must not override it.
+func TestBuildRoutingRulesPrivateBypassPrecedesCustomRules(t *testing.T) {
 	rules := buildRoutingRules(domain.RoutingConfig{
 		Mode:  "global",
 		Rules: []domain.RoutingRule{{ID: "custom", Type: "ip", Values: []string{"192.168.1.9"}, Outbound: "proxy"}},
@@ -755,7 +757,7 @@ func TestBuildRoutingRulesCustomRuleWinsOverPrivateBypass(t *testing.T) {
 	if customIdx < 0 || privateIdx < 0 {
 		t.Fatalf("expected both the custom and the private rule, got custom=%d private=%d", customIdx, privateIdx)
 	}
-	if customIdx > privateIdx {
-		t.Fatalf("custom rule at %d is shadowed by the private bypass at %d", customIdx, privateIdx)
+	if privateIdx > customIdx {
+		t.Fatalf("private bypass at %d must precede the custom rule at %d", privateIdx, customIdx)
 	}
 }

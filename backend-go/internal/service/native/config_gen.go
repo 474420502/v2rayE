@@ -581,6 +581,28 @@ func buildRoutingRulesWithConfig(cfg map[string]interface{}, routing domain.Rout
 		})
 	}
 
+	// Layer 2 of the routing model in docs/2026-03-09-tui-migration-design.md:
+	// private/LAN destinations stay direct in every mode, before the CN rules and
+	// before user rules. The far end cannot reach them, so proxying LAN traffic
+	// (router UI, NAS, a dev server on this host) only turns it into a 502; the rule
+	// used to exist for bypass_cn only, which made "global" black-hole the LAN.
+	//
+	// Loopback is absent on purpose: it belongs to localBypassEnabled above, so
+	// disabling that switch still means "proxy even loopback".
+	rules = append(rules, map[string]interface{}{
+		"type": "field",
+		"ip": []string{
+			"10.0.0.0/8",
+			"172.16.0.0/12",
+			"192.168.0.0/16",
+			"100.64.0.0/10",
+			"169.254.0.0/16",
+			"fe80::/10",
+			"fc00::/7",
+		},
+		"outboundTag": "direct",
+	})
+
 	switch routing.Mode {
 	case "bypass_cn":
 		privateIPs := []string{"geoip:private"}
@@ -669,28 +691,6 @@ func buildRoutingRulesWithConfig(cfg map[string]interface{}, routing domain.Rout
 		}
 		rules = append(rules, r)
 	}
-
-	// Local networks must never be proxied, in any mode: the far end cannot reach
-	// them, so sending LAN traffic (router UI, NAS, a dev server on this host) to
-	// the node only turns it into a 502. This used to be added for bypass_cn only,
-	// which made "global" mode black-hole every private address.
-	//
-	// It comes after the custom rules so an explicit "ip 192.168.x -> proxy" rule
-	// still wins, and lacks loopback, which the local-control-bypass rule above
-	// owns (disabling that switch must still mean "proxy even loopback").
-	rules = append(rules, map[string]interface{}{
-		"type": "field",
-		"ip": []string{
-			"10.0.0.0/8",
-			"172.16.0.0/12",
-			"192.168.0.0/16",
-			"100.64.0.0/10",
-			"169.254.0.0/16",
-			"fe80::/10",
-			"fc00::/7",
-		},
-		"outboundTag": "direct",
-	})
 
 	rules = append(rules, defaultRules...)
 

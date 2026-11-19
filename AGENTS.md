@@ -17,7 +17,7 @@ Linux 优先的本地代理控制平面（Xray 核心 + TUN + 系统代理 + 订
 
 ## 经验积累
 
-- **[2026-11-19] 内网地址必须在所有路由模式下直连**：`buildRoutingRules` 的内网直连规则（`10/8`、`172.16/12`、`192.168/16`、`100.64/10`、`169.254/16`、`fe80::/10`、`fc00::/7`）对所有模式生效，且排在自定义规则之后（自定义 `ip → proxy` 仍优先）；回环地址仍由 `localBypassEnabled` 控制。曾经只有 `bypass_cn` 分支生成该规则，`global` 模式会把整个局域网送进节点，表现是 502/503 + “像断网”。
+- **[2026-11-19] 内网地址必须在所有路由模式下直连**：`buildRoutingRules` 的内网直连规则（`10/8`、`172.16/12`、`192.168/16`、`100.64/10`、`169.254/16`、`fe80::/10`、`fc00::/7`）对所有模式生效，位于 `docs/2026-03-09-tui-migration-design.md` §4.2 分层的第 2 层（先于 CN 规则与自定义规则）；回环地址仍由 `localBypassEnabled` 控制。曾经只有 `bypass_cn` 分支生成该规则，`global` 模式会把整个局域网送进节点，表现是 502/503 + “像断网”。
 - **[2026-11-19] 切换守卫要重试**：`scripts/netmode` 的连通性守卫改为最多 3 次、间隔 5s；开机时 TUN/路由尚未就绪，固定 `sleep 3` 后单次探测会把模式回滚到 `off`（`netmode-boot.service` 随之失败，开机没网）。
 - **[2026-08-26] 强制某域名走代理（不改代码）**：通过 API `PUT /api/routing` 写入 `rules: [{type:domain, values:[域名], outbound:proxy}]` 后核心自动重启生效；不要直接改 `routing.json` 文件（内存缓存不一致）。操作与验证详见 [docs/2026-08-26-forced-proxy-domain.md](docs/2026-08-26-forced-proxy-domain.md)。
 - 直连出口 IP 与本机代理节点可能同源（本机物理出口 = 代理节点 IP 时，用"出口 IP 对比"无法证明是否走代理），此时用 `tcpdump` 对比到 CloudFront/代理节点的连接目标，或 `POST /api/routing/test` 看规则命中。
