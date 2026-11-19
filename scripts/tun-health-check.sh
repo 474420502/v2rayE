@@ -46,7 +46,7 @@ require_cmd() {
 
 require_cmd curl
 require_cmd ip
-require_cmd node
+require_cmd python3
 
 if [[ "$EUID" -ne 0 ]]; then
     echo "this script should be run with sudo/root so it can inspect policy routing and restart the dev stack" >&2
@@ -76,60 +76,43 @@ api_call() {
 
     curl "${args[@]}" "${BACKEND_URL}${path}"
 }
-
 json_get() {
     local json="$1"
     local path="$2"
-    printf '%s' "$json" | node -e '
-const fs = require("fs");
-const input = fs.readFileSync(0, "utf8");
-const path = process.argv[1];
-let value = "";
-try {
-  const obj = JSON.parse(input);
-  const parts = path.split(".").filter(Boolean);
-  let cur = obj;
-  for (const part of parts) {
-    if (cur == null || !(part in cur)) {
-      cur = undefined;
-      break;
-    }
-    cur = cur[part];
-  }
-  if (Array.isArray(cur) || (cur && typeof cur === "object")) {
-    value = JSON.stringify(cur);
-  } else if (cur !== undefined && cur !== null) {
-    value = String(cur);
-  }
-} catch {}
-process.stdout.write(value);
+    printf '%s' "$json" | python3 -c '
+import json, sys
+try:
+    cur = json.load(sys.stdin)
+    for part in [p for p in sys.argv[1].split(".") if p]:
+        if not isinstance(cur, dict) or part not in cur:
+            cur = None
+            break
+        cur = cur[part]
+    if isinstance(cur, (dict, list)):
+        sys.stdout.write(json.dumps(cur, ensure_ascii=False))
+    elif isinstance(cur, bool):
+        sys.stdout.write("true" if cur else "false")
+    elif cur is not None:
+        sys.stdout.write(str(cur))
+except Exception:
+    pass
 ' "$path"
 }
-
 json_array_len() {
     local json="$1"
     local path="$2"
-    printf '%s' "$json" | node -e '
-const fs = require("fs");
-const input = fs.readFileSync(0, "utf8");
-const path = process.argv[1];
-let value = 0;
-try {
-  const obj = JSON.parse(input);
-  const parts = path.split(".").filter(Boolean);
-  let cur = obj;
-  for (const part of parts) {
-    if (cur == null || !(part in cur)) {
-      cur = undefined;
-      break;
-    }
-    cur = cur[part];
-  }
-  if (Array.isArray(cur)) {
-    value = cur.length;
-  }
-} catch {}
-process.stdout.write(String(value));
+    printf '%s' "$json" | python3 -c '
+import json, sys
+try:
+    cur = json.load(sys.stdin)
+    for part in [p for p in sys.argv[1].split(".") if p]:
+        if not isinstance(cur, dict) or part not in cur:
+            cur = None
+            break
+        cur = cur[part]
+    sys.stdout.write(str(len(cur)) if isinstance(cur, list) else "0")
+except Exception:
+    sys.stdout.write("0")
 ' "$path"
 }
 

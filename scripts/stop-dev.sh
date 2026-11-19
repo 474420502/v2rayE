@@ -42,22 +42,19 @@ run_ip_cmd() {
     fi
     return 1
 }
-
 read_tun_name() {
     local config_file="$BACKEND_DATA_DIR/config.json"
-    if [[ -f "$config_file" ]] && command -v node >/dev/null 2>&1; then
+    if [[ -f "$config_file" ]] && command -v python3 >/dev/null 2>&1; then
         local tun_name
-        tun_name="$(node -e '
-const fs = require("fs");
-const path = process.argv[1];
-let tun = "";
-try {
-  const cfg = JSON.parse(fs.readFileSync(path, "utf8"));
-  if (typeof cfg.tunName === "string" && cfg.tunName.trim()) {
-    tun = cfg.tunName.trim();
-  }
-} catch {}
-process.stdout.write(tun);
+        tun_name="$(python3 -c '
+import json, sys
+try:
+    cfg = json.load(open(sys.argv[1]))
+    tun = cfg.get("tunName") if isinstance(cfg, dict) else None
+    if isinstance(tun, str) and tun.strip():
+        sys.stdout.write(tun.strip())
+except Exception:
+    pass
 ' "$config_file")"
         if [[ -n "$tun_name" ]]; then
             echo "$tun_name"

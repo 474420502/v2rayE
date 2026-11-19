@@ -40,7 +40,7 @@ require_cmd() {
 
 require_cmd curl
 require_cmd ip
-require_cmd node
+require_cmd python3
 
 if [[ "$EUID" -ne 0 ]]; then
     echo "this script should be run with sudo/root for TUN route operations" >&2
@@ -70,23 +70,21 @@ api_call() {
 
     curl "${args[@]}" "${BACKEND_URL}${path}"
 }
-
 extract_field() {
     local json="$1"
     local field="$2"
-    printf '%s' "$json" | node -e '
-const fs = require("fs");
-const input = fs.readFileSync(0, "utf8");
-const field = process.argv[1];
-let value = "";
-try {
-  const obj = JSON.parse(input);
-  if (obj && typeof obj === "object" && obj.data && typeof obj.data === "object") {
-    const v = obj.data[field];
-    value = v === undefined || v === null ? "" : String(v);
-  }
-} catch {}
-process.stdout.write(value);
+    printf '%s' "$json" | python3 -c '
+import json, sys
+try:
+    obj = json.load(sys.stdin)
+    data = obj.get("data") if isinstance(obj, dict) else None
+    value = data.get(sys.argv[1]) if isinstance(data, dict) else None
+    if isinstance(value, bool):
+        sys.stdout.write("true" if value else "false")
+    elif value is not None:
+        sys.stdout.write(str(value))
+except Exception:
+    pass
 ' "$field"
 }
 
