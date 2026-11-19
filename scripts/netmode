@@ -1,0 +1,258 @@
+#!/bin/bash
+# netmode — 网络模式切换（雷神加速器 / v2rayE / 共存 / 全关）
+# 由托盘程序通过 sudo -n 调用；也可手动执行。
+#
+# 设计要点：
+#   1. 每个模式在"停掉对方"之后，必须清理对方的策略路由残留，
+#      否则会留下 ip rule 99 → table 102 → tun_PC(DOWN) 的黑洞。
+#   2. 切换后做一次以普通用户身份发起的连通性守卫，失败自动回滚。
+#   3. 开机模式由 /etc/netmode/default 决定，netmode-boot.service 负责应用。
+set -uo pipefail
+
+CFG=/opt/v2rayE/config.json
+LOG=/var/log/netmode.log
+DEFAULT_FILE=/etc/netmode/default
+GUARD_URL=${NETMODE_GUARD_URL:-https://www.baidu.com}
+VALID="leigod v2ray coexist off"
+
+log() { printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$LOG" 2>/dev/null || true; }
+
+# tunMode 是 v2rayE 的真开关；enableTun 是派生字段
+set_tun() {
+    python3 - "$1" <<'PY'
+import json, sys
+p = '/opt/v2rayE/config.json'
+d = json.load(open(p))
+d['tunMode'] = sys.argv[1]
+d['enableTun'] = sys.argv[1] != 'off'
+json.dump(d, open(p, 'w'), indent=2, ensure_ascii=False)
+open(p, 'a').write('\n')
+PY
+}
+
+get_tun() {
+    python3 -c "import json;print(json.load(open('$CFG')).get('tunMode','?'))" 2>/dev/null || echo '?'
+}
+
+active() { systemctl is-active --quiet "$1"; }
+
+desktop_user() { getent passwd 1000 | cut -d: -f1; }
+
+# 切走 v2rayE 时清空桌面系统代理，避免浏览器指向已停的端口
+clear_system_proxy() {
+    local u uid
+    u=$(desktop_user)
+    [ -n "$u" ] || return 0
+    uid=$(id -u "$u" 2>/dev/null) || return 0
+    sudo -u "$u" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+        gsettings set org.gnome.system.proxy mode 'none' 2>/dev/null || true
+    return 0
+}
+
+# ── 残留清理 ────────────────────────────────────────────────────────────
+cleanup_leigod() {
+    # ip rule 99 + table 102 + tun_PC + mangle MARK → 不清理会造成全网黑洞
+    while ip rule del fwmark 0x102 lookup 102 2>/dev/null; do :; done
+    while ip rule del fwmark 0x102 2>/dev/null; do :; done
+    ip route flush table 102 2>/dev/null || true
+    if ip link show tun_PC >/dev/null 2>&1; then
+        ip link set tun_PC down 2>/dev/null || true
+        ip link del tun_PC 2>/dev/null || true
+    fi
+    while iptables -t mangle -D OUTPUT -p tcp -j MARK --set-xmark 0x102/0xffffffff 2>/dev/null; do :; done
+    while iptables -t mangle -D OUTPUT -p udp -j MARK --set-xmark 0x102/0xffffffff 2>/dev/null; do :; done
+    # 兜底：清掉雷神可能自建的 nft 表
+    nft list tables 2>/dev/null | awk '{print $2, $3}' | while read -r fam name; do
+        case "$name" in
+            *leigod*|*acc*) nft delete table "$fam" "$name" 2>/dev/null || true ;;
+        esac
+    done
+    return 0
+}
+
+cleanup_v2raye() {
+    while ip rule del priority 10010 2>/dev/null; do :; done
+    ip route flush table 20230 2>/dev/null || true
+    if ip link show xraye0 >/dev/null 2>&1; then
+        ip link del xraye0 2>/dev/null || true
+    fi
+    return 0
+}
+
+# ── 模式实现 ────────────────────────────────────────────────────────────
+apply_leigod() {
+    systemctl stop v2raye-server   >/dev/null 2>&1 || true
+    systemctl stop hysteria-client >/dev/null 2>&1 || true
+    cleanup_v2raye
+    clear_system_proxy
+    set_tun off
+    systemctl start leigod_plugin  >/dev/null 2>&1 || true
+}
+
+apply_v2ray() {
+    systemctl stop leigod_plugin   >/dev/null 2>&1 || true
+    cleanup_leigod                 # 必须：否则 rule 99 黑洞
+    systemctl stop v2raye-server   >/dev/null 2>&1 || true
+    cleanup_v2raye
+    set_tun mixed
+    systemctl start v2raye-server  >/dev/null 2>&1 || true
+    systemctl start hysteria-client >/dev/null 2>&1 || true
+}
+
+apply_coexist() {
+    systemctl stop v2raye-server   >/dev/null 2>&1 || true
+    cleanup_v2raye
+    systemctl stop hysteria-client >/dev/null 2>&1 || true
+    set_tun off
+    systemctl start v2raye-server  >/dev/null 2>&1 || true
+    systemctl start leigod_plugin  >/dev/null 2>&1 || true
+}
+
+apply_off() {
+    systemctl stop leigod_plugin   >/dev/null 2>&1 || true
+    cleanup_leigod
+    systemctl stop v2raye-server   >/dev/null 2>&1 || true
+    cleanup_v2raye
+    clear_system_proxy
+    systemctl stop hysteria-client >/dev/null 2>&1 || true
+    set_tun off
+}
+
+# ── 状态 ────────────────────────────────────────────────────────────────
+get_mode() {
+    local L=0 V=0 H=0 T
+    active leigod_plugin   && L=1
+    active v2raye-server   && V=1
+    active hysteria-client && H=1
+    T=$(get_tun)
+    if   [ $L -eq 1 ] && [ $V -eq 1 ] && [ $H -eq 0 ] && [ "$T" = "off" ]; then echo coexist
+    elif [ $L -eq 1 ] && [ $V -eq 0 ] && [ $H -eq 0 ]; then echo leigod
+    elif [ $L -eq 0 ] && [ $V -eq 1 ]; then echo v2ray
+    elif [ $L -eq 0 ] && [ $V -eq 0 ] && [ $H -eq 0 ]; then echo off
+    else echo "mixed:L=$L,V=$V,H=$H,tun=$T"
+    fi
+}
+
+net_user() {
+    local u="${SUDO_USER:-}"
+    if [ -n "$u" ] && [ "$u" != "root" ]; then echo "$u"; return; fi
+    getent passwd 1000 | cut -d: -f1
+}
+
+# 以普通用户身份验证（雷神只标记非 root 进程，root 测不出问题）
+check_net() {
+    local u code
+    u=$(net_user)
+    [ -n "$u" ] || return 0
+    code=$(sudo -u "$u" timeout 12 curl -s -o /dev/null -w '%{http_code}' "$GUARD_URL" 2>/dev/null)
+    [ "$code" = "200" ]
+}
+
+switch_to() {
+    local target="$1" prev="$2"
+    case "$target" in
+        leigod)  apply_leigod  ;;
+        v2ray)   apply_v2ray   ;;
+        coexist) apply_coexist ;;
+        off)     apply_off     ;;
+        *) return 2 ;;
+    esac
+    sleep 3
+
+    if [ "${NETMODE_NO_GUARD:-0}" != "1" ]; then
+        # Boot is slow: the TUN/routes of leigod or xray can still be coming up
+        # three seconds in, and a single failed probe used to roll the whole
+        # switch back to "off" (netmode-boot then failed, leaving no network).
+        local ok=0 attempt
+        for attempt in 1 2 3; do
+            if check_net; then ok=1; break; fi
+            log "guard retry $attempt after -> $target"
+            [ "$attempt" -ge 3 ] || sleep 5
+        done
+        if [ "$ok" -ne 1 ]; then
+            log "GUARD FAILED after -> $target (prev=$prev), rolling back"
+            echo "guard failed: $target；已回滚到 $prev" >&2
+            case "$prev" in
+                leigod|v2ray|coexist|off) NETMODE_NO_GUARD=1 "$0" "$prev" >>"$LOG" 2>&1 || true ;;
+            esac
+            return 1
+        fi
+    fi
+    log "switch $prev -> $target OK"
+    return 0
+}
+
+# ── 入口 ────────────────────────────────────────────────────────────────
+cmd="${1:-status}"
+
+case "$cmd" in
+    leigod|v2ray|coexist|off)
+        prev=$(get_mode)
+        switch_to "$cmd" "$prev"
+        ;;
+    boot|apply-default)
+        mode=$(head -1 "$DEFAULT_FILE" 2>/dev/null | tr -d '[:space:]')
+        case " $VALID " in
+            *" $mode "*) ;;
+            *) mode=coexist ;;
+        esac
+        log "boot -> $mode"
+        switch_to "$mode" "$(get_mode)"
+        ;;
+    set-default)
+        case " $VALID " in
+            *" ${2:-} "*) echo "$2" >"$DEFAULT_FILE"; log "default -> $2" ;;
+            *) echo "usage: $0 set-default {leigod|v2ray|coexist|off}" >&2; exit 2 ;;
+        esac
+        ;;
+    get-default)
+        cat "$DEFAULT_FILE" 2>/dev/null || echo coexist
+        ;;
+    cleanup-leigod)
+        cleanup_leigod; echo cleaned
+        ;;
+    cleanup-v2raye)
+        cleanup_v2raye; echo cleaned
+        ;;
+    status)
+        get_mode
+        ;;
+    verify)
+        m=$(get_mode); fail=0
+        printf 'mode      : %s\n' "$m"
+        printf 'tunMode   : %s\n' "$(get_tun)"
+        printf 'xraye0    : %s\n' "$(ip link show xraye0 >/dev/null 2>&1 && echo present || echo absent)"
+        printf 'tun_PC    : %s\n' "$(ip link show tun_PC >/dev/null 2>&1 && echo present || echo absent)"
+        printf 'rule_99   : %s\n' "$(ip rule show | grep -c 'fwmark 0x102')"
+        printf 'table_102 : %s\n' "$(ip route show table 102 2>/dev/null | wc -l)"
+        printf 'rule_20230: %s\n' "$(ip rule show | grep -c 'lookup 20230')"
+        printf 'mangle_mk : %s\n' "$(iptables -t mangle -S 2>/dev/null | grep -c 'set-xmark 0x102')"
+        case "$m" in
+            leigod)
+                [ "$(ip link show xraye0 >/dev/null 2>&1 && echo 1 || echo 0)" = 1 ] && { echo "  FAIL xraye0 不该存在"; fail=1; }
+                [ "$(ip rule show | grep -c 'lookup 20230')" = 0 ] || { echo "  FAIL 20230 规则残留"; fail=1; }
+                ;;
+            v2ray)
+                [ "$(ip link show xraye0 >/dev/null 2>&1 && echo 1 || echo 0)" = 1 ] || { echo "  FAIL xraye0 缺失"; fail=1; }
+                [ "$(ip rule show | grep -c 'lookup 20230')" -ge 1 ] || { echo "  FAIL 20230 规则缺失"; fail=1; }
+                [ "$(ip rule show | grep -c 'fwmark 0x102')" = 0 ] || { echo "  FAIL 雷神 rule 99 残留（会黑洞）"; fail=1; }
+                ;;
+            coexist)
+                [ "$(ip link show xraye0 >/dev/null 2>&1 && echo 1 || echo 0)" = 0 ] || { echo "  FAIL coexist 下 xraye0 不该存在"; fail=1; }
+                [ "$(ip rule show | grep -c 'lookup 20230')" = 0 ] || { echo "  FAIL coexist 下 20230 不该存在"; fail=1; }
+                ;;
+            off)
+                [ "$(ip link show xraye0 >/dev/null 2>&1 && echo 1 || echo 0)" = 0 ] || { echo "  FAIL xraye0 残留"; fail=1; }
+                [ "$(ip link show tun_PC >/dev/null 2>&1 && echo 1 || echo 0)" = 0 ] || { echo "  FAIL tun_PC 残留"; fail=1; }
+                ;;
+            *)
+                echo "  FAIL 状态不一致: $m"; fail=1 ;;
+        esac
+        echo "result    : $([ $fail -eq 0 ] && echo PASS || echo FAIL)"
+        exit $fail
+        ;;
+    *)
+        echo "usage: $0 {leigod|v2ray|coexist|off|status|verify|boot|set-default|get-default}" >&2
+        exit 2
+        ;;
+esac

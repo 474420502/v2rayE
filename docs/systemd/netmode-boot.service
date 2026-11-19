@@ -1,0 +1,13 @@
+[Unit]
+Description=Apply default network mode (leigod/v2ray/coexist/off)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/netmode boot
+RemainAfterExit=yes
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

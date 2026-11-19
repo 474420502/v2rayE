@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=网络模式切换
+Comment=雷神加速器 / v2rayE 快速切换
+Exec=/usr/bin/python3 @TRAY_PATH@
+Icon=network-vpn
+Terminal=false
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=3
