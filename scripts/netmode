@@ -197,7 +197,10 @@ case "$cmd" in
             *) mode=coexist ;;
         esac
         log "boot -> $mode"
-        switch_to "$mode" "$(get_mode)"
+        # No guard on boot: prev is "off", so a failed probe would roll the machine
+        # back to no proxy at all - and a cold boot has no network to probe with yet.
+        # The connectivity guard stays for interactive switches (tray/CLI).
+        NETMODE_NO_GUARD=1 switch_to "$mode" "$(get_mode)"
         ;;
     set-default)
         case " $VALID " in

@@ -27,6 +27,7 @@ Linux 优先的本地代理控制平面（Xray 核心 + TUN + 系统代理 + 订
 - 安装 / systemd 部署步骤：见 [backend-go/README.md](backend-go/README.md) 与 [docs/systemd/v2raye-server.service](docs/systemd/v2raye-server.service)。
 - Debian 打包 / 发布：`./scripts/build-deb.sh <version>`，GitHub Actions 自动构建发布。
 - VPN 一键拉起：`./scripts/vpn-up.sh`；TUN 自检：`sudo ./scripts/tun-health-check.sh`。
+- 开机模式由 `netmode-boot.service` 单独拥有：安装 netmode 会 `systemctl disable v2raye-server`，deb postinst 在检测到该单元时也不会再 enable 它。
 - 网络模式切换（雷神 / v2rayE / 共存 / 全关）：`sudo ./scripts/install-netmode.sh` 安装，`netmode status` / `sudo netmode verify` 检查；数据：`/etc/netmode/default`、`/var/log/netmode.log`。
 
 ## 链接索引（长文档）

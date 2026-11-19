@@ -56,7 +56,13 @@ if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || true
     if [ "$1" = "configure" ]; then
         rm -f /opt/v2rayE/v2raye || true
-        systemctl enable v2raye-server.service >/dev/null 2>&1 || true
+        # netmode-boot owns the boot network mode: it starts/stops v2raye-server
+        # itself, so enabling the unit here would start the core twice and race.
+        if systemctl is-enabled --quiet netmode-boot.service 2>/dev/null; then
+            systemctl disable v2raye-server.service >/dev/null 2>&1 || true
+        else
+            systemctl enable v2raye-server.service >/dev/null 2>&1 || true
+        fi
         systemctl restart v2raye-server.service >/dev/null 2>&1 || systemctl start v2raye-server.service >/dev/null 2>&1 || true
     fi
 fi

@@ -43,6 +43,11 @@ echo "[2/5] boot unit -> $UNIT_DIR/netmode-boot.service"
 install -m 644 "$ROOT_DIR/docs/systemd/netmode-boot.service" "$UNIT_DIR/netmode-boot.service"
 systemctl daemon-reload
 systemctl enable netmode-boot.service >/dev/null
+if systemctl list-unit-files v2raye-server.service >/dev/null 2>&1; then
+    # netmode-boot starts/stops v2raye-server itself; two owners race at boot.
+    systemctl disable v2raye-server.service >/dev/null 2>&1 || true
+    echo "      disabled v2raye-server autostart (netmode-boot owns the boot mode)"
+fi
 
 echo "[3/5] default mode -> $CONFIG_DIR/default"
 mkdir -p "$CONFIG_DIR"
