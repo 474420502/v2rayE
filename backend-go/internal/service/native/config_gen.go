@@ -596,12 +596,11 @@ func buildRoutingRulesWithConfig(cfg map[string]interface{}, routing domain.Rout
 				"fc00::/7",
 			}
 		}
-		rules = append(rules,
-			map[string]interface{}{
-				"type":        "field",
-				"ip":          privateIPs,
-				"outboundTag": "direct",
-			})
+		rules = append(rules, map[string]interface{}{
+			"type":        "field",
+			"ip":          privateIPs,
+			"outboundTag": "direct",
+		})
 		if hasGeoIP {
 			rules = append(rules,
 				map[string]interface{}{
@@ -670,6 +669,28 @@ func buildRoutingRulesWithConfig(cfg map[string]interface{}, routing domain.Rout
 		}
 		rules = append(rules, r)
 	}
+
+	// Local networks must never be proxied, in any mode: the far end cannot reach
+	// them, so sending LAN traffic (router UI, NAS, a dev server on this host) to
+	// the node only turns it into a 502. This used to be added for bypass_cn only,
+	// which made "global" mode black-hole every private address.
+	//
+	// It comes after the custom rules so an explicit "ip 192.168.x -> proxy" rule
+	// still wins, and lacks loopback, which the local-control-bypass rule above
+	// owns (disabling that switch must still mean "proxy even loopback").
+	rules = append(rules, map[string]interface{}{
+		"type": "field",
+		"ip": []string{
+			"10.0.0.0/8",
+			"172.16.0.0/12",
+			"192.168.0.0/16",
+			"100.64.0.0/10",
+			"169.254.0.0/16",
+			"fe80::/10",
+			"fc00::/7",
+		},
+		"outboundTag": "direct",
+	})
 
 	rules = append(rules, defaultRules...)
 

@@ -703,3 +703,59 @@ func TestGeoDataSearchDirsPreferAssetEnvOverExecDir(t *testing.T) {
 		}
 	}
 }
+
+// Private destinations are unreachable from the node, so every routing mode must
+// keep them on the direct outbound (global mode used to black-hole the whole LAN).
+func TestBuildRoutingRulesGlobalBypassesPrivateNetworks(t *testing.T) {
+	rules := buildRoutingRules(domain.RoutingConfig{Mode: "global"}, false, false)
+
+	rule, ipList := findRuleWithIPCIDR(rules, "192.168.0.0/16")
+	if rule == nil {
+		t.Fatalf("expected a private-network bypass rule, got %#v", rules)
+	}
+	if got := rule["outboundTag"]; got != "direct" {
+		t.Fatalf("private-network bypass outbound = %#v, want %q", got, "direct")
+	}
+	for _, cidr := range []string{"10.0.0.0/8", "172.16.0.0/12", "100.64.0.0/10", "fe80::/10", "fc00::/7"} {
+		if !containsString(ipList, cidr) {
+			t.Fatalf("private-network bypass is missing %q: %#v", cidr, ipList)
+		}
+	}
+	for _, loopback := range []string{"127.0.0.0/8", "::1/128"} {
+		if containsString(ipList, loopback) {
+			t.Fatalf("%q belongs to the local-control-bypass rule, not the LAN rule", loopback)
+		}
+	}
+}
+
+// An explicit custom rule must still be able to send a LAN host through the node.
+func TestBuildRoutingRulesCustomRuleWinsOverPrivateBypass(t *testing.T) {
+	rules := buildRoutingRules(domain.RoutingConfig{
+		Mode:  "global",
+		Rules: []domain.RoutingRule{{ID: "custom", Type: "ip", Values: []string{"192.168.1.9"}, Outbound: "proxy"}},
+	}, false, false)
+
+	customIdx, privateIdx := -1, -1
+	for idx, rawRule := range rules {
+		rule, ok := rawRule.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		ips, ok := rule["ip"].([]string)
+		if !ok {
+			continue
+		}
+		if containsString(ips, "192.168.1.9") && customIdx < 0 {
+			customIdx = idx
+		}
+		if containsString(ips, "192.168.0.0/16") && privateIdx < 0 {
+			privateIdx = idx
+		}
+	}
+	if customIdx < 0 || privateIdx < 0 {
+		t.Fatalf("expected both the custom and the private rule, got custom=%d private=%d", customIdx, privateIdx)
+	}
+	if customIdx > privateIdx {
+		t.Fatalf("custom rule at %d is shadowed by the private bypass at %d", customIdx, privateIdx)
+	}
+}
